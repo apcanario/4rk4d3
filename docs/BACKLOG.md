@@ -4,12 +4,11 @@ Rows are defined in docs/PLAN.md. Nothing is built that is not a row here. A don
 
 ## Queue
 
-- H1 Shell and hub (PLAN §5)
 - B1 Bricks (PLAN §6)
 
 ## Done
 
-(none)
+- H1 Shell and hub (2026-11-25)
 
 ## Parked
 
@@ -20,4 +19,5 @@ Rows are defined in docs/PLAN.md. Nothing is built that is not a row here. A don
 
 ## Proposed
 
-(none)
+- X1 Add tools/ and tests/ to the PLAN §4 layout (they ship in the repo; PLAN.md is kept verbatim, so this needs Pedro's veto window).
+- X2 Real-device pass of H1 on Android Chrome: install, standalone, portrait, offline, back gesture, haptics (cannot be done headless).

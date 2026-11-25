@@ -5,6 +5,7 @@ import { LOGICAL_WIDTH, COLORS, SEA_BANDS, SKY_BANDS, mix, shade, highlight } fr
 
 export const SEA_HEIGHT = 42;
 export const SUN_RADIUS = 24;
+export const MIN_HEIGHT = 240; // design for a logical height of 240 and up
 
 const motionQuery = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 export const reducedMotion = () => !!(motionQuery && motionQuery.matches);
@@ -57,8 +58,12 @@ export function createScreen(canvas, draw) {
     devH = h;
     canvas.width = devW;
     canvas.height = devH;
-    screen.scale = Math.max(1, Math.floor(devW / LOGICAL_WIDTH));
-    screen.H = Math.max(1, Math.floor(devH / screen.scale));
+    // Largest integer scale that fits the width; on a short or landscape
+    // window, step down until the logical height reaches MIN_HEIGHT.
+    let scale = Math.max(1, Math.floor(devW / LOGICAL_WIDTH));
+    while (scale > 1 && Math.floor(devH / scale) < MIN_HEIGHT) scale--;
+    screen.scale = scale;
+    screen.H = Math.max(1, Math.floor(devH / scale));
     screen.ox = Math.floor((devW - LOGICAL_WIDTH * screen.scale) / 2);
     screen.oy = Math.floor((devH - screen.H * screen.scale) / 2);
     buffer.width = LOGICAL_WIDTH;
@@ -77,10 +82,16 @@ export function createScreen(canvas, draw) {
   function present() {
     view.imageSmoothingEnabled = false;
     const { scale, ox, oy, H } = screen;
-    // The few device pixels left over around the centred image take the
-    // colour of the nearest logical pixel, so there are no seams.
-    view.drawImage(buffer, 0, 0, LOGICAL_WIDTH, H, 0, 0, devW, devH);
-    view.drawImage(buffer, 0, 0, LOGICAL_WIDTH, H, ox, oy, LOGICAL_WIDTH * scale, H * scale);
+    const W = LOGICAL_WIDTH;
+    const right = ox + W * scale;
+    const bottom = oy + H * scale;
+    // Device pixels left over around the centred image continue its edge
+    // columns and rows, so the scene runs to the screen edges with no seams.
+    if (ox > 0) view.drawImage(buffer, 0, 0, 1, H, 0, oy, ox, H * scale);
+    if (right < devW) view.drawImage(buffer, W - 1, 0, 1, H, right, oy, devW - right, H * scale);
+    if (oy > 0) view.drawImage(buffer, 0, 0, W, 1, 0, 0, devW, oy);
+    if (bottom < devH) view.drawImage(buffer, 0, H - 1, W, 1, 0, bottom, devW, devH - bottom);
+    view.drawImage(buffer, 0, 0, W, H, ox, oy, W * scale, H * scale);
   }
 
   function toLogical(clientX, clientY) {
@@ -306,6 +317,7 @@ export function publishHits(canvas, screen, rects) {
     };
   }
   canvas.dataset.hits = JSON.stringify(out);
+  canvas.dataset.layout = JSON.stringify({ W: screen.W, H: screen.H, scale: screen.scale, rects });
 }
 
 /* ---------- navigation ---------- */

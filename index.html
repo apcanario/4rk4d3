@@ -18,7 +18,7 @@
 import { COLORS, SEA_BANDS, mix, shade } from './shared/tokens.js';
 import { drawFitted, fitSize, measure } from './shared/font.js';
 import {
-  createScreen, drawScene, pixelBody, initPage, hitTest, publishHits, openPage, SEA_HEIGHT,
+  createScreen, drawScene, pixelBody, initPage, hitTest, publishHits, openPage, SEA_HEIGHT, SUN_RADIUS,
 } from './shared/pixel.js';
 import { hapticsOn, setHaptics } from './shared/settings.js';
 import { testTick } from './shared/haptics.js';
@@ -31,12 +31,14 @@ const TILES = [
   { id: 'stack', label: 'STACK', active: false },
 ];
 
-const TILE_H = 22;
-const TILE_GAP = 6;
+// Tile height and gap, largest first; short screens take a smaller pair.
+const TILE_SIZES = [[22, 6], [20, 5], [18, 4], [16, 3]];
+const SUN_CLEAR = SUN_RADIUS + 4; // tiles end this far above the horizon to keep the sun clear
 const TOGGLE_H = 15;
 const TOGGLE_W = 75;
 const SOON_FILL = mix(COLORS.skyBottom, '#FFFFFF', 0.45);
 const SOON_INK = mix(COLORS.coral, COLORS.skyBottom, 0.45);
+const SOON_SHADE = mix(SOON_FILL, COLORS.shadeTarget, 0.12);
 const TAG_FILL = '#78B4D8';
 const OFF_FILL = mix(SEA_BANDS[0], '#FFFFFF', 0.45);
 
@@ -52,47 +54,81 @@ function layout(s) {
   const r = {};
   r.wordmark = { x: mx, y: safe.top + 12, w: W - mx * 2, h: 28 };
   const tw = W - (mx + 8) * 2;
-  const stackH = TILES.length * TILE_H + (TILES.length - 1) * TILE_GAP;
-  // Keep the sun clear when the lower half has room; never rise above it.
-  let ty = horizon - 28 - stackH;
-  if (ty < Math.floor(H / 2)) ty = Math.min(Math.floor(H / 2), horizon - 8 - stackH);
-  ty = Math.max(ty, r.wordmark.y + r.wordmark.h + 10);
+  // Tiles live in the lower half and never start above it. Prefer the
+  // largest tiles that leave the sun clear; else the largest that leave at
+  // least half the sun showing; else the smallest.
+  const minTop = Math.max(Math.ceil(H / 2), r.wordmark.y + r.wordmark.h + 10);
+  const stack = ([h, g]) => TILES.length * h + (TILES.length - 1) * g;
+  let size = TILE_SIZES.find((sz) => minTop + stack(sz) <= horizon - SUN_CLEAR);
+  let ty;
+  if (size) {
+    ty = horizon - SUN_CLEAR - stack(size);
+  } else {
+    size = TILE_SIZES.find((sz) => minTop + stack(sz) <= horizon - SUN_RADIUS / 2)
+      || TILE_SIZES[TILE_SIZES.length - 1];
+    ty = minTop;
+  }
+  const [th, gap] = size;
   TILES.forEach((t, i) => {
-    r[t.id] = { x: mx + 8, y: ty + i * (TILE_H + TILE_GAP), w: tw, h: TILE_H };
+    r[t.id] = { x: mx + 8, y: ty + i * (th + gap), w: tw, h: th };
   });
   const toggleY = Math.min(horizon + 13, H - safe.bottom - 3 - TOGGLE_H);
   r.haptics = { x: Math.floor((W - TOGGLE_W) / 2), y: toggleY, w: TOGGLE_W, h: TOGGLE_H };
   return r;
 }
 
-function drawTile(ctx, t, r, labelSize) {
-  const down = pressed === t.id ? 1 : 0;
-  const y = r.y + down;
-  const fill = t.active ? COLORS.coral : SOON_FILL;
-  pixelBody(ctx, r.x, y, r.w, r.h, fill, 2);
-  const ink = t.active ? COLORS.sun : SOON_INK;
-  const pad = 8;
-  let right = r.x + r.w - pad;
+// One box computation, used both to size the labels and to draw them.
+const TILE_PAD = 6;
+const TAG_W = measure('SOON', 1) + 6;
+const TAG_H = 11;
+
+function tileParts(t, r, y) {
+  const right = r.x + r.w - TILE_PAD;
+  const parts = {};
+  let end;
   if (t.active) {
+    parts.chevron = { x: right - 4, y: y + Math.floor((r.h - 7) / 2) };
+    end = parts.chevron.x - 4;
+  } else {
+    parts.tag = { x: right - TAG_W + 2, y: y + Math.floor((r.h - TAG_H) / 2), w: TAG_W, h: TAG_H };
+    end = parts.tag.x - 4;
+  }
+  parts.label = { x: r.x + TILE_PAD, y: y + 3, w: end - (r.x + TILE_PAD), h: r.h - 6 };
+  return parts;
+}
+
+// The largest size at which every label fits its box (with room for the
+// 1 px drop shade), so all tiles share one label size.
+function labelSizeFor(tiles, rectsById) {
+  let size = 16;
+  for (const t of tiles) {
+    const box = tileParts(t, rectsById[t.id], rectsById[t.id].y).label;
+    size = Math.min(size, fitSize(t.label, box.w, box.h - 1, 16));
+  }
+  return Math.max(1, size);
+}
+
+function drawTile(ctx, t, r, labelSize) {
+  const y = r.y + (pressed === t.id ? 1 : 0);
+  const active = t.active;
+  pixelBody(ctx, r.x, y, r.w, r.h, active ? COLORS.coral : SOON_FILL, 2);
+  const parts = tileParts(t, r, y);
+  if (parts.chevron) {
     // chevron: this one opens
     ctx.fillStyle = COLORS.sun;
-    const cx = right - 4;
-    const cy = y + Math.floor((r.h - 7) / 2);
+    const { x: cx, y: cy } = parts.chevron;
     [0, 1, 2, 3, 2, 1, 0].forEach((c, i) => ctx.fillRect(cx + c, cy + i, 2, 1));
-    right = cx - 4;
-  } else {
-    // SOON tag
-    const tagW = measure('SOON', 1) + 6;
-    const tagH = 11;
-    const tx = right - tagW + 2;
-    const tagY = y + Math.floor((r.h - tagH) / 2);
-    pixelBody(ctx, tx, tagY, tagW, tagH, TAG_FILL, 1);
-    drawFitted(ctx, 'SOON', { x: tx + 3, y: tagY + 2, w: tagW - 6, h: tagH - 3 }, '#FFFFFF', { maxSize: 1 });
-    right = tx - 4;
   }
-  const box = { x: r.x + pad, y: y + 3, w: right - (r.x + pad), h: r.h - 6 };
-  const shadow = t.active ? shade(COLORS.coral) : null;
-  drawFitted(ctx, t.label, box, ink, { align: 'left', maxSize: labelSize, shadow });
+  if (parts.tag) {
+    const g = parts.tag;
+    pixelBody(ctx, g.x, g.y, g.w, g.h, TAG_FILL, 1);
+    drawFitted(ctx, 'SOON', { x: g.x + 3, y: g.y + 2, w: g.w - 6, h: g.h - 3 }, '#FFFFFF', { maxSize: 1 });
+  }
+  return drawFitted(ctx, t.label, parts.label, active ? COLORS.sun : SOON_INK, {
+    align: 'left',
+    maxSize: labelSize,
+    shadow: active ? shade(COLORS.coral) : SOON_SHADE,
+  });
 }
 
 function drawToggle(ctx, r) {
@@ -121,14 +157,10 @@ function draw(ctx, s) {
   });
   drawFitted(ctx, 'RLX', rects.wordmark, COLORS.coral, { maxSize: 6 });
 
-  // One label size for every tile: the largest that fits them all.
-  let labelSize = 16;
-  for (const t of TILES) {
-    const r = rects[t.id];
-    const reserve = t.active ? 16 : measure('SOON', 1) + 6 + 8;
-    labelSize = Math.min(labelSize, fitSize(t.label, r.w - 8 - reserve, r.h - 7, 16));
-  }
-  for (const t of TILES) drawTile(ctx, t, rects[t.id], Math.max(1, labelSize));
+  const labelSize = labelSizeFor(TILES, rects);
+  const drawn = {};
+  for (const t of TILES) drawn[t.id] = drawTile(ctx, t, rects[t.id], labelSize);
+  canvas.dataset.labels = JSON.stringify(drawn);
   drawToggle(ctx, rects.haptics);
   publishHits(canvas, s, { bricks: rects.bricks, catch: rects.catch, stack: rects.stack, haptics: rects.haptics });
 }

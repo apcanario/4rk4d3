@@ -5,7 +5,7 @@
 // file under the new name, takes over at once and deletes the old caches.
 // The next launch runs the new files. Add any new shipped file to FILES.
 
-const VERSION = 'rlx-v1';
+const VERSION = 'rlx-v2';
 
 const FILES = [
   './',
@@ -54,13 +54,25 @@ self.addEventListener('fetch', (event) => {
     const hit = await cache.match(req, { ignoreSearch: true });
     if (hit) return hit;
     if (req.mode === 'navigate') {
-      // a folder URL without its slash, or index.html spelled out
-      const alt = url.pathname.endsWith('/') ? url.pathname + 'index.html' : url.pathname + '/';
-      const altHit = await cache.match(alt, { ignoreSearch: true });
-      if (altHit) return altHit;
+      if (url.pathname.endsWith('/')) {
+        // the folder spelled with index.html is the same page
+        const page = await cache.match(url.pathname + 'index.html');
+        if (page) return page;
+      } else if (!url.pathname.endsWith('.html')) {
+        // A folder without its slash: redirect, so relative paths resolve
+        // against the folder (serving the body here would blank the page).
+        const folder = new URL(url.pathname + '/', url);
+        folder.search = url.search;
+        if (await cache.match(folder.pathname)) return Response.redirect(folder.href, 301);
+      }
     }
     try {
       const res = await fetch(req);
+      if (res.redirected) {
+        // A navigation must not get a redirected body under the old URL.
+        if (req.mode === 'navigate') return Response.redirect(res.url, 301);
+        return res;
+      }
       if (res.ok && res.type === 'basic') cache.put(req, res.clone());
       return res;
     } catch (err) {
