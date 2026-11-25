@@ -4,10 +4,18 @@
 //
 // Coordinates are logical px (PLAN §3), y down. Positions may be fractional;
 // the renderer rounds them. The state is a plain JSON-able object, saved as is.
+//
+// Pace (PLAN §2b, §6 Ball): s.pace is the hidden pace, the speed the next
+// flight takes; s.speed is the speed of the ball in flight. The pace changes
+// at a paddle return (+gain) and a miss (-loss), clamped between speedMin and
+// a ceiling that falls from speedMax to speedMin over the dusk slowdown. The
+// ball takes the pace only at a paddle bounce or a new serve, never in flight.
+// The session clock is not read here: callers pass ease, how far the dusk
+// slowdown has gone (0 to 1, shared/session.js slowdownOf), so tests drive it.
 
 export const STEP_HZ = 120;
 export const DT = 1 / STEP_HZ;
-export const STATE_VERSION = 1;
+export const STATE_VERSION = 2; // 2: pace and speed (row B2)
 
 // Field (PLAN §6 Field, Endless refill)
 export const COLS = 7;
@@ -38,7 +46,11 @@ const DEG = Math.PI / 180;
 
 // Used when a caller's cfg leaves a tuning value out (bricks.js sets them all).
 export const DEFAULTS = Object.freeze({
-  ballSpeed: 95,
+  speedMin: 80,
+  speedStart: 90,
+  speedMax: 125,
+  gainPerReturn: 1,
+  lossPerMiss: 12,
   refillBelow: 35,
   serveAngleDeg: 10, // each new ball leaves this far from vertical, alternating left and right
   loopBounces: 3, // serves and paddle bounces in a row with no brick popped before nudging
@@ -78,6 +90,8 @@ export function create(geo, cfg, score = 0) {
     serves: 0, // balls served so far: their parity picks the serve side
     idle: 0, // serves and paddle bounces since the last brick popped
     nudges: 0, // loop nudges so far: their parity picks the nudge side
+    pace: opt(cfg, 'speedStart'), // hidden pace: the speed the next flight takes
+    speed: opt(cfg, 'speedStart'), // speed of the ball in flight
   };
   spawn(s, cfg);
   return s;
@@ -102,11 +116,15 @@ function launch(s, cfg, a, side) {
 
 // A new ball rises from the paddle centre, a little off vertical, first to
 // the left, then to the right, so a still thumb never serves the same line.
-function spawn(s, cfg) {
+// ease: the dusk slowdown now; the pace is clamped to the ceiling as it
+// stands at the serve, since the ceiling may have fallen during the respawn.
+function spawn(s, cfg, ease = 0) {
   const side = s.serves % 2 === 0 ? -1 : 1;
   const a = launch(s, cfg, side * opt(cfg, 'serveAngleDeg') * DEG, side);
   s.ball = { x: s.paddleX + (PADDLE_W - BALL) / 2, y: s.geo.paddleY - BALL, vx: 0, vy: 0 };
-  setAngle(s.ball, opt(cfg, 'ballSpeed'), a);
+  s.pace = clampPace(s.pace, cfg, ease);
+  s.speed = s.pace; // a new flight takes the pace
+  setAngle(s.ball, s.speed, a);
   s.serves += 1;
   s.respawn = 0;
 }
@@ -233,8 +251,32 @@ function earliest(s, maxT, slideV) {
 
 // The field slides at ROW_H / SLIDE_S = 22.5 px/s. A brick that is hit is
 // popped at once, so the ball never meets the same moving brick twice.
-function speedOf(cfg) {
-  return opt(cfg, 'ballSpeed');
+
+/* ---------- pace ---------- */
+
+/** The pace ceiling: speedMax, falling linearly to speedMin as ease goes 0 to 1. */
+export function ceilingOf(cfg, ease = 0) {
+  const e = Math.max(0, Math.min(1, ease || 0));
+  return opt(cfg, 'speedMax') - (opt(cfg, 'speedMax') - opt(cfg, 'speedMin')) * e;
+}
+
+function clampPace(v, cfg, ease) {
+  return Math.max(opt(cfg, 'speedMin'), Math.min(ceilingOf(cfg, ease), v));
+}
+
+/** The session clock was reset: the pace starts again. The ball in flight keeps its speed. */
+export function resetPace(s, cfg) {
+  s.pace = opt(cfg, 'speedStart');
+}
+
+/** Rally (PLAN §6 Ball): paddle returns since the last miss. Not part of the state. */
+export function rallyAfter(n, events) {
+  let r = n;
+  for (const e of events) {
+    if (e.type === 'paddle') r += 1;
+    else if (e.type === 'splash') r = 0;
+  }
+  return r;
 }
 
 function setAngle(b, speed, fromVertical) {
@@ -256,12 +298,15 @@ function settle(b, speed) {
   b.vy *= k;
 }
 
-function paddleBounce(s, cfg) {
+function paddleBounce(s, cfg, ease) {
   const b = s.ball;
+  // A clean return: the pace rises, and the ball takes it here, at the bounce.
+  s.pace = clampPace(s.pace + opt(cfg, 'gainPerReturn'), cfg, ease);
+  s.speed = s.pace;
   // -1 at the left end of the paddle, 0 at its centre, 1 at the right end.
   const off = (b.x + BALL / 2 - (s.paddleX + PADDLE_W / 2)) / (PADDLE_W / 2);
   const a = launch(s, cfg, Math.max(-1, Math.min(1, off)) * MAX_BOUNCE, 0);
-  setAngle(b, speedOf(cfg), a);
+  setAngle(b, s.speed, a);
 }
 
 /** Set vx to v, keep the sign of vy, keep the speed exact. */
@@ -271,9 +316,8 @@ function setVx(b, v, speed) {
   b.vy = (b.vy < 0 ? -1 : 1) * Math.sqrt(Math.max(0, speed * speed - vx * vx));
 }
 
-function resolve(s, hits, cfg, events) {
+function resolve(s, hits, cfg, events, ease) {
   const b = s.ball;
-  const speed = speedOf(cfg);
   const vx0 = b.vx;
   const vy0 = b.vy;
   // Paddle first (it sets the whole velocity); then sign rules, which are
@@ -281,7 +325,7 @@ function resolve(s, hits, cfg, events) {
   for (const h of hits) {
     if (h.kind !== 'paddle') continue;
     if (h.y && vy0 > 0) {
-      paddleBounce(s, cfg);
+      paddleBounce(s, cfg, ease);
       events.push({ type: 'paddle' });
     } else if (h.x) {
       b.vx = vx0 > 0 ? -Math.abs(b.vx) : Math.abs(b.vx);
@@ -309,7 +353,7 @@ function resolve(s, hits, cfg, events) {
       if (h.y) b.vy = vy0 > 0 ? -Math.abs(b.vy) : Math.abs(b.vy);
     }
   }
-  settle(b, speed);
+  settle(b, s.speed);
 }
 
 function advanceSlide(s, dt) {
@@ -321,10 +365,11 @@ function advanceSlide(s, dt) {
 /* ---------- step ---------- */
 
 /**
- * Advance the game by one fixed step (DT). cfg: { ballSpeed, refillBelow }.
+ * Advance the game by one fixed step (DT). cfg: the tuning block (speeds,
+ * refillBelow, ...). ease: how far the dusk slowdown has gone, 0 to 1.
  * Returns events: { type: 'brick', x, y, c } | { type: 'paddle' } | { type: 'splash', x }.
  */
-export function step(s, cfg) {
+export function step(s, cfg, ease = 0) {
   const events = [];
   if (s.slide === null && !s.fade && brickCount(s) < cfg.refillBelow) startRefill(s);
 
@@ -353,7 +398,7 @@ export function step(s, cfg) {
     advanceSlide(s, dt);
     t -= dt;
     zeroHits = dt > EPS ? 0 : zeroHits + 1;
-    if (hit) resolve(s, hit.hits, cfg, events);
+    if (hit) resolve(s, hit.hits, cfg, events, ease);
   }
   // Rounding never lets the ball leave the walls.
   if (s.ball) {
@@ -374,9 +419,10 @@ export function step(s, cfg) {
     events.push({ type: 'splash', x: s.ball.x + BALL / 2 });
     s.ball = null;
     s.respawn = RESPAWN_S;
+    s.pace = clampPace(s.pace - opt(cfg, 'lossPerMiss'), cfg, ease); // a miss
   } else if (!s.ball) {
     s.respawn -= DT;
-    if (s.respawn <= EPS) spawn(s, cfg);
+    if (s.respawn <= EPS) spawn(s, cfg, ease);
   }
   s.time += DT;
   return events;
@@ -389,7 +435,7 @@ export function step(s, cfg) {
  * else off the side, away from the paddle. Not live (paused or resuming):
  * nothing bounces and the paddle stops at the ball's side.
  */
-export function movePaddle(s, dx, cfg, live = true) {
+export function movePaddle(s, dx, cfg, live = true, ease = 0) {
   const events = [];
   const from = s.paddleX;
   s.paddleX = Math.max(0, Math.min(s.geo.W - PADDLE_W, s.paddleX + dx));
@@ -398,7 +444,6 @@ export function movePaddle(s, dx, cfg, live = true) {
   const inside = () => b && b.x + BALL > s.paddleX + EPS && b.x < s.paddleX + PADDLE_W - EPS
     && b.y + BALL > g.paddleY + EPS && b.y < g.paddleY + PADDLE_H - EPS;
   if (!inside()) return events;
-  const speed = speedOf(cfg);
   const left = b.x + BALL / 2 < s.paddleX + PADDLE_W / 2;
   if (!live) {
     // stop at the ball's side (the side the paddle came from)
@@ -409,13 +454,14 @@ export function movePaddle(s, dx, cfg, live = true) {
   }
   if (b.y + BALL / 2 < g.paddleY + PADDLE_H / 2) {
     b.y = g.paddleY - BALL;
-    paddleBounce(s, cfg);
-    settle(b, speed);
+    paddleBounce(s, cfg, ease);
+    settle(b, s.speed);
     events.push({ type: 'paddle' });
     return events;
   }
   // Side: push the ball out, away from the paddle; against a wall, the
   // paddle stops at the ball instead.
+  const speed = s.speed;
   const away = Math.max(Math.abs(b.vx), speed * Math.sin(MIN_ANGLE));
   if (left) {
     b.x = s.paddleX - BALL;
@@ -486,6 +532,8 @@ export function restore(obj, geo, cfg) {
   const idle = counter(obj.idle);
   const nudges = counter(obj.nudges);
   if (serves < 0 || idle < 0 || nudges < 0) return null;
+  const inRange = (v) => isNum(v) && v >= opt(cfg, 'speedMin') && v <= opt(cfg, 'speedMax');
+  if (!inRange(obj.pace) || !inRange(obj.speed)) return null;
   let ball = null;
   if (obj.ball !== null) {
     const b = obj.ball;
@@ -510,8 +558,10 @@ export function restore(obj, geo, cfg) {
     serves,
     idle,
     nudges,
+    pace: obj.pace,
+    speed: obj.speed,
   };
-  if (ball) settle(ball, speedOf(cfg));
+  if (ball) settle(ball, s.speed);
   setGeometry(s, geo);
   return s;
 }

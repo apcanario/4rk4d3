@@ -74,5 +74,33 @@ Review (reviewer found no blockers; verdict accept):
 2. should-fix, X5 lacked a stale-worker step: it now says to close and reopen RLX twice before testing. Fixed.
 3. nit, activation carry-over across the hub tap on Chrome for Android (as opposed to desktop Chromium) is unverified: stated above.
 
-Deferred: X5 (device check by Pedro), X6 (silent first hold after a load without a tap), X7 (a test that sees the vibrate gate).
+Device check (Pedro, 2026-11-25, after the build): haptics work on his phone. No code was changed, so the earlier silence was a phone or load-path matter, most likely the X6 case (page opened without the hub tap) or a stale worker; the exact cause was not pinned down. X5 is closed.
+
+Deferred: X6 (silent first hold after a load without a tap), X7 (a test that sees the vibrate gate).
+
+## 2026-11-25: B2 wind-down rules in Bricks
+
+Models that ran: main chat Sonnet 5.5 (claude-sonnet-5-5); builder Opus 5.5 (claude-opus-5-5); reviewer Opus 5.5 (claude-opus-5-5), which had not seen the build; fixes applied by a second Opus 5.5 agent (claude-opus-5-5).
+
+Built:
+- shared/session.js (new, shipped): the one session clock for all games, counting active play only, saved under rlx.v1.session with the time of the last active play, reset after 5 minutes without play; the SESSION block (ramp 10, slowdown 2, reset gap 5 minutes, 10 scene steps, stars from step 8); phase, step and slowdown helpers.
+- shared/tokens.js and theme.css: dusk tokens (sky #CDB8E0 #F0A9A6, sea #6FA3C4 #5F93B8 #5083AB, star #FFFFFF) and scenePalette, a flat mix per step.
+- shared/pixel.js: drawScene takes the phase and draws it in flat steps: sky and sea bands toward dusk, the sun sinking below the horizon, white stars in the last three steps.
+- Hub: draws the phase of the saved clock, never advances it, shows sunset after the reset gap and redraws at that moment if left open.
+- Bricks: hidden pace (80 to 125, start 90, +1 per paddle return, -12 per miss, applied only at a paddle bounce or a new serve), the dusk slowdown (ceiling 125 to 80 over minutes 10 to 12, passed into physics.js as ease), the clock reset back to 90, the rally number under the score in the same blue (not saved), the scene redrawn when its step changes. State version 2 adds pace and speed; a B1 save gives a fresh field with its score kept. Haptics path untouched.
+- Tests: tests/bricks-sim.mjs 210 checks (was 134), including the 15-minute run with misses (speed 80 at the first bounce after minute 12, 723.2 s) and the readability check; tests/check.py 152 checks (was 134), all passing. Service worker cache rlx-v6, shared/session.js added to FILES. README layout and tests text updated.
+
+Readability (CIE76 delta E in CIELAB, threshold 10, each foreground against the scene colours under it, sunset and all 10 steps): passes on H 300 (both test phones, weakest 13.6) and H 330. On H 240 one pair is under: brick row 7 #FFB2C4 on sky band 7 at step 10, 9.99. Proposed as X9; no change made, PLAN fixes both colours. In the browser at 360x800 full dusk, each brick row, the paddle, the ball and the rally keep their token colours, weakest 16.4 against the sky beside them.
+
+Not verifiable headless: whether the pace change is noticeable (PLAN says it should not be), how the dusk looks on the phone's screen, real 12-minute sessions across app kills, Date.now jumps on the device.
+
+Review findings and fixes (no blockers; verdict accept):
+1. A new serve could start slightly above the falling ceiling: spawn used the pace clamped at the miss 600 ms earlier, so a serve just after minute 12 flew at about 80.2. physics.js now clamps the pace to the ceiling at the serve (ease passed into spawn). New sim check: a serve after minute 12 flies at exactly 80; it fails with the clamp removed (80.1125). Fixed.
+2. A device clock set backwards was never stale, so the 5-minute reset never fired. isStale in shared/session.js now also treats now earlier than the last active play as stale. Two new sim checks; both fail without the fix. Fixed.
+3. Weak tests. The sim check for paused time now drives the clock as the loop does (90 s of 120 Hz steps, 4 minutes paused, 30 s more: 120 s); it fails if paused wall time is counted. New browser check: hidden 3 s with the finger up, the saved clock stays the same. The rally browser check now asserts +1 at each paddle return and 0 at a miss through the test hook. Fixed.
+4. Bricks left paused over 5 minutes shows the old scene until the next touch; documented in X8(g). Deferred.
+5. A ball restored mid-flight gives 91 at its first bounce; X8(c). Deferred.
+6. The saved pace is kept when Bricks is reopened within 5 minutes, while PLAN §6 says a new launch starts at 90; X8(b). Left for Pedro's veto.
+
+Deferred: X8 (PLAN amendments for the choices made where it is silent), X9 (brick row 7 at full dusk on the smallest screen).
 

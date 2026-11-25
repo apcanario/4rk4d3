@@ -1,7 +1,8 @@
 // RLX pixel layer (PLAN §3, §4): canvas setup, integer scaling, stepped-corner
 // shapes, dither, the sunset scene, and page hygiene shared by every page.
 
-import { LOGICAL_WIDTH, COLORS, SEA_BANDS, SKY_BANDS, mix, shade, highlight } from './tokens.js';
+import { LOGICAL_WIDTH, COLORS, SKY_BANDS, mix, shade, highlight, scenePalette } from './tokens.js';
+import { SESSION, sceneStep } from './session.js';
 
 export const SEA_HEIGHT = 42;
 export const SUN_RADIUS = 24;
@@ -237,41 +238,71 @@ const GLINTS = [
   [60, 34, 4], [110, 37, 5],
 ];
 
+// Stars for the last steps of the ramp: [x, fraction down the page's open
+// sky]. starsFromStep shows the first pair; each later step adds a pair.
+const STARS = [
+  [22, 0.05], [116, 0.6], [66, 0.32], [127, 0.95], [5, 0.75], [86, 0.9],
+];
+
+function drawStar(ctx, x, y) {
+  ctx.fillStyle = COLORS.star;
+  ctx.fillRect(x - 1, y, 3, 1);
+  ctx.fillRect(x, y - 1, 1, 3);
+}
+
+/** Stars shown at a scene step. */
+export function starsAt(step) {
+  return Math.max(0, Math.min(STARS.length, (step - SESSION.starsFromStep + 1) * 2));
+}
+
 /**
- * Paint the static sunset scene (PLAN §3 Scene) over the whole buffer.
- * clouds: array of [x, y] in logical px. Returns { horizon }.
+ * Paint the scene (PLAN §3 Scene, §2b) over the whole buffer at a phase of
+ * the exit ramp, 0 (sunset) to 1 (dusk), drawn in flat steps: the sky and
+ * sea bands are a flat mix toward the dusk tokens, the sun sinks below the
+ * horizon, and white stars show in the last steps.
+ * clouds: array of [x, y] in logical px. stars: [y0, y1], the open sky the
+ * stars are spread over. Returns { horizon, step }.
  */
-export function drawScene(ctx, W, H, { clouds = defaultClouds(H), sunX = 96 } = {}) {
+export function drawScene(ctx, W, H, {
+  clouds = defaultClouds(H), sunX = 96, phase = 0, stars: starSky = null,
+} = {}) {
   const horizon = H - SEA_HEIGHT;
+  const step = sceneStep(phase);
+  const t = step / SESSION.sceneSteps;
+  const pal = scenePalette(t);
 
   // Sky: 10 flat bands sky-top to sky-bottom, dither seam between bands.
   const skyH = [];
-  const skyC = [];
   for (let i = 0; i < SKY_BANDS; i++) {
     const y0 = Math.round((i * horizon) / SKY_BANDS);
     const y1 = Math.round(((i + 1) * horizon) / SKY_BANDS);
     skyH.push(y1 - y0);
-    skyC.push(mix(COLORS.skyTop, COLORS.skyBottom, i / (SKY_BANDS - 1)));
   }
-  bands(ctx, 0, 0, W, skyH, skyC);
+  bands(ctx, 0, 0, W, skyH, pal.sky);
+
+  const [s0, s1] = starSky || [Math.round(horizon * 0.1), Math.round(horizon * 0.6)];
+  const stars = starsAt(step);
+  for (let i = 0; i < stars; i++) drawStar(ctx, STARS[i][0], Math.round(s0 + STARS[i][1] * (s1 - s0)));
 
   for (let i = 0; i < clouds.length; i++) drawCloud(ctx, clouds[i][0], clouds[i][1], i);
 
-  // Sun: pale half-disc of radius 24 on the horizon, right of centre.
+  // Sun: pale half-disc of radius 24 on the horizon, right of centre; it
+  // sinks with the steps and is below the horizon at the last one.
+  const sink = Math.round(t * SUN_RADIUS);
   ctx.fillStyle = COLORS.sun;
-  for (let dy = 1; dy <= SUN_RADIUS; dy++) {
+  for (let dy = 1 + sink; dy <= SUN_RADIUS; dy++) {
     const half = Math.round(Math.sqrt(SUN_RADIUS * SUN_RADIUS - (dy - 0.5) * (dy - 0.5)));
-    if (half > 0) ctx.fillRect(sunX - half, horizon - dy, half * 2, 1);
+    if (half > 0) ctx.fillRect(sunX - half, horizon - (dy - sink), half * 2, 1);
   }
 
   // Sea: three bands with dither seams and pale glint dashes.
   const seaH = [13, 14, SEA_HEIGHT - 27];
-  bands(ctx, 0, horizon, W, seaH, SEA_BANDS);
-  ctx.fillStyle = mix(COLORS.sun, SEA_BANDS[0], 0.15);
+  bands(ctx, 0, horizon, W, seaH, pal.sea);
+  ctx.fillStyle = mix(COLORS.sun, pal.sea[0], 0.15);
   for (const [gx, gy, len] of GLINTS) {
     if (gy < SEA_HEIGHT - 1) ctx.fillRect(gx, horizon + gy, Math.min(len, W - gx), 1);
   }
-  return { horizon };
+  return { horizon, step };
 }
 
 export function defaultClouds(H) {

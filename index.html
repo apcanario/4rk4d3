@@ -22,6 +22,7 @@ import {
 } from './shared/pixel.js';
 import { hapticsOn, setHaptics } from './shared/settings.js';
 import { testTick } from './shared/haptics.js';
+import { readClock, phaseOf, sceneStep, SESSION } from './shared/session.js';
 
 initPage();
 
@@ -45,6 +46,19 @@ const OFF_FILL = mix(SEA_BANDS[0], '#FFFFFF', 0.45);
 let pressed = null;
 let haptics = hapticsOn();
 let rects = {};
+let resetTimer = 0;
+
+// The hub never advances the clock; it shows the phase of the saved clock.
+// After the reset gap that is sunset; a hub left open redraws at that moment.
+function currentPhase() {
+  const { clock } = readClock(Date.now());
+  clearTimeout(resetTimer);
+  if (clock.last !== null && clock.active > 0) {
+    const wait = clock.last + SESSION.resetGapMin * 60 * 1000 - Date.now();
+    resetTimer = setTimeout(() => screen.render(), Math.max(0, wait) + 50);
+  }
+  return phaseOf(clock.active);
+}
 
 function layout(s) {
   const { W, H, safe } = s;
@@ -148,13 +162,17 @@ function draw(ctx, s) {
   const firstTile = rects[TILES[0].id].y;
   const wordBottom = rects.wordmark.y + rects.wordmark.h;
   const open = firstTile - wordBottom;
+  const phase = currentPhase();
   drawScene(ctx, s.W, s.H, {
     clouds: [
       [96, wordBottom + Math.round(open * 0.2)],
       [10, wordBottom + Math.round(open * 0.5)],
       [62, wordBottom + Math.round(open * 0.78)],
     ],
+    phase,
+    stars: [wordBottom + 2, firstTile - 3],
   });
+  canvas.dataset.scene = String(sceneStep(phase));
   drawFitted(ctx, 'RLX', rects.wordmark, COLORS.coral, { maxSize: 6 });
 
   const labelSize = labelSizeFor(TILES, rects);
@@ -206,6 +224,7 @@ const release = () => { if (pressed) { pressed = null; screen.render(); } };
 canvas.addEventListener('pointercancel', release);
 canvas.addEventListener('pointerleave', release);
 addEventListener('pageshow', () => { pressed = null; haptics = hapticsOn(); screen.render(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) screen.render(); });
 </script>
 </body>
 </html>

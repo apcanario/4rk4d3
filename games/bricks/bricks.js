@@ -1,9 +1,15 @@
 // Bricks (PLAN §6): rendering, input, pause and save, haptics. The simulation
 // lives in physics.js (no DOM); this file draws it and feeds it the thumb.
 
-// Tuning: one block (PLAN §6 Tuning). tests/bricks-sim.mjs reads it from here.
+// Tuning: one block (PLAN §6 Tuning, §6a). tests/bricks-sim.mjs reads it from
+// here. The ramp, slowdown and reset-gap lengths are shared: SESSION in
+// shared/session.js.
 export const CONFIG = Object.freeze({
-  ballSpeed: 95, // logical px per second, constant
+  speedMin: 80, // ball speed, logical px per second: the pace (PLAN §2b, §6 Ball)
+  speedStart: 90, // a new launch or a session-clock reset starts here
+  speedMax: 125, // the ceiling, which falls to speedMin in the dusk slowdown
+  gainPerReturn: 1, // each clean paddle return
+  lossPerMiss: 12, // each miss
   sensitivity: 1.2, // paddle px per finger px, relative drag
   hapticBrickMs: 8,
   hapticPaddleMs: 16,
@@ -22,6 +28,9 @@ import {
 } from '../../shared/pixel.js';
 import { load, save } from '../../shared/store.js';
 import { tick } from '../../shared/haptics.js';
+import {
+  readClock, saveClock, beginPlay, addPlay, isStale, phaseOf, sceneStep, slowdownOf,
+} from '../../shared/session.js';
 import * as P from './physics.js';
 
 initPage();
@@ -41,7 +50,11 @@ const canvas = document.getElementById('screen');
 let game = null;
 let rects = null;
 let layoutKey = '';
-let bg = null; // the static scene for the current layout
+let bg = null; // the scene for the current layout and scene step
+let bgStep = -1;
+let clock = null; // the shared session clock (shared/session.js)
+let clockReset = false; // the clock was reset on load: the pace starts again
+let rally = 0; // paddle returns since the last miss; never saved
 let mode = 'paused'; // 'paused' | 'resuming' | 'running'
 let resumeAt = 0;
 let raf = 0;
@@ -78,12 +91,19 @@ function storedScore() {
   return Number.isSafeInteger(n) && n >= 0 ? n : 0;
 }
 
+function loadClock() {
+  const r = readClock(Date.now());
+  clock = r.clock;
+  clockReset = r.reset;
+}
+
 function loadGame(geo) {
   const raw = load(SAVE_NAME, null, P.STATE_VERSION);
   const s = P.restore(raw, geo, CONFIG);
   const kept = storedScore();
   if (s) {
     s.score = Math.max(s.score, kept);
+    if (clockReset) P.resetPace(s, CONFIG); // a new session starts at speedStart
     return s;
   }
   // Corrupt or old-version save: a fresh field, the score kept if readable.
@@ -96,6 +116,7 @@ function persist() {
   if (!game) return;
   save(SAVE_NAME, game, P.STATE_VERSION);
   save(SCORE_NAME, game.score, 1);
+  if (clock) saveClock(clock);
 }
 
 /* ---------- layout and drawing ---------- */
@@ -104,14 +125,16 @@ function layout(s) {
   const side = Math.max(s.safe.left, s.safe.right);
   const back = { x: 4 + side, y: 5 + s.safe.top, w: BACK_SIZE.w, h: BACK_SIZE.h };
   const sx = back.x + back.w + 6;
-  const score = { x: sx, y: back.y, w: s.W - 4 - side - sx, h: back.h };
+  // Score on the back control's top line, the rally number under it.
+  const score = { x: sx, y: back.y, w: s.W - 4 - side - sx, h: 7 };
+  const rallyBox = { x: sx, y: back.y + 9, w: score.w, h: 7 };
   const horizon = s.H - SEA_HEIGHT;
   const geo = P.geometry(s.W, back.y + back.h + 5, horizon);
   const ring = { x: Math.floor(s.W / 2), y: Math.min(horizon + 21, s.H - s.safe.bottom - RING_R - 2) };
-  return { back, score, geo, ring };
+  return { back, score, rally: rallyBox, geo, ring };
 }
 
-function paintBackground(s) {
+function paintBackground(s, phase) {
   const c = document.createElement('canvas');
   c.width = s.W;
   c.height = s.H;
@@ -120,7 +143,9 @@ function paintBackground(s) {
   const open0 = rects.geo.top + P.MAX_ROWS * P.ROW_H + 4;
   const open1 = Math.max(open0, rects.geo.paddleY - 12);
   const at = (f) => Math.round(open0 + (open1 - open0) * f);
-  drawScene(g, s.W, s.H, { clouds: [[92, at(0.1)], [10, at(0.45)], [44, at(0.85)]] });
+  drawScene(g, s.W, s.H, {
+    clouds: [[92, at(0.1)], [10, at(0.45)], [44, at(0.85)]], phase, stars: [open0, open1],
+  });
   return c;
 }
 
@@ -175,11 +200,20 @@ function drawRing(ctx) {
 
 function draw(ctx, s) {
   const key = `${s.W}x${s.H}@${s.scale}:${s.safe.top},${s.safe.right},${s.safe.bottom},${s.safe.left}`;
+  if (!clock) loadClock();
+  // The phase of the clock as it stands: after the reset gap, sunset (the
+  // clock itself resets when play starts again).
+  const phase = isStale(clock, Date.now()) ? 0 : phaseOf(clock.active);
   if (key !== layoutKey || !rects) {
     rects = layout(s);
     if (!game) game = loadGame(rects.geo);
     else P.setGeometry(game, rects.geo);
-    bg = paintBackground(s);
+    bgStep = -1;
+  }
+  if (sceneStep(phase) !== bgStep) {
+    bg = paintBackground(s, phase);
+    bgStep = sceneStep(phase);
+    canvas.dataset.scene = String(bgStep);
   }
   ctx.drawImage(bg, 0, 0);
   drawBricks(ctx);
@@ -213,13 +247,17 @@ function draw(ctx, s) {
   }
   if (mode === 'paused') drawRing(ctx);
 
-  drawFitted(ctx, String(game.score), rects.score, COLORS.blue, { align: 'right', maxSize: 1 });
+  const hud = {
+    score: drawFitted(ctx, String(game.score), rects.score, COLORS.blue, { align: 'right', maxSize: 1 }),
+    rally: drawFitted(ctx, String(rally), rects.rally, COLORS.blue, { align: 'right', maxSize: 1 }),
+  };
   drawBackControl(ctx, rects.back.x, rects.back.y, backPressed);
 
   if (key !== layoutKey) {
     layoutKey = key;
-    publishHits(canvas, s, { back: rects.back });
+    publishHits(canvas, s, { back: rects.back, score: rects.score, rally: rects.rally });
   }
+  canvas.dataset.hud = JSON.stringify(hud); // drawn text sizes (0: did not fit)
 }
 
 /* ---------- effects, advanced with the simulation ---------- */
@@ -254,7 +292,7 @@ function fxStep(dt) {
     fx.trail.length = 0;
     fx.travel = 0;
   } else if (!still) {
-    fx.travel += CONFIG.ballSpeed * dt;
+    fx.travel += game.speed * dt;
     if (!fx.trail.length || fx.travel >= TRAIL_SPACING) {
       fx.travel = 0;
       fx.trail.unshift({ x: b.x + P.BALL / 2, y: b.y + P.BALL / 2 });
@@ -264,6 +302,7 @@ function fxStep(dt) {
 }
 
 function handle(events) {
+  rally = P.rallyAfter(rally, events);
   for (const e of events) {
     if (e.type === 'brick') {
       tick(CONFIG.hapticBrickMs);
@@ -285,13 +324,18 @@ function frame(now) {
     mode = 'running';
     last = now;
     acc = 0;
+    // Active play starts: after the reset gap the clock and the pace start again.
+    if (beginPlay(clock, Date.now())) P.resetPace(game, CONFIG);
   }
   if (mode === 'running') {
     acc += Math.min(0.1, Math.max(0, (now - last) / 1000));
     last = now;
+    const wall = Date.now();
     while (acc >= P.DT) {
       acc -= P.DT;
-      handle(P.step(game, CONFIG));
+      // Only running steps advance the session clock: paused time never does.
+      addPlay(clock, P.DT, wall);
+      handle(P.step(game, CONFIG, slowdownOf(clock.active)));
       fxStep(P.DT);
     }
   }
@@ -354,7 +398,7 @@ canvas.addEventListener('pointermove', (e) => {
   // Only a running game bounces the ball or ticks; while resuming the paddle
   // just moves (and stops at the ball).
   const live = mode === 'running';
-  const ev = P.movePaddle(game, dx * CONFIG.sensitivity, CONFIG, live);
+  const ev = P.movePaddle(game, dx * CONFIG.sensitivity, CONFIG, live, slowdownOf(clock.active));
   if (live) handle(ev);
 });
 
@@ -411,6 +455,9 @@ Object.defineProperty(window, '__bricks', {
       raf: !!raf,
       fingers: pointers.size,
       count: game ? P.brickCount(game) : 0,
+      rally,
+      clock: clock ? { ...clock } : null,
+      step: bgStep,
       particles: fx.particles.length,
       trail: fx.trail.length,
       game: game ? JSON.parse(JSON.stringify(game)) : null,

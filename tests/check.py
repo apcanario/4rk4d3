@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RLX checks (rows H1 and B1) in headless Chromium and Node. Not needed to run the app.
+"""RLX checks (rows H1, B1 and B2) in headless Chromium and Node. Not needed to run the app.
 
 Needs Python Playwright with Chromium (pip install playwright;
 python -m playwright install chromium). Run: python3 tests/check.py
@@ -9,7 +9,10 @@ haptics setting persists, service worker offline, cache version bump, no
 console errors, no requests to another host. Row B1: runs tests/bricks-sim.mjs
 (physics in Node) and plays Bricks in the browser: pause and resume, relative
 drag, save on pause and on hide, restore after a kill, corrupt and old saves,
-haptics on and off, reduced motion, no loop while paused. Screenshots go to tests/out/.
+haptics on and off, reduced motion, no loop while paused. Row B2: the session
+clock (paused time never advances it, saved with the game), the hub drawing
+the scene phase of the saved clock, Bricks at full dusk (colours kept and
+readable), the reset after the gap. Screenshots go to tests/out/.
 """
 import functools
 import http.server
@@ -428,6 +431,36 @@ def track(page, ms, x, y, scale, k):
     page.mouse.up()
 
 
+def rally_watch(page, ms, x, y, scale, k, follow, until):
+    """Hold a finger and steer the paddle to (follow) or away from the ball,
+    polling the test hook; returns the rally transitions seen as
+    (before, after, ball_after, vy_after) until until(transitions) or ms pass."""
+    width = page.viewport_size["width"]
+    cur = x
+    page.mouse.move(cur, y)
+    page.mouse.down()
+    seen = []
+    prev = snap(page)["rally"]
+    end = time.time() + ms / 1000
+    while time.time() < end and not until(seen):
+        q = snap(page)
+        g = q["game"]
+        if q["rally"] != prev:
+            seen.append((prev, q["rally"], g["ball"] is not None, g["ball"]["vy"] if g["ball"] else None))
+            prev = q["rally"]
+        if g["ball"]:
+            d = g["ball"]["x"] + 2.5 - (g["paddleX"] + 15)
+            if not follow:
+                d = -40 if d >= 0 else 40
+            nxt = max(2, min(width - 2, cur + max(-12, min(12, d / 1.2 * scale * k))))
+            if abs(nxt - cur) > 0.01:
+                page.mouse.move(nxt, y)
+                cur = nxt
+        page.wait_for_timeout(10)
+    page.mouse.up()
+    return seen
+
+
 def two_touches(ctx, page, tag):
     """Only the first finger down drives the paddle; the next takes over when it lifts.
     CDP cannot lift one of two touches, so this dispatches touch PointerEvents
@@ -557,9 +590,28 @@ def run_bricks(browser, base):
     page.wait_for_timeout(400)
     check(page.evaluate("window.__raf") == r1, f"[{tag}] no animation loop while paused")
     page.screenshot(path=str(OUT / "bricks-game-lifted.png"))
-    saved = json.loads(page.evaluate("localStorage.getItem('rlx.v1.bricks')"))
+    saved = json.loads(page.evaluate("localStorage.getItem('rlx.v2.bricks')"))
     check(saved == b["game"], f"[{tag}] full state saved on pause")
     check(page.evaluate("localStorage.getItem('rlx.v1.bricks-score')") == str(b["game"]["score"]), f"[{tag}] score saved on pause")
+    # Session clock (row B2): play advanced it, the pause does not; it is saved on pause.
+    page.wait_for_timeout(1000)
+    c2 = snap(page)
+    stored_clock = json.loads(page.evaluate("localStorage.getItem('rlx.v1.session')") or "null")
+    check(4 < b["clock"]["active"] < 30 and c2["clock"] == b["clock"] and stored_clock == b["clock"],
+          f"[{tag}] session clock: {b['clock']['active']:.2f} s of play counted, unchanged after 1.3 s paused, saved on pause")
+    check("rally" not in saved and "pace" in saved and "speed" in saved
+          and 80 <= saved["pace"] <= 125, f"[{tag}] pace and speed saved ({saved['pace']}, {saved['speed']}), rally {b['rally']} not saved")
+    # Rally: +1 at each paddle return (the ball leaves upwards), 0 at a miss (no ball until the serve).
+    ups = rally_watch(page, 15000, x, y, scale, k, True, lambda t: sum(1 for a, c, _, _ in t if c == a + 1) >= 2)
+    downs = rally_watch(page, 15000, x, y, scale, k, False, lambda t: any(c == 0 for _, c, _, _ in t))
+    inc = [t for t in ups + downs if t[1] != 0]
+    zero = [t for t in ups + downs if t[1] == 0]
+    check(len(inc) >= 2 and all(c == a + 1 and ball and vy < 0 for a, c, ball, vy in inc),
+          f"[{tag}] rally goes up by exactly 1 at each paddle return ({[(a, c) for a, c, _, _ in inc]})")
+    check(zero and all(a > 0 and not ball for a, _, ball, _ in zero) and snap(page)["rally"] == 0,
+          f"[{tag}] rally returns to 0 at a miss ({[(a, c) for a, c, _, _ in zero]})")
+    hud = json.loads(page.eval_on_selector("#screen", "c => c.dataset.hud"))
+    check(hud == {"score": 1, "rally": 1}, f"[{tag}] score and rally drawn small and fit their boxes {hud}")
 
     # Hidden mid-flight: pause, save, stop the loop.
     page.mouse.down()
@@ -570,7 +622,7 @@ def run_bricks(browser, base):
       document.dispatchEvent(new Event('visibilitychange'));
     }""")
     h = snap(page)
-    saved = json.loads(page.evaluate("localStorage.getItem('rlx.v1.bricks')"))
+    saved = json.loads(page.evaluate("localStorage.getItem('rlx.v2.bricks')"))
     r2 = page.evaluate("window.__raf")
     page.wait_for_timeout(400)
     check(h["mode"] == "paused" and not h["raf"] and saved == h["game"] and snap(page)["game"] == h["game"]
@@ -584,10 +636,33 @@ def run_bricks(browser, base):
     page.wait_for_timeout(900)
     mid = snap(page)["game"]
     check(mid["ball"] is not None and mid["time"] > h["game"]["time"], f"[{tag}] plays on after coming back")
+    # Hidden for 3 s with the finger up: the saved clock does not move.
+    page.mouse.up()
+    before_clock = page.evaluate("localStorage.getItem('rlx.v1.session')")
+    page.evaluate("""() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }""")
+    page.wait_for_timeout(3000)
+    hidden_clock = page.evaluate("localStorage.getItem('rlx.v1.session')")
+    page.evaluate("""() => {
+      delete document.visibilityState; delete document.hidden;
+      document.dispatchEvent(new Event('visibilitychange'));
+    }""")
+    page.wait_for_timeout(500)
+    shown = snap(page)
+    check(before_clock is not None and hidden_clock == before_clock
+          and page.evaluate("localStorage.getItem('rlx.v1.session')") == before_clock
+          and json.dumps(shown["clock"], sort_keys=True) == json.dumps(json.loads(before_clock), sort_keys=True)
+          and shown["mode"] == "paused",
+          f"[{tag}] hidden 3 s with the finger up, then shown: the saved clock stays the same ({before_clock})")
+    page.mouse.down()
+    page.wait_for_timeout(900)
 
     # Kill mid-flight (pagehide only, no lift) and reopen: same field and ball, paused.
     page.evaluate("dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }))")
-    killed = json.loads(page.evaluate("localStorage.getItem('rlx.v1.bricks')"))
+    killed = json.loads(page.evaluate("localStorage.getItem('rlx.v2.bricks')"))
     page.close()
     page, errors2 = open_bricks(ctx, base)
     r = snap(page)
@@ -617,16 +692,21 @@ def run_bricks(browser, base):
 
     # Corrupt and old-version saves: fresh field, score kept.
     # (Storage is edited from the hub: leaving Bricks saves over it.)
-    reopen(page, base, "localStorage.setItem('rlx.v1.bricks', '{nope'); localStorage.setItem('rlx.v1.bricks-score', '12')")
+    reopen(page, base, "localStorage.setItem('rlx.v2.bricks', '{nope'); localStorage.setItem('rlx.v1.bricks-score', '12')")
     c = snap(page)
     check(c["count"] == 63 and c["game"]["score"] == 12, f"[{tag}] corrupt save: fresh field, score kept ({c['count']}, {c['game']['score']})")
-    old = dict(c["game"], v=0, score=77)
-    reopen(page, base, "localStorage.setItem('rlx.v1.bricks', %s); localStorage.removeItem('rlx.v1.bricks-score')" % json.dumps(json.dumps(old)))
+    # A B1 save (state version 1, no pace or speed) left on the phone by the previous build.
+    old = {k: v for k, v in c["game"].items() if k not in ("pace", "speed")}
+    old.update(v=1, score=77)
+    n_err = len(errors2)
+    reopen(page, base, "localStorage.setItem('rlx.v1.bricks', %s); localStorage.removeItem('rlx.v2.bricks'); "
+           "localStorage.removeItem('rlx.v1.bricks-score')" % json.dumps(json.dumps(old)))
     c = snap(page)
-    check(c["count"] == 63 and c["game"]["score"] == 77, f"[{tag}] old-version save: fresh field, score read from it ({c['game']['score']})")
+    check(c["count"] == 63 and c["game"]["score"] == 77 and c["game"]["pace"] == 90 and len(errors2) == n_err,
+          f"[{tag}] B1 (old-version) save: no error, fresh field at pace 90, score read from it ({c['game']['score']})")
 
     # Motion: particles and trail appear; with reduced motion, never. Fresh field each time.
-    reopen(page, base, "localStorage.removeItem('rlx.v1.bricks')")
+    reopen(page, base, "localStorage.removeItem('rlx.v2.bricks')")
     seen = {"particles": 0, "trail": 0}
     x, y, scale, k = sea_point(page)
     page.mouse.move(x, y)
@@ -642,7 +722,7 @@ def run_bricks(browser, base):
     page.mouse.up()
     check(seen["particles"] > 0 and seen["trail"] > 0, f"[{tag}] brick pop particles and ball trail shown {seen}")
     page.emulate_media(reduced_motion="reduce")
-    reopen(page, base, "localStorage.removeItem('rlx.v1.bricks')")
+    reopen(page, base, "localStorage.removeItem('rlx.v2.bricks')")
     seen = {"particles": 0, "trail": 0}
     pops0 = snap(page)["game"]["score"]
     page.mouse.move(x, y)
@@ -665,15 +745,162 @@ def run_bricks(browser, base):
     held = snap(page)["game"]
     tap(page, "back")
     page.wait_for_url(base)
-    check(json.loads(page.evaluate("localStorage.getItem('rlx.v1.bricks')")) == held, f"[{tag}] back to the hub keeps the saved game")
+    check(json.loads(page.evaluate("localStorage.getItem('rlx.v2.bricks')")) == held, f"[{tag}] back to the hub keeps the saved game")
 
-    check(not errors, f"[{tag}] no console errors {errors}")
+    check(not errors and not errors2, f"[{tag}] no console errors {errors + errors2}")
     check(not foreign, f"[{tag}] no requests to another host {foreign}")
     ctx.close()
 
 
+def logical_pixels(page, shot, points):
+    """Colours (#RRGGBB) of logical pixels in a screenshot."""
+    from PIL import Image
+
+    img = Image.open(shot).convert("RGB")
+    lay = layout_of(page)
+    s, H = lay["scale"], lay["H"]
+    cw, ch = page.evaluate("[document.getElementById('screen').width, document.getElementById('screen').height]")
+    ox, oy = (cw - 135 * s) // 2, (ch - H * s) // 2
+    return ["#%02X%02X%02X" % img.getpixel((ox + x * s + s // 2, oy + y * s + s // 2)) for x, y in points]
+
+
+def delta_e(a, b):
+    """CIE76 colour difference in CIELAB (D65), as in tests/bricks-sim.mjs."""
+    def lab(h):
+        def lin(c):
+            c /= 255
+            return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+        r, g, b_ = (lin(int(h[i:i + 2], 16)) for i in (1, 3, 5))
+        f = lambda t: t ** (1 / 3) if t > 0.008856 else 7.787 * t + 16 / 116  # noqa: E731
+        X = f((0.4124 * r + 0.3576 * g + 0.1805 * b_) / 0.95047)
+        Y = f(0.2126 * r + 0.7152 * g + 0.0722 * b_)
+        Z = f((0.0193 * r + 0.1192 * g + 0.9505 * b_) / 1.08883)
+        return (116 * Y - 16, 500 * (X - Y), 200 * (Y - Z))
+    p, q = lab(a), lab(b)
+    return sum((x - y) ** 2 for x, y in zip(p, q)) ** 0.5
+
+
+def run_scene(browser, base):
+    """Row B2: the hub draws the phase of the saved clock; Bricks at full dusk."""
+    tag = "scene 360x800"
+    ctx = new_context(browser, 360, 800)
+    page = ctx.new_page()
+    errors = []
+    page.on("console", lambda m: m.type == "error" and errors.append(m.text))
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(base)
+    hits(page)
+    page.evaluate("localStorage.clear()")
+    tok = page.evaluate("""async () => { const T = await import(new URL('shared/tokens.js', document.baseURI).href);
+      return { pals: Array.from({ length: 11 }, (_, k) => T.scenePalette(k / 10)), bricks: T.BRICK_ROWS, c: T.COLORS }; }""")
+    pals, C = tok["pals"], tok["c"]
+
+    def set_clock(active, ago_ms):
+        page.evaluate("([a, ago]) => localStorage.setItem('rlx.v1.session', JSON.stringify({ active: a, last: Date.now() - ago }))",
+                      [active, ago_ms])
+
+    def hub(name):
+        page.reload()
+        hits(page)
+        page.wait_for_timeout(150)
+        shot = OUT / f"hub-scene-{name}.png"
+        page.screenshot(path=str(shot))
+        lay = layout_of(page)
+        hz = lay["H"] - 42
+        step = int(page.eval_on_selector("#screen", "c => c.dataset.scene"))
+        return step, shot, lay, hz
+
+    step, shot, lay, hz = hub("none")
+    top, sea = logical_pixels(page, shot, [(1, 1), (1, hz + 2)])
+    check(step == 0 and top == pals[0]["sky"][0] and sea == pals[0]["sea"][0], f"[{tag}] hub, no clock yet: sunset (step {step}, {top}, {sea})")
+    set_clock(300, 1000)
+    step, shot, lay, hz = hub("step5")
+    top, sea = logical_pixels(page, shot, [(1, 1), (1, hz + 2)])
+    check(step == 5 and top == pals[5]["sky"][0] and sea == pals[5]["sea"][0],
+          f"[{tag}] hub after 5 minutes of play: step 5 drawn ({step}, sky {top}, sea {sea})")
+    stored = page.evaluate("localStorage.getItem('rlx.v1.session')")
+    page.wait_for_timeout(1200)
+    check(page.evaluate("localStorage.getItem('rlx.v1.session')") == stored
+          and page.eval_on_selector("#screen", "c => c.dataset.scene") == "5", f"[{tag}] a hub left open does not advance the clock")
+    set_clock(720, 1000)
+    step, shot, lay, hz = hub("dusk")
+    info, s, H, bad, total, _, _ = crisp(page, shot)
+    r = lay["rects"]
+    s1 = r["bricks"]["y"] - 3
+    star = (22, round(42 + 0.05 * (s1 - 42)))
+    top, sea, sun, st, tile = logical_pixels(page, shot, [(1, 1), (1, hz + 2), (96, hz - 1), star, (r["bricks"]["x"] + 3, r["bricks"]["y"] + 6)])
+    check(step == 10 and top == "#CDB8E0" and sea == "#6FA3C4" and bad == 0,
+          f"[{tag}] hub after 12 minutes of play: full dusk, crisp ({step}, sky {top}, sea {sea}, {total - bad}/{total})")
+    check(sun != C["sun"] and st == "#FFFFFF" and tile == C["coral"],
+          f"[{tag}] hub at dusk: sun below the horizon ({sun}), a white star ({st}), the BRICKS tile keeps its colour ({tile})")
+    set_clock(720, 5 * 60 * 1000)
+    step, shot, lay, hz = hub("after-gap")
+    top, = logical_pixels(page, shot, [(1, 1)])
+    check(step == 0 and top == "#FFF7EC", f"[{tag}] hub 5 minutes after the last play: sunset again ({step}, {top})")
+    set_clock(300, 5 * 60 * 1000 - 1500)
+    step, *_ = hub("left-open")
+    page.wait_for_timeout(2500)
+    later = page.eval_on_selector("#screen", "c => c.dataset.scene")
+    check(step == 5 and later == "0", f"[{tag}] a hub left open turns to sunset when the reset gap passes ({step} -> {later})")
+
+    # Bricks at full dusk: every colour kept, readable against the sky (dE >= 10).
+    set_clock(720, 1000)
+    page.goto(base + "games/bricks/")
+    hits(page)
+    page.wait_for_function("window.__bricks && window.__bricks.snapshot().game")
+    page.wait_for_timeout(200)
+    q = snap(page)
+    g = q["game"]
+    geo = g["geo"]
+    shot = OUT / "bricks-dusk.png"
+    page.screenshot(path=str(shot))
+    info, s, H, bad, total, _, _ = crisp(page, shot)
+    check(q["step"] == 10 and q["clock"]["active"] == 720 and bad == 0, f"[{tag}] Bricks at 12 minutes: full dusk, crisp ({q['step']})")
+    lay = layout_of(page)
+    rr = lay["rects"]["rally"]
+    pts = []
+    for row in range(9):
+        y = geo["top"] + row * 9 + 3
+        pts += [(geo["left"] + 7, y), (geo["left"] - 4, y)]
+    bx, by = round(g["ball"]["x"]), round(g["ball"]["y"])
+    px, py = round(g["paddleX"]), geo["paddleY"]
+    pts += [(px + 15, py + 3), (px - 3, py + 3), (bx + 2, by + 2), (bx - 3, by + 2),
+            (rr["x"] + rr["w"] - 4, rr["y"]), (rr["x"] + rr["w"] - 8, rr["y"] + 3)]
+    got = logical_pixels(page, shot, pts)
+    sky = {c for p_ in pals for c in p_["sky"]}
+    rows_ok = all(got[2 * i] == tok["bricks"][g["rows"][i]["c"]] for i in range(9))
+    pairs = [(f"brick row {i + 1}", got[2 * i], got[2 * i + 1]) for i in range(9)]
+    pairs += [("paddle", got[18], got[19]), ("ball", got[20], got[21]), ("rally", got[22], got[23])]
+    kept = rows_ok and got[18] == C["coral"] and got[20] == C["blue"] and got[22] == C["blue"]
+    worst = min(pairs, key=lambda t: delta_e(t[1], t[2]))
+    check(kept and all(bg in sky for _, _, bg in pairs),
+          f"[{tag}] at dusk bricks, paddle, ball and rally keep their token colours over dusk sky bands")
+    check(all(delta_e(fg, bg) >= 10 for _, fg, bg in pairs),
+          f"[{tag}] at dusk each is readable against the sky beside it: dE >= 10 (weakest {worst[0]} {worst[1]} on {worst[2]}, "
+          f"{delta_e(worst[1], worst[2]):.1f})")
+
+    # After the reset gap the next session starts at sunset with the pace at 90.
+    page.goto(base)  # leaving Bricks saves it
+    hits(page)
+    saved = dict(json.loads(page.evaluate("localStorage.getItem('rlx.v2.bricks')")), pace=80, speed=80)
+    page.evaluate("s => localStorage.setItem('rlx.v2.bricks', s)", json.dumps(saved))
+    set_clock(720, 5 * 60 * 1000)
+    page.goto(base + "games/bricks/")
+    hits(page)
+    page.wait_for_function("window.__bricks && window.__bricks.snapshot().game")
+    page.wait_for_timeout(150)
+    q = snap(page)
+    qb, sb = q["game"]["ball"], saved["ball"]
+    check(q["step"] == 0 and q["clock"]["active"] == 0 and q["game"]["pace"] == 90 and q["game"]["rows"] == saved["rows"]
+          and (qb["x"], qb["y"]) == (sb["x"], sb["y"]) and q["game"]["speed"] == 80,
+          f"[{tag}] Bricks 5 minutes after the last play: sunset, clock at 0, pace 90 (ball keeps 80 until its next bounce), "
+          f"same field and ball ({q['game']['pace']}, {q['game']['speed']})")
+    check(not errors, f"[{tag}] no console errors {errors}")
+    ctx.close()
+
+
 def run_node_sim():
-    """tests/bricks-sim.mjs: physics.js in Node for 10 simulated minutes and more."""
+    """tests/bricks-sim.mjs: physics.js and the session clock in Node (10- and 15-minute runs and more)."""
     res = subprocess.run(["node", str(ROOT / "tests" / "bricks-sim.mjs")], capture_output=True, text=True)
     out = res.stdout.strip().splitlines()
     for line in out:
@@ -734,6 +961,7 @@ def main():
             run_layout_only(browser, base, w, h, dpr)
         run_resize(browser, base)
         run_bricks(browser, base)
+        run_scene(browser, base)
         run_version_bump(browser)
         browser.close()
     httpd.shutdown()

@@ -19,6 +19,13 @@
   --brick-8: #78B4D8;
   --brick-9: #A0D0E8;
   --shade-target: #783C5A;
+  --star: #FFFFFF;
+  /* dusk (PLAN §2b) */
+  --dusk-sky-top: #CDB8E0;
+  --dusk-sky-bottom: #F0A9A6;
+  --dusk-sea-1: #6FA3C4;
+  --dusk-sea-2: #5F93B8;
+  --dusk-sea-3: #5083AB;
 }
 
 html,

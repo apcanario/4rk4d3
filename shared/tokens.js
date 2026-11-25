@@ -10,6 +10,15 @@ export const COLORS = Object.freeze({
   sun: '#FFF4D6',
   cloud: '#FFFFFF',
   shadeTarget: '#783C5A',
+  star: '#FFFFFF',
+});
+
+// Dusk (PLAN §2b): the end of the sunset exit ramp. Bricks, paddle, ball and
+// lettering keep their colours; only the sky, the sea and the sun change.
+export const DUSK = Object.freeze({
+  skyTop: '#CDB8E0',
+  skyBottom: '#F0A9A6',
+  seaBands: Object.freeze(['#6FA3C4', '#5F93B8', '#5083AB']),
 });
 
 // Brick rows, top to bottom.
@@ -43,3 +52,16 @@ export function mix(a, b, t) {
 
 export const shade = (c) => mix(c, COLORS.shadeTarget, SHADE_AMOUNT);
 export const highlight = (c) => mix(c, '#FFFFFF', HIGHLIGHT_AMOUNT);
+
+/**
+ * Scene colours at mix t (0 sunset .. 1 dusk): every value a flat mix between
+ * its sunset and dusk token (PLAN §2b). pixel.js passes t = step / steps.
+ */
+export function scenePalette(t) {
+  const skyTop = mix(COLORS.skyTop, DUSK.skyTop, t);
+  const skyBottom = mix(COLORS.skyBottom, DUSK.skyBottom, t);
+  const sky = [];
+  for (let i = 0; i < SKY_BANDS; i++) sky.push(mix(skyTop, skyBottom, i / (SKY_BANDS - 1)));
+  const sea = SEA_BANDS.map((c, i) => mix(c, DUSK.seaBands[i], t));
+  return { sky, sea };
+}
