@@ -4,7 +4,9 @@ Rows are defined in docs/PLAN.md. Nothing is built that is not a row here. A don
 
 ## Queue
 
-- B2 Real-device pass of B1 and tuning from Pedro's feel report (fps, haptic feel, kill and reopen, back gesture; serve angle 10 and loop nudge 8 degrees in CONFIG)
+- B2 Wind-down rules in Bricks (PLAN.md section 6a)
+- C1 Catch (PLAN.md section 6b)
+- B3 Real-device pass of B1 and tuning from Pedro's feel report (fps, haptic feel, kill and reopen, back gesture; serve angle 10 and loop nudge 8 degrees in CONFIG)
 
 ## Done
 
@@ -13,10 +15,8 @@ Rows are defined in docs/PLAN.md. Nothing is built that is not a row here. A don
 
 ## Parked
 
-- P1 Catch: things fall, slide to catch them, a miss costs nothing.
-- P2 Stack: blocks slide across, tap to drop them.
+- P2 Stack: blocks slide across, tap to drop them. When specced it takes the wind-down rules: the pace is the slide speed, the skill signal is the run of clean drops, the exit ramp is the shared sunset.
 - P3 APK wrapper, with a native haptics bridge if the web ticks feel mushy.
-- P4 A slow sky cycle through the phases of a sunset.
 
 ## Proposed
 
