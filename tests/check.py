@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RLX checks (rows H1, B1, B2 and C1) in headless Chromium and Node. Not needed to run the app.
+"""RLX checks (rows H1, B1, B2, C1 and B4) in headless Chromium and Node. Not needed to run the app.
 
 Needs Python Playwright with Chromium (pip install playwright;
 python -m playwright install chromium). Run: python3 tests/check.py
@@ -14,7 +14,10 @@ clock (paused time never advances it, saved with the game), the hub drawing
 the scene phase of the saved clock, Bricks at full dusk (colours kept and
 readable), the reset after the gap. Row C1: runs tests/catch-sim.mjs and plays
 Catch with real touch events (CDP): taps and fish, the pause grace, save and
-restore, haptics, dusk, one clock across games; the hub's CATCH tile.
+restore, haptics, dusk, one clock across games; the hub's CATCH tile. Row B4:
+the contrast standard on the hub (wordmark, tiles, toggle, tag) at sunset and
+all 10 steps on logical heights 240, 300 and 400, and the drawn colours of the
+hub, Bricks and Catch at sunset, step 5 and step 10 (see tests/contrast.mjs).
 Screenshots go to tests/out/.
 """
 import functools
@@ -820,6 +823,22 @@ def delta_e(a, b):
     return sum((x - y) ** 2 for x, y in zip(p, q)) ** 0.5
 
 
+def contrast(a, b):
+    """WCAG 2 contrast ratio, as in tests/contrast.mjs."""
+    def lum(h):
+        def lin(c):
+            c /= 255
+            return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+        r, g, b_ = (lin(int(h[i:i + 2], 16)) for i in (1, 3, 5))
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b_
+    x, y = lum(a), lum(b)
+    return (max(x, y) + 0.05) / (min(x, y) + 0.05)
+
+
+# B4 standard (tests/contrast.mjs): controls and large lettering 3, small lettering 4.5, shapes delta E 20.
+MIN_CR, MIN_CR_SMALL, MIN_DE = 3, 4.5, 20
+
+
 def run_scene(browser, base):
     """Row B2: the hub draws the phase of the saved clock; Bricks at full dusk."""
     tag = "scene 360x800"
@@ -832,7 +851,8 @@ def run_scene(browser, base):
     hits(page)
     page.evaluate("localStorage.clear()")
     tok = page.evaluate("""async () => { const T = await import(new URL('shared/tokens.js', document.baseURI).href);
-      return { pals: Array.from({ length: 11 }, (_, k) => T.scenePalette(k / 10)), bricks: T.BRICK_ROWS, c: T.COLORS }; }""")
+      return { pals: Array.from({ length: 11 }, (_, k) => T.scenePalette(k / 10)), bricks: T.BRICK_ROWS,
+        c: { ...T.COLORS, ink: T.COLORS.ink || T.COLORS.blue } }; }""")
     pals, C = tok["pals"], tok["c"]
 
     def set_clock(active, ago_ms):
@@ -911,13 +931,21 @@ def run_scene(browser, base):
     rows_ok = all(got[2 * i] == tok["bricks"][g["rows"][i]["c"]] for i in range(9))
     pairs = [(f"brick row {i + 1}", got[2 * i], got[2 * i + 1]) for i in range(9)]
     pairs += [("paddle", got[18], got[19]), ("ball", got[20], got[21]), ("rally", got[22], got[23])]
-    kept = rows_ok and got[18] == C["coral"] and got[20] == C["blue"] and got[22] == C["blue"]
-    worst = min(pairs, key=lambda t: delta_e(t[1], t[2]))
+    kept = rows_ok and got[18] == C["coral"] and got[20] == C["blue"] and got[22] == C["ink"]
     check(kept and all(bg in sky for _, _, bg in pairs),
           f"[{tag}] at dusk bricks, paddle, ball and rally keep their token colours over dusk sky bands")
-    check(all(delta_e(fg, bg) >= 10 for _, fg, bg in pairs),
-          f"[{tag}] at dusk each is readable against the sky beside it: dE >= 10 (weakest {worst[0]} {worst[1]} on {worst[2]}, "
-          f"{delta_e(worst[1], worst[2]):.1f})")
+    # B4 standard on the drawn pixels: bricks delta E >= 20 (fill), the ball 3, the rally (small) 4.5;
+    # the paddle by its edge (checked in run_contrast_pages), here its fill against the sky beside it for the record.
+    need = {"rally": ("cr", MIN_CR_SMALL), "ball": ("cr", MIN_CR), "paddle": None}
+    under = []
+    for what, fg, bg in pairs:
+        rule = need.get(what, ("de", MIN_DE))
+        if rule is None:
+            continue
+        v = contrast(fg, bg) if rule[0] == "cr" else delta_e(fg, bg)
+        if v < rule[1]:
+            under.append((what, fg, bg, round(v, 2)))
+    check(not under, f"[{tag}] at dusk the drawn bricks (dE >= 20), ball (3:1) and rally (4.5:1) meet the B4 standard against the sky beside them {under}")
 
     # After the reset gap the next session starts at sunset with the pace at 90.
     page.goto(base)  # leaving Bricks saves it
@@ -991,14 +1019,19 @@ def reopen_catch(page, base, js, arg=None):
     page.wait_for_timeout(150)
 
 
-def catch_track(page, touch, ms, x, y, per_px):
-    """Hold a finger and steer the boat under the thing nearest to landing."""
+def catch_track(page, touch, ms, x, y, per_px, until=None, max_ms=30000):
+    """Hold a finger and steer the boat under the thing nearest to landing, for ms; with until (a test on
+    the game state), go on past ms until it holds, at most max_ms (X13: a fixed window can see no catch)."""
     width = page.viewport_size["width"]
     cur = x
     touch.down(cur, y)
-    end = time.time() + ms / 1000
-    while time.time() < end:
+    t0 = time.time()
+    end, hard = t0 + ms / 1000, t0 + max(ms, max_ms) / 1000
+    while True:
         g = csnap(page)["game"]
+        now = time.time()
+        if now >= hard or (now >= end and (until is None or until(g))):
+            break
         things = [o for o in g["items"] + ([g["treat"]] if g["treat"] else []) if not o["low"]]
         if things:
             o = max(things, key=lambda o: o["y"])
@@ -1090,9 +1123,10 @@ def run_catch(browser, base):
     clk = json.loads(page.evaluate("localStorage.getItem('rlx.v1.session')") or "null")
     check(clk is not None and clk["active"] > 0.5 and clk == c["clock"], f"[{tag}] the shared session clock counts Catch play and is saved ({clk})")
 
-    # Play: catches tick 8 ms; the run counts up.
+    # Play: catches tick 8 ms; the run counts up (tracked until at least one catch, X13).
     page.evaluate("window.__vib = []")
-    catch_track(page, touch, 9000, x, y, per_px)
+    c_start = csnap(page)["game"]["caught"]
+    catch_track(page, touch, 9000, x, y, per_px, until=lambda g: g["caught"] > c_start)
     page.wait_for_timeout(600)
     q = csnap(page)
     vib = page.evaluate("window.__vib")
@@ -1210,20 +1244,36 @@ def run_catch(browser, base):
     page.screenshot(path=str(OUT / "catch-game-reopened.png"))
     errors += errors2
 
-    # Haptics off: zero vibrate calls through catches and a bite.
+    # Haptics off: zero vibrate calls through a catch and a bite. Deterministic (X13): the save is seeded
+    # with a thing just above the deck over the boat's middle and a nasty high in the air; the finger holds
+    # until the catch, then a tap sends the fish; each wait polls with a generous timeout, and the check
+    # needs at least one catch and one bite, so it can never pass on zero events.
     page.evaluate("localStorage.setItem('rlx.v1.settings', JSON.stringify({ haptics: false }))")
-    page.reload()
-    page.wait_for_function("window.__catch && window.__catch.snapshot().game")
+    reopen_catch(page, base, """() => { const s = JSON.parse(localStorage.getItem('rlx.v1.catch'));
+      s.boatX = 50; s.fish = []; s.treat = null; s.ink = 0; s.spawnIn = 1.7; s.nastyIn = 25; s.treatIn = 140;
+      s.items = [{ x: 50 + 12 - 3.5, y: s.geo.deckY - 7 - 6, vy: 32, ph: 0, k: 0, low: false }];
+      s.nasty = { x: 100, y: 150, vy: 30, k: 0, low: false, hunted: false };
+      localStorage.setItem('rlx.v1.catch', JSON.stringify(s)); }""")
     touch = Touch(ctx, page)
     page.evaluate("window.__vib = []")
-    c0 = csnap(page)["game"]["caught"]
-    catch_track(page, touch, 6000, x, y, per_px)
-    with_nasty(150)
+    g0 = csnap(page)["game"]
+    c0, e0 = g0["caught"], g0["eaten"]
+    touch.down(x, y)
+    deadline = time.time() + 10
+    while csnap(page)["game"]["caught"] <= c0 and time.time() < deadline:
+        page.wait_for_timeout(20)
+    touch.up()
     touch.tap(x, y, 30)
-    page.wait_for_timeout(500)
+    touch.down(x, y)  # held, so play runs on until the fish bites
+    deadline = time.time() + 10
+    while csnap(page)["game"]["eaten"] <= e0 and time.time() < deadline:
+        page.wait_for_timeout(20)
+    touch.up()
+    page.wait_for_timeout(100)
     q = csnap(page)
-    check(page.evaluate("window.__vib.length") == 0 and q["game"]["caught"] > c0 and q["game"]["nasty"] is None,
-          f"[{tag}] haptics off: zero vibrate calls over {q['game']['caught'] - c0} catches and a bite")
+    nc, nb = q["game"]["caught"] - c0, q["game"]["eaten"] - e0
+    check(page.evaluate("window.__vib.length") == 0 and nc > 0 and nb > 0,
+          f"[{tag}] haptics off: zero vibrate calls ({page.evaluate('window.__vib.length')}) over {nc} catches and {nb} bites")
     page.evaluate("localStorage.setItem('rlx.v1.settings', JSON.stringify({ haptics: true }))")
     page.wait_for_timeout(500)
 
@@ -1269,7 +1319,7 @@ def run_catch(browser, base):
     hull = (round(gg["boatX"]) + 12, gg["geo"]["deckY"] + 3)
     sky_px = (2, gg["geo"]["top"] + 2)
     got = logical_pixels(page, shot, [hull, sky_px])
-    check(q["step"] == 10 and got[0] == "#F05A68" and delta_e(got[0], got[1]) >= 10,
+    check(q["step"] == 10 and got[0] == "#F05A68" and delta_e(got[0], got[1]) >= MIN_DE,
           f"[{tag}] Catch at 12 minutes: full dusk, hull keeps coral ({got})")
     # One clock across games: Bricks reads the same clock Catch saved.
     page.goto(base + "games/bricks/")
@@ -1294,6 +1344,193 @@ def run_catch(browser, base):
     check(not errors and not errors2, f"[{tag}] no console errors {errors + errors2}")
     check(not foreign, f"[{tag}] only same-origin requests {foreign}")
     ctx.close()
+
+
+HUB_TOKENS_JS = """async () => {
+  const T = await import(new URL('shared/tokens.js', document.baseURI).href);
+  // Tokens before B4 had no ink, card, sail or edge: fall back, so old tokens fail cleanly.
+  const C = { ...T.COLORS, ink: T.COLORS.ink || T.COLORS.blue, card: T.COLORS.card || '#A0D0E8', sail: T.COLORS.sail || T.COLORS.sun };
+  const edge = T.edge || T.shade;
+  return {
+    pals: Array.from({ length: 11 }, (_, k) => T.scenePalette(k / 10)), C, bands: T.SKY_BANDS,
+    edgeCoral: edge(C.coral), soonFill: T.mix(C.skyBottom, C.cloud, 0.45),
+    // B4 review: keel, glint and ink cloud (absent before it: null, so old tokens fail cleanly).
+    keel: C.keel || null, glint: C.glint || null,
+    inked: Array.from({ length: 11 }, (_, k) => T.scenePalette(k / 10).sea.map((c) => T.mix(c, C.inkCloud || T.shade(C.blue), T.INK_CLOUD_AMOUNT || 0.35))),
+  };
+}"""
+
+# Logical heights 240, 300 and 400 at 360 CSS px wide, DPR 3 (scale 8).
+CONTRAST_VIEWS = [(360, 640, "H240"), (360, 800, "H300"), (360, 1067, "H400")]
+
+
+def run_contrast_hub(browser, base):
+    """Row B4: the hub's wordmark, tiles, toggle and tag against the scene at sunset and all 10 steps."""
+    for w, h, tag in CONTRAST_VIEWS:
+        tag = f"contrast hub {tag}"
+        ctx = new_context(browser, w, h, 3)
+        page = ctx.new_page()
+        page.goto(base)
+        lay = layout_of(page)
+        tok = page.evaluate(HUB_TOKENS_JS)
+        C, H, r = tok["C"], lay["H"], lay["rects"]
+        horizon = H - 42
+
+        def bands(y0, y1):
+            return [i for i in range(tok["bands"]) if round(i * horizon / 10) < y1 and round((i + 1) * horizon / 10) > y0]
+
+        sea_y = [(horizon, horizon + 13), (horizon + 13, horizon + 27), (horizon + 27, H)]
+        rows = []
+        for k in range(11):
+            pal = tok["pals"][k]
+            sun = [("sun", C["sun"])] if k < 10 else []
+            sky = lambda ix: [(f"sky band {i + 1}", pal["sky"][i]) for i in ix]  # noqa: E731
+            hg = r["haptics"]
+            sea = [(f"sea band {i + 1}", pal["sea"][i]) for i, (a, b) in enumerate(sea_y) if a < hg["y"] + hg["h"] and b > hg["y"]]
+            items = [("wordmark (large)", "cr", MIN_CR, C["coral"], tok["edgeCoral"], sky(bands(12, 40)))]
+            for t in ("bricks", "catch"):
+                items.append((f"{t} tile", "cr", MIN_CR, C["coral"], tok["edgeCoral"], sky(bands(r[t]["y"], r[t]["y"] + r[t]["h"])) + sun))
+            items.append(("stack tile (inactive)", "de", MIN_DE, tok["soonFill"], tok["edgeCoral"],
+                          sky(bands(r["stack"]["y"], r["stack"]["y"] + r["stack"]["h"])) + sun))
+            items.append(("haptics on", "cr", MIN_CR, C["ink"], C["cloud"], sea))
+            items.append(("haptics off", "cr", MIN_CR, C["cloud"], C["ink"], sea))
+            for what, rule, need, fill, edge_, bgs in items:
+                m = contrast if rule == "cr" else delta_e
+                for on, bg in bgs:
+                    rows.append((what, need, max(m(fill, bg), m(edge_, bg)), on, bg, k))
+        under = [x for x in rows if x[2] < x[1]]
+        worst = min(rows, key=lambda x: x[2] / x[1])
+        check(rows and not under, f"[{tag}] sunset and all 10 steps: wordmark, tiles, toggle (fill or edge) meet the B4 standard "
+              f"(weakest {worst[0]} on {worst[3]} {worst[4]} step {worst[5]}: {worst[2]:.2f}; {len(under)} under {under[:3]})")
+        labels = json.loads(page.eval_on_selector("#screen", "c => c.dataset.labels"))
+        size = min(labels.values())
+        # The active tile labels as drawn (B4 review): scan each row of the label's left half for the first
+        # outline pixel and take the pixel just right of it; the commonest such colour is the glyph. The
+        # label is measured against its outline (small lettering 4.5 at size 1, 3 at larger sizes).
+        shot = OUT / f"b4-hub-labels-{tag.split()[-1]}.png"
+        page.screenshot(path=str(shot))
+        glyphs, outlines = {}, set()
+        for t in ("bricks", "catch"):
+            rt = r[t]
+            ys = list(range(rt["y"] + 2, rt["y"] + rt["h"] - 2))
+            xs = list(range(rt["x"] + 2, rt["x"] + rt["w"] // 2))
+            px = logical_pixels(page, shot, [(x, y) for y in ys for x in xs])
+            for j in range(len(ys)):
+                row = px[j * len(xs):(j + 1) * len(xs)]
+                for i in range(len(row) - 1):
+                    if row[i] == tok["edgeCoral"]:
+                        outlines.add(row[i])
+                        if row[i + 1] != tok["edgeCoral"]:
+                            glyphs[row[i + 1]] = glyphs.get(row[i + 1], 0) + 1
+                        break
+        glyph = max(glyphs, key=glyphs.get) if glyphs else None
+        outline = tok["edgeCoral"] if outlines else None
+        label_cr = contrast(glyph, outline) if glyph and outline else 0
+        check(glyph == C["cloud"] and outline == tok["edgeCoral"], f"[{tag}] tile labels drawn white in a 1 px outline of the coral's edge "
+              f"(sampled glyph {glyph}, outline {outline}, {glyphs})")
+        fixed = [("tile label on its outline", label_cr, MIN_CR if size >= 2 else MIN_CR_SMALL),
+                 ("STACK label on its tile", contrast(tok["edgeCoral"], tok["soonFill"]), MIN_CR if size >= 2 else MIN_CR_SMALL),
+                 ("SOON on its tag", contrast(C["ink"], C["card"]), MIN_CR_SMALL),
+                 ("HAPTICS ON", contrast(C["cloud"], C["ink"]), MIN_CR_SMALL),
+                 ("HAPTICS OFF", contrast(C["ink"], C["cloud"]), MIN_CR_SMALL)]
+        bad = [(n, round(v, 2), need) for n, v, need in fixed if v < need]
+        check(not bad, f"[{tag}] lettering on its own fill: tile labels (size {size}) "
+              f"{', '.join(f'{n} {v:.2f}' for n, v, _ in fixed)} {bad}")
+        ctx.close()
+
+
+def run_contrast_pages(browser, base):
+    """Row B4: the drawn colours of the hub, Bricks and Catch at sunset, step 5 and step 10."""
+    for w, h, vtag in CONTRAST_VIEWS:
+        ctx = new_context(browser, w, h, 3)
+        page = ctx.new_page()
+        page.goto(base)
+        hits(page)
+        tok = page.evaluate(HUB_TOKENS_JS)
+        C = tok["C"]
+        for k, active in ((0, 0), (5, 300), (10, 720)):
+            tag = f"contrast {vtag} step {k}"
+            page.goto(base)
+            hits(page)
+            page.evaluate("localStorage.clear()")
+            if active:
+                page.evaluate("a => localStorage.setItem('rlx.v1.session', JSON.stringify({ active: a, last: Date.now() - 1000 }))", active)
+            page.reload()
+            lay = layout_of(page)
+            page.wait_for_timeout(150)
+            shot = OUT / f"b4-hub-{vtag}-{k}.png"
+            page.screenshot(path=str(shot))
+            r = lay["rects"]
+            hg, bt = r["haptics"], r["bricks"]
+            word = [(x, y) for y in range(11, 42) for x in range(135)]
+            got = logical_pixels(page, shot, word + [(hg["x"] + 3, hg["y"]), (hg["x"] + 2, hg["y"] + 7), (bt["x"] + 3, bt["y"]), (bt["x"] + 3, bt["y"] + 6)])
+            wm, rest = set(got[:len(word)]), got[len(word):]
+            check(page.eval_on_selector("#screen", "c => c.dataset.scene") == str(k) and C["coral"] in wm and tok["edgeCoral"] in wm
+                  and rest == [C["cloud"], C["ink"], tok["edgeCoral"], C["coral"]],
+                  f"[{tag}] hub: wordmark coral in its edge, toggle ink in a white rim, tile coral in its edge ({rest})")
+            # Bricks: paddle edge and fill, score in the ink, the pause ring in its ink ring.
+            page.goto(base + "games/bricks/")
+            hits(page)
+            page.wait_for_function("window.__bricks && window.__bricks.snapshot().game")
+            page.wait_for_timeout(150)
+            q = snap(page)
+            g = q["game"]
+            geo = g["geo"]
+            shot = OUT / f"b4-bricks-{vtag}-{k}.png"
+            page.screenshot(path=str(shot))
+            blay = layout_of(page)
+            sc, ring = blay["rects"]["score"], None
+            px, py = round(g["paddleX"]), geo["paddleY"]
+            ring_y = min(geo["horizon"] + 21, blay["H"] - 7 - 2)
+            hud = [(x, y) for y in range(sc["y"], sc["y"] + sc["h"]) for x in range(sc["x"], sc["x"] + sc["w"])]
+            got = logical_pixels(page, shot, hud + [(px + 15, py), (px + 15, py + 3), (67, ring_y - 8), (67, ring_y - 7)])
+            score_cols, rest = set(got[:len(hud)]), got[len(hud):]
+            check(q["step"] == k and q["mode"] == "paused" and C["ink"] in score_cols and C["blue"] not in score_cols
+                  and rest == [tok["edgeCoral"], C["coral"], C["ink"], C["cloud"]],
+                  f"[{tag}] Bricks: score in the ink, paddle coral in its edge, pause ring white in an ink ring ({rest})")
+            # Catch: hull edge and fill, sail in its token.
+            page.goto(base + "games/catch/")
+            hits(page)
+            page.wait_for_function("window.__catch && window.__catch.snapshot().game")
+            page.wait_for_timeout(150)
+            q = csnap(page)
+            gg = q["game"]
+            shot = OUT / f"b4-catch-{vtag}-{k}.png"
+            page.screenshot(path=str(shot))
+            bx, deck = round(gg["boatX"]), gg["geo"]["deckY"]
+            got = logical_pixels(page, shot, [(bx + 12, deck), (bx + 12, deck + 3), (bx + 12, deck - 3), (bx + 11, deck - 6)])
+            check(q["step"] == k and got == [tok["edgeCoral"], C["coral"], C["sail"], tok["edgeCoral"]],
+                  f"[{tag}] Catch: hull coral in its edge, sail in its own colour, mast in the edge ({got})")
+            # B4 review: the hull's rows at and below the horizon in the keel; with an ink cloud and a
+            # glint seeded into the save, the inked sea and the glint as drawn.
+            hz = gg["geo"]["horizon"]
+            got = logical_pixels(page, shot, [(bx + 12, hz), (bx + 12, hz + 1), (bx + 12, hz - 1)])
+            check(tok["keel"] is not None and got == [tok["keel"], tok["keel"], C["coral"]],
+                  f"[{tag}] Catch: the hull's rows below the horizon in the keel {tok['keel']}, the row above in coral ({got})")
+            page.goto(base)
+            hits(page)
+            page.evaluate("""() => { const s = JSON.parse(localStorage.getItem('rlx.v1.catch'));
+              s.ink = 3; s.sky = { k: 'glint', t: 0 }; localStorage.setItem('rlx.v1.catch', JSON.stringify(s)); }""")
+            page.goto(base + "games/catch/")
+            hits(page)
+            page.wait_for_function("window.__catch && window.__catch.snapshot().game")
+            page.wait_for_timeout(150)
+            q = csnap(page)
+            shot = OUT / f"b4-catch-fx-{vtag}-{k}.png"
+            page.screenshot(path=str(shot))
+            sink = round(k / 10 * 24)
+            gy = hz - (24 - sink) + 3 if k < 10 else hz + 4
+            sea_row = logical_pixels(page, shot, [(x, hz + 9) for x in range(135)])
+            got = logical_pixels(page, shot, [(96, gy), (94, gy), (96, gy - 2)])
+            inked = tok["inked"][k][0]
+            check(q["game"]["ink"] > 2 and q["game"]["sky"] and inked in sea_row and tok["pals"][k]["sea"][0] not in sea_row
+                  and delta_e(inked, tok["pals"][k]["sea"][0]) >= MIN_DE,
+                  f"[{tag}] Catch: the ink cloud drawn as {inked}, delta E {delta_e(inked, tok['pals'][k]['sea'][0]):.2f} from sea band 1")
+            behind = [C["sun"]] if k < 10 else [tok["pals"][k]["sea"][0], inked]
+            de = min(delta_e(tok["glint"], b) for b in behind) if tok["glint"] else 0
+            check(tok["glint"] is not None and got == [tok["glint"]] * 3 and de >= MIN_DE,
+                  f"[{tag}] Catch: the glint drawn in {tok['glint']}, delta E {de:.2f} from what is behind it ({got})")
+        ctx.close()
 
 
 def run_catch_sim():
@@ -1372,6 +1609,8 @@ def main():
         run_bricks(browser, base)
         run_scene(browser, base)
         run_catch(browser, base)
+        run_contrast_hub(browser, base)
+        run_contrast_pages(browser, base)
         run_version_bump(browser)
         browser.close()
     httpd.shutdown()

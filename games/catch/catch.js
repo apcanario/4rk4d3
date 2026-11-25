@@ -37,11 +37,11 @@ export const CONFIG = Object.freeze({
   hapticBiteMs: 16,
 });
 
-import { COLORS, BRICK_ROWS, SEA_BANDS, mix, shade, highlight, scenePalette } from '../../shared/tokens.js';
+import { COLORS, BRICK_ROWS, SEA_BANDS, mix, shade, highlight, edge, scenePalette, INK_CLOUD_AMOUNT } from '../../shared/tokens.js';
 import { drawFitted } from '../../shared/font.js';
 import {
   createScreen, drawScene, drawBackControl, BACK_SIZE, initPage, hitTest, publishHits, goToHub,
-  pixelBody, SEA_HEIGHT, SUN_RADIUS, reducedMotion,
+  pixelBody, steppedRect, SEA_HEIGHT, SUN_RADIUS, reducedMotion,
 } from '../../shared/pixel.js';
 import { load, save } from '../../shared/store.js';
 import { tick } from '../../shared/haptics.js';
@@ -91,7 +91,7 @@ function colourOf(name) {
 }
 
 function paint(grid, body) {
-  const keys = { '#': body, h: highlight(body), s: shade(body), o: shade(body), c: COLORS.sun };
+  const keys = { '#': body, h: highlight(body), s: shade(body), o: edge(body), c: COLORS.sun };
   const c = document.createElement('canvas');
   c.width = grid[0].length;
   c.height = grid.length;
@@ -114,16 +114,21 @@ const FISH_SPRITES = S.LOOK.fish.colours.map((name) => {
   const c = colourOf(name);
   return { right: paint(FISH_GRID, c), left: paint(flip(FISH_GRID), c), up: paint(S.turnUp(FISH_GRID), c) };
 });
+// B4 contrast pass: the hull and the outlines carry a deep 1 px edge; the
+// sail is its own pale token (it was the sun's cream), the jib the deeper pink.
 const HULL = COLORS.coral;
-const MAST = shade(COLORS.coral);
-const SAIL = COLORS.sun;
-const SAIL_EDGE = shade(COLORS.sun);
-const JIB = BRICK_ROWS[4];
-const JIB_EDGE = shade(BRICK_ROWS[4]);
+const HULL_EDGE = edge(COLORS.coral);
+const KEEL = COLORS.keel; // B4 review: the hull's rows below the horizon, so they clear every sea band
+const MAST = edge(COLORS.coral);
+const SAIL = COLORS.sail;
+const SAIL_EDGE = edge(COLORS.sail);
+const JIB = BRICK_ROWS[5];
+const JIB_EDGE = edge(BRICK_ROWS[5]);
 const CANOPY = colourOf(S.LOOK.treatCanopy);
 const CANOPY_HI = highlight(CANOPY);
 const STRING = shade(CANOPY);
-const INK = shade(COLORS.blue);
+const INK = COLORS.inkCloud;
+const GLINT = COLORS.glint; // B4 review: the glint and the spray, pink so they read on the sun and the sea
 const GULL = shade(COLORS.blue);
 const DOLPHIN = COLORS.blue;
 const SPLASH_TOP = COLORS.cloud;
@@ -208,7 +213,7 @@ function drawInk(ctx, step) {
   let y = game.geo.horizon;
   const W = game.geo.W;
   SEA_H.forEach((h, i) => {
-    ctx.fillStyle = mix(pal.sea[i], INK, 0.35);
+    ctx.fillStyle = mix(pal.sea[i], INK, INK_CLOUD_AMOUNT);
     if (level === 0) ctx.fillRect(0, y, W, h);
     else {
       for (let r = 0; r < h; r++) {
@@ -248,7 +253,7 @@ function drawSky(ctx, step) {
     const sink = Math.round((step / SESSION.sceneSteps) * SUN_RADIUS);
     const y = step < SESSION.sceneSteps ? g.horizon - (SUN_RADIUS - sink) + 3 : g.horizon + 4;
     const r = Math.floor(e.t * 8) % 2 === 0 ? 2 : 1;
-    ctx.fillStyle = COLORS.cloud;
+    ctx.fillStyle = GLINT;
     ctx.fillRect(SUN_X - r, y, r * 2 + 1, 1);
     ctx.fillRect(SUN_X, y - r, 1, r * 2 + 1);
   }
@@ -279,7 +284,7 @@ function drawFish(ctx) {
       const x = Math.round(f.cx - S.FISH_H / 2);
       const y = Math.round(f.y);
       if (!still) {
-        ctx.fillStyle = COLORS.cloud;
+        ctx.fillStyle = GLINT;
         for (let i = 1; i <= SPRAY; i++) if (y + S.FISH_W + i * 4 < game.geo.horizon + 4) ctx.fillRect(x + 2, y + S.FISH_W + i * 4, 1, 1);
       }
       ctx.drawImage(spr.up, x, y);
@@ -315,7 +320,14 @@ function drawBoat(ctx) {
   }
   ctx.fillStyle = MAST;
   ctx.fillRect(mx, deck - 11, 1, 11);
-  pixelBody(ctx, x, deck, S.BOAT_W, S.BOAT_H, HULL, 2);
+  pixelBody(ctx, x, deck, S.BOAT_W, S.BOAT_H, HULL, 2, HULL_EDGE);
+  // The keel: the hull's rows at and below the horizon redrawn in the keel colour, same shape.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, g.horizon, S.BOAT_W, S.BOAT_H);
+  ctx.clip();
+  steppedRect(ctx, x, deck, S.BOAT_W, S.BOAT_H, KEEL, 2);
+  ctx.restore();
   for (const l of fx.landed) ctx.drawImage(ITEM_SPRITES[l.k], x + Math.round(l.x - S.ITEM / 2), deck - S.ITEM + 1);
 }
 
@@ -337,6 +349,7 @@ function drawRing(ctx) {
       ctx.fillRect(x - half, y + dy, half * 2 + 1, 1);
     }
   };
+  disc(RING_R + 1, COLORS.ink); // B4: the white ring in a 1 px ink ring
   disc(RING_R, COLORS.cloud);
   disc(RING_R - 1, SEA_BANDS[1]);
   ctx.fillStyle = RING_FILL;
@@ -375,8 +388,8 @@ function draw(ctx, s) {
   if (ctl.mode === 'paused') drawRing(ctx);
 
   const hud = {
-    count: drawFitted(ctx, String(game.caught), rects.count, COLORS.blue, { align: 'right', maxSize: 1 }),
-    run: drawFitted(ctx, String(run), rects.run, COLORS.blue, { align: 'right', maxSize: 1 }),
+    count: drawFitted(ctx, String(game.caught), rects.count, COLORS.ink, { align: 'right', maxSize: 1 }),
+    run: drawFitted(ctx, String(run), rects.run, COLORS.ink, { align: 'right', maxSize: 1 }),
   };
   drawBackControl(ctx, rects.back.x, rects.back.y, backPressed);
   if (key !== layoutKey) {

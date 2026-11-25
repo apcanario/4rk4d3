@@ -129,3 +129,61 @@ Review findings and fixes (no blockers; verdict fix):
 
 Accepted by the reviewer: the 50 ms bite hold (X10 (a)) and the sail's cream fill (X11).
 
+
+## 2026-11-25: B4 contrast pass
+
+Pedro: "make sure colors are visible. It's pastel but contrast is important". The look stays pastel sunset, rounded 8-bit, pink. The token values below override PLAN §3, §2b and §6b where they differ; PLAN.md is unchanged (X15).
+
+Models that ran: main chat Sonnet 5.5 (claude-sonnet-5-5); builder Opus 5.5 (claude-opus-5-5); reviewer Opus 5.5 (claude-opus-5-5), which had not seen the build; fixes applied by a second Opus 5.5 agent (claude-opus-5-5).
+
+Measured first (old tokens, all 11 states, logical H 240, 240 with a 10 px inset, 300, 400): against the dusk sky (luminance about 0.5) no pastel or mid coral fill reaches WCAG 3:1. Before: paddle 1.72, ball 2.66, score 2.78, wordmark 1.79, back card 1.01, pause ring 1.69 (white on the sunset sea), haptics toggle 1.26; brick row 7 delta E 9.99, sail fill 0.00 (the sun's colour), tiny sun outline 11.33, the SOON tag's white lettering 2.25.
+
+Standard (tests/contrast.mjs, enforced in all three suites; every pair it names passes, with no exception; what still sits outside it is listed under Deferred):
+- (a) Lettering, the ball, the paddle, the boat hull, keel and mast, and every control (back control, pause ring and chevrons, hub tiles, haptics toggle): WCAG contrast ratio >= 3 against every scene colour behind it (sky bands, sea bands, inked sea, sun, clouds) at sunset and all 10 steps. A shape or control passes a background when its fill or its 1 px edge all round clears it (as WCAG 1.4.11 counts a boundary). Small lettering (size 1: score, rally, count, run, SOON, HAPTICS) >= 4.5, glyph colour alone; outlined lettering (the hub tile labels) against its outline, 4.5 at size 1 and 3 at larger sizes. The hull's rows below the horizon are drawn in the keel colour and measured against the plain sea bands, the inked sea band 1 and the sea's pale dashes (the hull reaches at most 3 rows below the horizon, all in sea band 1).
+- (b) Bricks, things to catch, nasty ones, fish, sail and jib, and three effects (review): the sky-event glint (on the sun, or the sea's top band), the spray under a leaping fish (open sky, sun, clouds, the sea's top band) and the ink cloud (against the sea band it darkens): CIE76 delta E >= 20 against every scene colour behind them, fill or 1 px outline. Brick fills alone (bricks have no outline). The sail's fill alone too.
+- (c) The nine brick colours pairwise delta E >= 8.
+- Logical heights 240 (with and without a 10 px top inset), 300 and 400; the hub on real layouts at 360x640, 360x800 and 360x1067 (scale 8).
+
+Token changes (the recorded deviation from PLAN §3; scene tokens unchanged: sky, sun, cloud, star, sea, dusk; coral unchanged):
+
+| Token or use | Old | New |
+| --- | --- | --- |
+| blue (ball, nasty ones, dolphin, bits) | #4A6FA5 | #436495 (10 percent toward black) |
+| ink (new): score, rally, count, run, back chevron and edge, SOON tag, toggle, pause ring's outer ring and chevron outline | the blue #4A6FA5 | #30486B (the blue 35 percent toward black) |
+| brick row 7 (and the pearl) | #FFB2C4 | #FFA2CE |
+| card (new name): back control, SOON tag fill | literals #A0D0E8 and #78B4D8 | #A0D0E8 |
+| sail (new) | cream, the sun token #FFF4D6 | #A0D0E8 |
+| edge (new): 1 px all round, EDGE_AMOUNT 0.7 toward #783C5A | none (items and fish: shade, 0.38) | paddle, hull, mast, hub tiles, wordmark outline, outlines of things to catch and fish, sail and jib edges; coral's edge #9C455E |
+| jib | brick row 5 #FF96B2 | brick row 6 #F57DA8 |
+| hub tile lettering and chevron | sun #FFF4D6 | white #FFFFFF |
+| STACK tile label and edge | #F78E90, no edge | coral's edge #9C455E |
+| haptics toggle | on: blue body, white text; off: #C5E5F1 body, blue text | on: ink body, white rim and text; off: white body, ink rim and text |
+| pause ring | white ring, white chevrons | white ring in a 1 px ink ring, white chevrons in a 1 px ink outline |
+| keel (new, review): the hull's rows at and below the horizon | coral and its edge #9C455E | #241E38 (deep plum) |
+| glint (new, review): the sky-event glint and the spray dots | white #FFFFFF | #FFA2CE (brick row 7's pink) |
+| inkCloud and INK_CLOUD_AMOUNT (new, review): the ink cloud | the blue's shade #57557F mixed 0.35 into the sea | #483080 mixed 0.45 |
+| hub tile labels (review) | white with a 1 px drop shade | white in a 1 px outline of the coral's edge #9C455E, no drop shade (as the wordmark) |
+
+Weakest pairs after (with the review fixes): (a) pause rings, chevrons and the haptics toggle on sea band 2 at step 9, 3.11; ball on sky band 10 at full dusk, 3.13; paddle, hull, mast and tiles by their edge, 3.19; keel on the inked sea band 1 at full dusk, 3.25; wordmark by its outline, 3.32; small lettering 5.04; tile labels against their outline 6.13. (b) ink cloud on sea band 3 at full dusk, 20.85; spray and brick row 7 on sky band 5 at full dusk (H 240), 21.24; brick row 5 21.41; brick row 9 21.65; tiny sun 27.62; sail fill on the sun 37.20; glint 45.50. (c) rows 1 and 2, 10.11; row 7 against row 5, 11.30.
+
+Built:
+- shared/tokens.js and theme.css (mirrored): the values above, edge() and EDGE_AMOUNT. shared/pixel.js: pixelBody takes a rim (the edge all round inside the same w x h, so sizes and hit areas are unchanged); the back control in card and ink; no colour literals left. shared/font.js: drawFitted takes an outline; drawTextOutlined.
+- Hub: wordmark outlined (its box 1 px taller and higher, the letters where they were), tiles edged with white lettering, STACK edged and lettered in the coral's edge, the SOON tag in ink on the card, the toggle in ink and white.
+- Bricks: paddle edged, score and rally in ink, pause ring and chevrons in ink and white. Catch: hull edged, mast in the edge, sail and jib as above, sprite outlines in the edge, count and run in ink, pause ring in ink and white. Physics, pace, clock and haptics code untouched.
+- Tests: tests/contrast.mjs (new, not shipped); the readability blocks in tests/bricks-sim.mjs (230 checks, was 210) and tests/catch-sim.mjs (186, was 172) replaced by the standard at all 11 states and the four heights, plus checks that the games draw with the measured colours, the pixelBody rim, the brick pairwise check and a theme.css mirror check; tests/check.py (238, was 205): the hub standard at three heights, the drawn colours of the hub, Bricks and Catch at sunset, step 5 and step 10, Bricks at dusk against the standard (rally in ink). With the old token values every new standard check fails (bricks-sim 13, catch-sim 13, the browser checks 16 with the old values under the new names). All three suites pass; check.py passed twice in full.
+- Service worker cache rlx-v9 (rlx-v10 after the review fixes). README updated (token note, test text).
+- X9 (brick row 7 at dusk) and X11 (the sail's cream fill) are resolved by this row and removed from Proposed.
+
+Not verifiable headless: real screen brightness, outdoor glare and OLED rendering on Pedro's phone; whether the edges and the ink read as too heavy for the pastel look (X17).
+
+Review findings and fixes (verdict fix):
+1. Hull keel (should-fix), fixed. The hull's rows in sea band 1 failed the standard: its edge #9C455E there was 2.90 down to 2.25 on the plain sea from step 5 and 2.36 down to 1.66 on the inked dusk sea; its delta E against band 1 was 50 to 68 (the 76 in X14 and in the catch-sim log line was the coral fill's, not the edge's; both are gone). The hull's rows at and below the horizon are now redrawn, same stepped shape, in the new keel #241E38: 3.25 on the inked sea band 1 at full dusk, 9.46 on the sunset sea, at least 3.93 on every plain sea band at all 11 states. Against the inked sea bands 2 and 3, where the hull never reaches, it would be 2.55. The hull now meets (a) everywhere, no exception.
+2. Hub tile labels (nit), fixed. White on coral was 3.30:1. Active tile labels are now white in a 1 px outline of the coral's edge, as the wordmark: 6.13 against the outline. The outline takes the place of the drop shade, so the label sizes are unchanged (2 on the test phones, 1 at logical H 240); labelSizeFor counts the outline, and the labels fit their boxes. At size 1 the outline fills the 1 px gaps between letters, so the label reads as white on a plum band. The wordmark's 1 px growth leaves the tiles at or below H/2 (first tile at 120, 152 and 252 for H 240, 300 and 400; the wordmark ends at 41).
+3. Sampled label pixel (nit), fixed. tests/check.py no longer measures the tile label with a constant: it samples the drawn glyph and outline pixels from a screenshot at three heights and measures those.
+4. Effects (Pedro wants everything visible), fixed. Glint and spray: #FFA2CE (white was delta E 16.25 on the sun, 0 on a cloud, 8 on the pale sky); now at least 45.50 (glint) and 21.24 (spray). Ink cloud: #483080 mixed 0.45 (was the blue's shade mixed 0.35, 7.45 to 16.41 from the sea); now at least 20.85. tests/catch-sim.mjs measures all three at all 11 states and four heights, and tests/check.py samples the keel, the inked sea and the glint as drawn at sunset, step 5 and step 10 on three heights. With the old values restored temporarily (keel #9C455E, glint white, ink cloud #57557F at 0.35, labels with the drop shade), catch-sim failed 8 checks and check.py 23 (the catch-sim run, the bricks-sim run on its theme mirror check, 6 hub label checks, 15 Catch ink and glint checks; white on the dusk sea passes); restored, all pass.
+5. X13 flake, fixed. The failing check was '[catch 360x800] haptics off: zero vibrate calls over 0 catches and a bite': no catch came in the 6 s tracking window. The haptics-off check now seeds the save with a thing just above the deck over the boat and a nasty in the air, holds until a catch and a bite (polled, 10 s each), and needs at least one of each, so the zero-calls check cannot pass on no events; the 8 ms catch-tick check tracks until a catch (at most 30 s).
+Reviewer's note, kept: the pause ring, chevrons and haptics toggle pass by their fill; X17 (the phone check) stays.
+
+Suites after the review fixes: bricks-sim 230 checks, 0 failures; catch-sim 189 (was 186), 0 failures; check.py 268 (was 238), 0 failures in five full runs. Service worker cache rlx-v10.
+
+Deferred: X15 (PLAN text for the new values), X16 (effects still outside the standard: the ball trail, a pop particle's highlight bit, the splash's white top), X17 (device pass).

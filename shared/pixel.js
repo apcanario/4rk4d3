@@ -156,11 +156,18 @@ export function steppedRect(ctx, x, y, w, h, color, steps = 1) {
 
 /**
  * A rounded 8-bit body (PLAN §3): stepped-corner fill, a 1 px highlight line
- * just inside the top edge and a 1 px shade along the bottom.
+ * just inside the top edge and a 1 px shade along the bottom. With rim (B4
+ * contrast pass), a 1 px edge in that colour runs all round inside the same
+ * w x h, and the body sits within it, so the size never changes.
  */
-export function pixelBody(ctx, x, y, w, h, color, steps = 1) {
+export function pixelBody(ctx, x, y, w, h, color, steps = 1, rim = null) {
   x = Math.round(x);
   y = Math.round(y);
+  if (rim) {
+    steppedRect(ctx, x, y, w, h, rim, steps);
+    pixelBody(ctx, x + 1, y + 1, w - 2, h - 2, color, Math.max(1, steps - 1));
+    return;
+  }
   steppedRect(ctx, x, y, w, h, color, steps);
   const s = Math.min(steps, Math.floor(h / 2));
   ctx.fillStyle = shade(color);
@@ -321,10 +328,10 @@ export const BACK_SIZE = { w: 15, h: 13 };
 /** The small back control used top-left in every game. */
 export function drawBackControl(ctx, x, y, pressed = false) {
   const dy = pressed ? 1 : 0;
-  const card = '#A0D0E8';
-  pixelBody(ctx, x, y + dy, BACK_SIZE.w, BACK_SIZE.h, card, 2);
-  // chevron, 4 x 7, drawn as pixels in the score blue
-  ctx.fillStyle = COLORS.blue;
+  // A pale card with an ink edge all round (B4: the edge carries it on the sky).
+  pixelBody(ctx, x, y + dy, BACK_SIZE.w, BACK_SIZE.h, COLORS.card, 2, COLORS.ink);
+  // chevron, 4 x 7, drawn as pixels in the ink of the lettering
+  ctx.fillStyle = COLORS.ink;
   const cx = Math.round(x) + 5;
   const cy = Math.round(y) + 3 + dy;
   const rows = [3, 2, 1, 0, 1, 2, 3];

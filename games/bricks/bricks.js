@@ -20,8 +20,8 @@ export const CONFIG = Object.freeze({
   loopNudgeDeg: 8, // ...the path turns this far, alternating sides
 });
 
-import { COLORS, BRICK_ROWS, SEA_BANDS, highlight } from '../../shared/tokens.js';
-import { drawFitted, drawText, measure } from '../../shared/font.js';
+import { COLORS, BRICK_ROWS, SEA_BANDS, highlight, edge } from '../../shared/tokens.js';
+import { drawFitted, drawTextOutlined, measure } from '../../shared/font.js';
 import {
   createScreen, drawScene, drawBackControl, BACK_SIZE, initPage, hitTest, publishHits, goToHub,
   pixelBody, SEA_HEIGHT, reducedMotion,
@@ -83,6 +83,7 @@ const TRAIL_COLOR = highlight(COLORS.blue);
 const RING_FILL = highlight(SEA_BANDS[1]);
 const SPLASH_TOP = COLORS.cloud;
 const SPLASH_BODY = highlight(SEA_BANDS[0]);
+const PADDLE_EDGE = edge(COLORS.coral); // B4: the paddle's 1 px edge all round
 
 /* ---------- save and restore ---------- */
 
@@ -191,11 +192,14 @@ function drawRing(ctx) {
       ctx.fillRect(x - half, y + dy, half * 2 + 1, 1);
     }
   };
+  // B4: a white ring in a 1 px ink ring, white chevrons in a 1 px ink
+  // outline; on every sea colour one of the two stands off it.
+  disc(RING_R + 1, COLORS.ink);
   disc(RING_R, COLORS.cloud);
   disc(RING_R - 1, RING_FILL);
   const cw = measure('<', 1);
-  drawText(ctx, '<', x - RING_R - 8 - cw, y - 3, 1, COLORS.cloud);
-  drawText(ctx, '>', x + RING_R + 9, y - 3, 1, COLORS.cloud);
+  drawTextOutlined(ctx, '<', x - RING_R - 8 - cw, y - 3, 1, COLORS.cloud, COLORS.ink);
+  drawTextOutlined(ctx, '>', x + RING_R + 9, y - 3, 1, COLORS.cloud, COLORS.ink);
 }
 
 function draw(ctx, s) {
@@ -236,7 +240,7 @@ function draw(ctx, s) {
     });
     pixelBody(ctx, game.ball.x, game.ball.y, P.BALL, P.BALL, COLORS.blue, 1);
   }
-  pixelBody(ctx, game.paddleX, g.paddleY, P.PADDLE_W, P.PADDLE_H, COLORS.coral, 2);
+  pixelBody(ctx, game.paddleX, g.paddleY, P.PADDLE_W, P.PADDLE_H, COLORS.coral, 2, PADDLE_EDGE);
 
   if (fx.splash) {
     const x0 = Math.round(fx.splash.x) - 3;
@@ -248,8 +252,8 @@ function draw(ctx, s) {
   if (mode === 'paused') drawRing(ctx);
 
   const hud = {
-    score: drawFitted(ctx, String(game.score), rects.score, COLORS.blue, { align: 'right', maxSize: 1 }),
-    rally: drawFitted(ctx, String(rally), rects.rally, COLORS.blue, { align: 'right', maxSize: 1 }),
+    score: drawFitted(ctx, String(game.score), rects.score, COLORS.ink, { align: 'right', maxSize: 1 }),
+    rally: drawFitted(ctx, String(rally), rects.rally, COLORS.ink, { align: 'right', maxSize: 1 }),
   };
   drawBackControl(ctx, rects.back.x, rects.back.y, backPressed);
 

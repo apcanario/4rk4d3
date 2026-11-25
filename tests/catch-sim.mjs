@@ -10,6 +10,7 @@ import * as S from '../games/catch/sim.js';
 import * as SE from '../shared/session.js';
 import * as T from '../shared/tokens.js';
 import * as PX from '../shared/pixel.js';
+import * as CT from './contrast.mjs';
 
 const ROOT = new URL('../', import.meta.url);
 const read = (p) => readFileSync(fileURLToPath(new URL(p, ROOT)), 'utf8');
@@ -725,30 +726,27 @@ function itemAt(s, x, y, vy = 40) {
 }
 
 {
-  // Readability (PLAN §6b Accept, as B2): the boat, the things to catch, the
-  // nasty ones and the fish against every scene colour under them, at sunset
-  // and at each of the 10 steps. CIE76 colour difference in CIELAB (D65),
-  // threshold 10. Each sprite is measured by the colours on its edge, the
-  // ones that meet the scene: an outlined sprite's outline, a nasty's blue body.
-  const THRESH = 10;
-  const lin = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
-  const lab = (hex) => {
-    const n = parseInt(hex.slice(1), 16);
-    const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(lin);
-    const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
-    const X = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047);
-    const Y = f(0.2126 * r + 0.7152 * g + 0.0722 * b);
-    const Z = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
-    return [116 * Y - 16, 500 * (X - Y), 200 * (Y - Z)];
-  };
-  const dE = (a, b) => { const p = lab(a); const q = lab(b); return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); };
-  const colour = (name) => (name.startsWith('row') ? T.BRICK_ROWS[Number(name.slice(3))] : T.COLORS[name]);
-  const keyColour = (k, body) => ({ '#': body, h: T.highlight(body), s: T.shade(body), o: T.shade(body), c: T.COLORS.sun })[k];
-  const edges = (grid, body) => [...S.edgeKeys(grid)].map((k) => keyColour(k, body));
-  const ink = T.shade(T.COLORS.blue);
+  // Readability, row B4 contrast pass (standard in tests/contrast.mjs and the
+  // B4 changelog entry): the boat, the things to catch, the nasty ones, the
+  // fish, the HUD and the pause ring against every scene colour under them,
+  // at sunset and each of the 10 steps, on logical heights 240 (with and
+  // without a 10 px top inset), 300 and 400. No exceptions. Outlined sprites
+  // pass a background when the fill or the outline clears it. The hull's
+  // rows below the horizon are the keel (B4 review); the glint, the spray
+  // and the ink cloud are held to delta E >= 20 too (B4 review).
+  const C = T.COLORS;
+  const edge = T.edge || T.shade; // tokens before B4 had no edge
+  const ink = C.ink || C.blue;
+  const card = C.card || '#A0D0E8';
+  const sail = C.sail || C.sun;
+  const colour = (name) => (name.startsWith('row') ? T.BRICK_ROWS[Number(name.slice(3))] : C[name]);
+  // Tokens before the B4 review had no keel, glint or ink cloud: fall back to what was drawn then.
+  const keel = C.keel || edge(C.coral);
+  const glint = C.glint || C.cloud;
+  const inkCloud = C.inkCloud || T.shade(C.blue);
+  const inkAmt = T.INK_CLOUD_AMOUNT || 0.35;
   const screens = [['H240', 240, 0], ['H240-safe', 240, 10], ['H300', 300, 0], ['H400', 400, 0]];
-  const results = [];
-  const info = [];
+  const M = CT.pairs();
   for (const [tag, H, safeTop] of screens) {
     const g = geoFor(H, safeTop);
     const horizon = g.horizon;
@@ -761,49 +759,70 @@ function itemAt(s, x, y, vy = 40) {
       }
       return out;
     };
-    const sky = bandsOver(g.top, horizon); // things fall through the whole open sky
+    const skyIx = bandsOver(g.top, horizon); // things fall through the whole open sky
     const boatSky = bandsOver(g.deckY - 11, g.deckY + 1); // mast, sails, hull top (dip included)
     const hud = bandsOver(5 + safeTop, 5 + safeTop + 16);
     for (let k = 0; k <= 10; k++) {
       const pal = T.scenePalette(k / 10);
-      const sun = k < 10 ? [['sun', T.COLORS.sun]] : [];
-      const skyBg = [...sky.map((i) => [`sky band ${i + 1}`, pal.sky[i]]), ...sun, ['cloud', T.COLORS.cloud]];
-      const seaBg = pal.sea.flatMap((c, i) => [[`sea band ${i + 1}`, c], [`inked sea band ${i + 1}`, T.mix(c, ink, 0.35)]]);
-      const add = (what, fgs, bgs) => {
-        for (const fg of fgs) for (const [on, bg] of bgs) results.push({ tag, k, what, fg, on, bg, d: dE(fg, bg) });
-      };
-      // The boat: hull (its top in the sky and the sun, its bottom 2 px in the first sea band), mast, sail and jib edges.
-      const boatBg = [...boatSky.map((i) => [`sky band ${i + 1}`, pal.sky[i]]), ...sun];
-      add('boat hull', [T.COLORS.coral], [...boatBg, [`sea band 1`, pal.sea[0]], ['inked sea band 1', T.mix(pal.sea[0], ink, 0.35)]]);
-      add('boat mast', [T.shade(T.COLORS.coral)], boatBg);
-      add('boat sail edge', [T.shade(T.COLORS.sun)], boatBg);
-      add('boat jib edge', [T.shade(T.BRICK_ROWS[4])], boatBg);
-      for (const it of S.LOOK.items) add(`item ${it.name}`, edges(S.spriteGrid(it.mask, true), colour(it.colour)), skyBg);
-      for (const n of S.LOOK.nasties) add(`nasty ${n.name}`, edges(n.mask, colour(n.colour)), skyBg);
-      const fishGrid = S.spriteGrid(S.LOOK.fish.mask, true);
-      for (const name of S.LOOK.fish.colours) add(`fish ${name}`, edges(fishGrid, colour(name)), [...skyBg, ...seaBg]);
-      add('count and run', [T.COLORS.blue], hud.map((i) => [`sky band ${i + 1}`, pal.sky[i]]));
-      // For the record only: the sail's cream fill and the parachute (cosmetic).
-      for (const [on, bg] of boatBg) info.push({ tag, k, what: 'sail fill (cream)', fg: T.COLORS.sun, on, bg, d: dE(T.COLORS.sun, bg) });
+      const sun = k < 10 ? [['sun', C.sun]] : [];
+      const sky = (ix) => ix.map((i) => [`sky band ${i + 1}`, pal.sky[i]]);
+      const skyBg = [...sky(skyIx), ...sun, ['cloud', C.cloud]];
+      const inked = (c) => T.mix(c, inkCloud, inkAmt);
+      const seaBg = pal.sea.flatMap((c, i) => [[`sea band ${i + 1}`, c], [`inked sea band ${i + 1}`, inked(c)]]);
+      // The sea's top band as drawn under the keel, the glint and the spray: plain, inked, and its pale dashes.
+      const sea1 = [['sea band 1', pal.sea[0]], ['inked sea band 1', inked(pal.sea[0])], ['sea dash', T.mix(C.sun, pal.sea[0], 0.15)]];
+      const boatBg = [...sky(boatSky), ...sun];
+      const add = (what, rule, fill, e, bgs) => { for (const [on, bg] of bgs) M.add(what, rule, fill, e, on, bg, { tag, k }); };
+      add('boat hull', 'cr', C.coral, edge(C.coral), boatBg);
+      // The hull reaches at most 3 rows below the horizon (deck 5 above it, 7 tall, a 1 px dip): sea band 1.
+      add('boat keel', 'cr', keel, null, [...pal.sea.map((c, i) => [`sea band ${i + 1}`, c]), ...sea1.slice(1)]);
+      add('boat mast', 'cr', edge(C.coral), null, boatBg);
+      add('boat sail', 'de', sail, edge(sail), boatBg);
+      add('boat sail fill', 'de', sail, null, boatBg);
+      add('boat jib', 'de', T.BRICK_ROWS[5], edge(T.BRICK_ROWS[5]), boatBg);
+      for (const it of S.LOOK.items) add(`item ${it.name}`, 'de', colour(it.colour), edge(colour(it.colour)), skyBg);
+      for (const n of S.LOOK.nasties) add(`nasty ${n.name}`, 'de', colour(n.colour), null, skyBg);
+      for (const name of S.LOOK.fish.colours) add(`fish ${name}`, 'de', colour(name), edge(colour(name)), [...skyBg, ...seaBg]);
+      add('count and run', 'cr-small', ink, null, sky(hud));
+      add('back control', 'cr', card, ink, sky(hud));
+      add('pause ring', 'cr', C.cloud, ink, seaBg);
+      // Effects (B4 review): the glint sits on the sun (on the sea's top band from step 8, where the sun is low);
+      // the spray under a leaping fish over the open sky, the sun, a cloud or the sea's top band;
+      // the ink cloud against the sea band it darkens.
+      add('sky-event glint', 'de', glint, null, [...sun, ...sea1]);
+      add('spray', 'de', glint, null, [...skyBg, ...sea1]);
+      pal.sea.forEach((c, i) => M.add('ink cloud', 'de', inked(c), null, `sea band ${i + 1}`, c, { tag, k }));
     }
   }
-  const worst = (rows) => rows.reduce((a, b) => (b.d < a.d ? b : a));
-  const fmt = (r) => `${r.what} ${r.fg} on ${r.on} ${r.bg}, step ${r.k}, ${r.tag}: dE ${r.d.toFixed(2)}`;
-  console.log(`  [readability] weakest at sunset: ${fmt(worst(results.filter((r) => r.k === 0)))}`);
-  console.log(`  [readability] weakest over the 10 steps: ${fmt(worst(results.filter((r) => r.k > 0)))}`);
-  for (const group of ['boat', 'item', 'nasty', 'fish', 'count']) {
-    const mine = results.filter((r) => r.what.startsWith(group));
-    console.log(`  [readability] ${group}: weakest ${fmt(worst(mine))}`);
-  }
-  const under = results.filter((r) => r.d < THRESH);
-  for (const u of under) console.log(`  [readability] UNDER THRESHOLD: ${fmt(u)}`);
+  const rows = M.rows;
+  console.log(`  [readability] weakest at sunset: ${CT.fmt(CT.worst(rows.filter((r) => r.k === 0)))}`);
+  console.log(`  [readability] weakest over the 10 steps: ${CT.fmt(CT.worst(rows.filter((r) => r.k > 0)))}`);
+  for (const what of [...new Set(rows.map((r) => r.what))]) console.log(`  [readability] ${CT.fmt(CT.worst(rows.filter((r) => r.what === what)))}`);
+  for (const u of rows.filter((r) => !r.ok)) console.log(`  [readability] UNDER: ${CT.fmt(u)}`);
   for (const [tag] of screens) {
-    const mine = results.filter((r) => r.tag === tag);
-    check(mine.every((r) => r.d >= THRESH),
-      `[${tag}] boat, items, nasties, fish and count readable at sunset and all 10 steps: every edge and scene pair dE >= ${THRESH} (weakest ${worst(mine).d.toFixed(2)})`);
+    const mine = rows.filter((r) => r.tag === tag);
+    for (const [rule, label] of [['cr', `boat hull, keel and mast, back control, pause ring: contrast >= ${CT.MIN_CR} (fill or edge)`],
+      ['cr-small', `count and run: contrast >= ${CT.MIN_CR_SMALL}`],
+      ['de', `sail (its fill too), jib, items, nasties, fish, glint, spray, ink cloud: delta E >= ${CT.MIN_DE} (fill or outline)`]]) {
+      const r = mine.filter((x) => x.rule === rule);
+      check(r.length > 0 && r.every((x) => x.ok), `[${tag}] sunset and all 10 steps, ${label} (weakest ${CT.worst(r).v.toFixed(2)}, ${r.filter((x) => !x.ok).length} under)`);
+    }
   }
-  const sailUnder = info.filter((r) => r.d < THRESH);
-  console.log(`  [readability] for the record: the sail's cream fill (inside its shaded edge) is under ${THRESH} on ${sailUnder.length} of ${info.length} pairs, weakest ${fmt(worst(info))}`);
+  check(sail !== C.sun && CT.deltaE(sail, C.sun) >= CT.MIN_DE, `the sail is not the sun's colour: delta E ${CT.deltaE(sail, C.sun).toFixed(2)}`);
+  // What is measured is what is drawn: catch.js draws with these colours.
+  const src = catchSrc.replace(/\/\/.*$/gm, '');
+  check(/o: edge\(body\)/.test(src), 'catch.js outlines things to catch and fish in the edge colour');
+  check(/HULL_EDGE = edge\(COLORS\.coral\)/.test(src) && /pixelBody\(ctx, x, deck, S\.BOAT_W, S\.BOAT_H, HULL, 2, HULL_EDGE\)/.test(src)
+    && /MAST = edge\(COLORS\.coral\)/.test(src), 'catch.js draws the hull in coral with its edge all round, the mast in the edge');
+  check(/KEEL = COLORS\.keel/.test(src) && /ctx\.rect\(x, g\.horizon, S\.BOAT_W, S\.BOAT_H\);\s*ctx\.clip\(\);\s*steppedRect\(ctx, x, deck, S\.BOAT_W, S\.BOAT_H, KEEL, 2\);/.test(src),
+    "catch.js redraws the hull's rows at and below the horizon in the keel colour");
+  check(/GLINT = COLORS\.glint/.test(src) && (src.match(/fillStyle = GLINT;/g) || []).length === 2 && !/fillStyle = COLORS\.cloud;/.test(src),
+    'catch.js draws the glint and the spray in the glint colour (no white effect left)');
+  check(/INK = COLORS\.inkCloud/.test(src) && /mix\(pal\.sea\[i\], INK, INK_CLOUD_AMOUNT\)/.test(src), 'catch.js mixes the ink cloud with its token and amount');
+  check(/SAIL = COLORS\.sail/.test(src) && /SAIL_EDGE = edge\(COLORS\.sail\)/.test(src) && /JIB = BRICK_ROWS\[5\]/.test(src)
+    && /JIB_EDGE = edge\(BRICK_ROWS\[5\]\)/.test(src), 'catch.js draws the sail in its token and the jib in brick row 6, each with its edge');
+  check((src.match(/rects\.(count|run), COLORS\.ink/g) || []).length === 2, 'catch.js draws the count and run in the ink');
+  check(/disc\(RING_R \+ 1, COLORS\.ink\);\s*disc\(RING_R, COLORS\.cloud\);/.test(src), 'catch.js draws the pause ring white in an ink ring');
 }
 
 /* ---------- haptics: the shared tick with the game's events ---------- */

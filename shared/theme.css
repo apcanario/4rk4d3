@@ -1,9 +1,15 @@
-/* RLX page theme. Tokens mirror shared/tokens.js (PLAN §3); keep both in step. */
+/* RLX page theme. Tokens mirror shared/tokens.js (PLAN §3, B4 contrast pass); keep both in step. */
 :root {
   --sky-top: #FFF7EC;
   --sky-bottom: #FFCDC0;
   --coral: #F05A68;
-  --blue: #4A6FA5;
+  --blue: #436495;
+  --ink: #30486B;
+  --card: #A0D0E8;
+  --sail: #A0D0E8;
+  --keel: #241E38;
+  --glint: #FFA2CE;
+  --ink-cloud: #483080;
   --sun: #FFF4D6;
   --cloud: #FFFFFF;
   --sea-1: #96D0E6;
@@ -15,7 +21,7 @@
   --brick-4: #FFA38C;
   --brick-5: #FF96B2;
   --brick-6: #F57DA8;
-  --brick-7: #FFB2C4;
+  --brick-7: #FFA2CE;
   --brick-8: #78B4D8;
   --brick-9: #A0D0E8;
   --shade-target: #783C5A;

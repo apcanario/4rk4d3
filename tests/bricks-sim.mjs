@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import * as P from '../games/bricks/physics.js';
+import * as CT from './contrast.mjs';
 
 const ROOT = new URL('../', import.meta.url);
 const read = (p) => readFileSync(fileURLToPath(new URL(p, ROOT)), 'utf8');
@@ -769,29 +770,20 @@ check(/^\/\/[^\n]*\n(\/\/[^\n]*\n)*\n\/\/[^\n]*\nexport const SESSION/.test(read
 }
 
 {
-  // Readability (PLAN §2b): Bricks, paddle, ball and lettering keep their
-  // colours; each is checked against every scene colour it is drawn over, at
-  // sunset and at each of the 10 steps. Measure: CIE76 colour difference in
-  // CIELAB (D65). Threshold: delta E >= 10, i.e. clearly different at a glance.
+  // Readability, row B4 contrast pass (standard in tests/contrast.mjs and the
+  // B4 changelog entry): every foreground against every scene colour drawn
+  // behind it, at sunset and each of the 10 steps, on logical heights 240
+  // (with and without a 10 px top inset), 300 and 400. No exceptions.
   // Backgrounds come from the real layout: the brick field (top to 12 rows
   // down), the paddle line (its sky bands and the sun), the ball (every sky
-  // band, the clouds and the sun), the score and rally (the HUD bands), the
-  // pause ring and its chevrons (white, on the sea).
-  const THRESH = 10;
-  const lin = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
-  const lab = (hex) => {
-    const n = parseInt(hex.slice(1), 16);
-    const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(lin);
-    const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
-    const X = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047);
-    const Y = f(0.2126 * r + 0.7152 * g + 0.0722 * b);
-    const Z = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
-    return [116 * Y - 16, 500 * (X - Y), 200 * (Y - Z)];
-  };
-  const dE = (a, b) => { const p = lab(a); const q = lab(b); return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); };
-  // Logical heights: 240 (smallest design height), 300 (both test phones, 360x800 and 412x915), 330.
-  const screens = [['H240', 240, 0], ['H240-safe', 240, 10], ['H300', 300, 0], ['H330', 330, 0]];
-  const results = [];
+  // band, the clouds and the sun), the HUD (score, rally, back control), the
+  // pause ring and its chevrons (the sea bands).
+  const C = T.COLORS;
+  const edge = T.edge || T.shade; // tokens before B4 had no edge
+  const ink = C.ink || C.blue;
+  const card = C.card || '#A0D0E8';
+  const screens = [['H240', 240, 0], ['H240-safe', 240, 10], ['H300', 300, 0], ['H400', 400, 0]];
+  const M = CT.pairs();
   for (const [tag, H, safeTop] of screens) {
     const horizon = H - PX.SEA_HEIGHT;
     const backY = 5 + safeTop;
@@ -811,41 +803,86 @@ check(/^\/\/[^\n]*\n(\/\/[^\n]*\n)*\n\/\/[^\n]*\nexport const SESSION/.test(read
     const hud = bandsOver(backY, backY + 16);
     for (let k = 0; k <= 10; k++) {
       const pal = T.scenePalette(k / 10);
-      const sun = k < 10 ? [T.COLORS.sun] : [];
-      const pairs = [];
-      for (const c of T.BRICK_ROWS) for (const i of field) pairs.push([`brick ${c}`, c, `sky band ${i + 1}`, pal.sky[i]]);
-      for (const i of paddle) pairs.push(['paddle', T.COLORS.coral, `sky band ${i + 1}`, pal.sky[i]]);
-      for (const c of sun) pairs.push(['paddle', T.COLORS.coral, 'sun', c]);
-      for (const i of all) pairs.push(['ball', T.COLORS.blue, `sky band ${i + 1}`, pal.sky[i]]);
-      for (const c of [...sun, T.COLORS.cloud]) pairs.push(['ball', T.COLORS.blue, c === T.COLORS.cloud ? 'cloud' : 'sun', c]);
-      for (const i of hud) pairs.push(['score and rally', T.COLORS.blue, `sky band ${i + 1}`, pal.sky[i]]);
-      for (const i of [0, 1, 2]) pairs.push(['pause ring and chevrons', T.COLORS.cloud, `sea band ${i + 1}`, pal.sea[i]]);
-      for (const [what, fg, on, bg] of pairs) results.push({ tag, k, what, fg, on, bg, d: dE(fg, bg) });
+      const sky = (ix) => ix.map((i) => [`sky band ${i + 1}`, pal.sky[i]]);
+      const sun = k < 10 ? [['sun', C.sun]] : [];
+      const sea = pal.sea.map((c, i) => [`sea band ${i + 1}`, c]);
+      const add = (what, rule, fill, e, bgs) => { for (const [on, bg] of bgs) M.add(what, rule, fill, e, on, bg, { tag, k }); };
+      T.BRICK_ROWS.forEach((c, i) => add(`brick row ${i + 1}`, 'de', c, null, sky(field)));
+      add('paddle', 'cr', C.coral, edge(C.coral), [...sky(paddle), ...sun]);
+      add('ball', 'cr', C.blue, null, [...sky(all), ...sun, ['cloud', C.cloud]]);
+      add('score and rally', 'cr-small', ink, null, sky(hud));
+      add('back control', 'cr', card, ink, sky(hud));
+      add('pause ring', 'cr', C.cloud, ink, sea);
+      add('pause chevrons', 'cr', C.cloud, ink, sea);
     }
   }
-  const worst = (rows) => rows.reduce((a, b) => (b.d < a.d ? b : a));
-  const fmt = (r) => `${r.what} on ${r.on} ${r.bg}, step ${r.k}, ${r.tag}: dE ${r.d.toFixed(2)}`;
-  const sunset = results.filter((r) => r.k === 0);
-  const dusk = results.filter((r) => r.k > 0);
-  console.log(`  [readability] weakest at sunset (B1 as accepted): ${fmt(worst(sunset))}`);
-  console.log(`  [readability] weakest over the 10 steps: ${fmt(worst(dusk))}`);
+  const rows = M.rows;
+  console.log(`  [readability] weakest at sunset: ${CT.fmt(CT.worst(rows.filter((r) => r.k === 0)))}`);
+  console.log(`  [readability] weakest over the 10 steps: ${CT.fmt(CT.worst(rows.filter((r) => r.k > 0)))}`);
+  for (const what of [...new Set(rows.map((r) => r.what))]) console.log(`  [readability] ${CT.fmt(CT.worst(rows.filter((r) => r.what === what)))}`);
+  for (const u of rows.filter((r) => !r.ok)) console.log(`  [readability] UNDER: ${CT.fmt(u)}`);
   for (const [tag] of screens) {
-    const mine = dusk.filter((r) => r.tag === tag);
-    const under = mine.filter((r) => r.d < THRESH);
-    if (under.length) for (const u of under) console.log(`  [readability] UNDER THRESHOLD: ${fmt(u)} (row X9)`);
-    if (tag.startsWith('H240')) {
-      // Known shortfall, reported and proposed as row X9: at the smallest
-      // design height the field reaches sky band 7, and at full dusk brick
-      // row 7 (#FFB2C4) sits 9.99 from it. PLAN fixes both colours. This
-      // check pins it: nothing else under the threshold, and that pair no worse.
-      const other = under.filter((u) => !(u.fg === '#FFB2C4' && u.on === 'sky band 7' && u.k === 10));
-      check(other.length === 0 && under.every((u) => u.d >= 9.99),
-        `[${tag}] readable at all 10 steps: every pair dE >= ${THRESH} except brick #FFB2C4 on sky band 7 at full dusk `
-        + `(${under.map((u) => u.d.toFixed(3)).join(', ') || 'none'}; proposed X9)`);
-    } else {
-      check(under.length === 0, `[${tag}] readable at all 10 steps: every foreground and background pair dE >= ${THRESH} (weakest ${worst(mine).d.toFixed(2)})`);
+    const mine = rows.filter((r) => r.tag === tag);
+    for (const [rule, label] of [['cr', `paddle, ball, back control, pause ring and chevrons: contrast >= ${CT.MIN_CR} (fill or edge)`],
+      ['cr-small', `score and rally: contrast >= ${CT.MIN_CR_SMALL}`],
+      ['de', `bricks: fill delta E >= ${CT.MIN_DE}`]]) {
+      const r = mine.filter((x) => x.rule === rule);
+      check(r.length > 0 && r.every((x) => x.ok), `[${tag}] sunset and all 10 steps, ${label} (weakest ${CT.worst(r).v.toFixed(2)}, ${r.filter((x) => !x.ok).length} under)`);
     }
   }
+  // Fixed pairs: the back chevron on its card (small, so 4.5).
+  const chev = CT.contrast(ink, card);
+  check(chev >= CT.MIN_CR_SMALL, `back chevron on its card: contrast ${chev.toFixed(2)} >= ${CT.MIN_CR_SMALL}`);
+  // The nine brick colours are told apart from each other.
+  let minPair = Infinity;
+  let at = '';
+  T.BRICK_ROWS.forEach((a, i) => T.BRICK_ROWS.forEach((b, j) => {
+    if (j > i && CT.deltaE(a, b) < minPair) { minPair = CT.deltaE(a, b); at = `rows ${i + 1} and ${j + 1}`; }
+  }));
+  check(minPair >= CT.MIN_DE_BRICKS, `the nine brick colours are pairwise distinguishable: delta E >= ${CT.MIN_DE_BRICKS} (weakest ${minPair.toFixed(2)}, ${at})`);
+  // What is measured is what is drawn: bricks.js draws with these colours.
+  const src = bricksSrc.replace(/\/\/.*$/gm, '');
+  check(/PADDLE_EDGE = edge\(COLORS\.coral\)/.test(src) && /pixelBody\(ctx, game\.paddleX[^;]*COLORS\.coral, 2, PADDLE_EDGE\)/.test(src),
+    'bricks.js draws the paddle in coral with its edge all round');
+  check(/pixelBody\(ctx, game\.ball\.x[^;]*COLORS\.blue, 1\)/.test(src), 'bricks.js draws the ball in the blue');
+  check((src.match(/rects\.(score|rally), COLORS\.ink/g) || []).length === 2, 'bricks.js draws the score and rally in the ink');
+  check(/disc\(RING_R \+ 1, COLORS\.ink\);\s*disc\(RING_R, COLORS\.cloud\);/.test(src)
+    && (src.match(/drawTextOutlined\(ctx, '[<>]'[^;]*COLORS\.cloud, COLORS\.ink\)/g) || []).length === 2,
+    'bricks.js draws the pause ring white in an ink ring, the chevrons white in an ink outline');
+  const pxSrc = read('shared/pixel.js').replace(/\/\/.*$/gm, '');
+  check(/pixelBody\(ctx, x, y \+ dy, BACK_SIZE\.w, BACK_SIZE\.h, COLORS\.card, 2, COLORS\.ink\)/.test(pxSrc)
+    && /ctx\.fillStyle = COLORS\.ink;/.test(pxSrc), 'pixel.js draws the back control as a card in an ink edge with an ink chevron');
+  check(hexIn(pxSrc).length === 0, 'no colour literals in pixel.js: tokens only');
+}
+
+{
+  // theme.css mirrors tokens.js: every token value and name is in both.
+  const css = read('shared/theme.css');
+  const kebab = (k) => k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+  const want = [
+    ...Object.entries(T.COLORS).map(([k, v]) => [kebab(k), v]),
+    ...T.BRICK_ROWS.map((v, i) => [`brick-${i + 1}`, v]),
+    ...T.SEA_BANDS.map((v, i) => [`sea-${i + 1}`, v]),
+    ['dusk-sky-top', T.DUSK.skyTop], ['dusk-sky-bottom', T.DUSK.skyBottom],
+    ...T.DUSK.seaBands.map((v, i) => [`dusk-sea-${i + 1}`, v]),
+  ];
+  const missing = want.filter(([k, v]) => !new RegExp(`--${k}:\\s*${v};`, 'i').test(css));
+  check(missing.length === 0, `shared/theme.css mirrors every token in shared/tokens.js (${missing.map(([k, v]) => `--${k} ${v}`).join(', ') || 'all'})`);
+}
+
+{
+  // pixelBody with a rim: the edge runs all round inside the same w x h.
+  const fills = [];
+  const ctx = { fillStyle: '#000000', fillRect(x, y, w, h) { fills.push([this.fillStyle, x, y, w, h]); } };
+  PX.pixelBody(ctx, 0, 0, 30, 6, '#111111', 2, '#222222');
+  const px = new Map();
+  for (const [c, x, y, w, h] of fills) for (let i = x; i < x + w; i++) for (let j = y; j < y + h; j++) px.set(`${i},${j}`, c);
+  const xs = [...px.keys()].map((k) => k.split(',').map(Number));
+  const outer = xs.filter(([x, y]) => ['-1,0', '1,0', '0,-1', '0,1'].some((d) => { const [dx, dy] = d.split(',').map(Number); return !px.has(`${x + dx},${y + dy}`); }));
+  check(Math.max(...xs.map((p) => p[0])) === 29 && Math.max(...xs.map((p) => p[1])) === 5 && Math.min(...xs.map((p) => p[0])) === 0,
+    'pixelBody with a rim keeps its size (30 x 6)');
+  check(outer.length > 0 && outer.every(([x, y]) => px.get(`${x},${y}`) === '#222222'), `pixelBody with a rim: every outer pixel is the rim (${outer.length})`);
+  check([...px.values()].includes('#111111'), 'pixelBody with a rim: the body fills the inside');
 }
 
 /* ---------- haptics: the shared tick with the game's events ---------- */

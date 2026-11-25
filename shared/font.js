@@ -105,18 +105,36 @@ export function drawText(ctx, text, x, y, size, color) {
  * Fit text into a box and draw it. align: 'left' | 'center' | 'right'.
  * Vertically centred. Returns the size used (0 means it was not drawn).
  */
-export function drawFitted(ctx, text, box, color, { align = 'center', maxSize = 16, shadow = null } = {}) {
-  // A 1 px drop shade counts toward the height, so it never leaves the box.
-  const extra = shadow ? 1 : 0;
-  const size = fitSize(text, box.w, box.h - extra, maxSize);
+export function drawFitted(ctx, text, box, color, { align = 'center', maxSize = 16, shadow = null, outline = null } = {}) {
+  // A 1 px drop shade counts toward the height, and a 1 px outline toward
+  // both sides, so neither ever leaves the box.
+  const ring = outline ? 1 : 0;
+  const extra = (shadow ? 1 : 0) + ring * 2;
+  const size = fitSize(text, box.w - ring * 2, box.h - extra, maxSize);
   if (!size) return 0;
-  const w = measure(text, size);
+  const w = measure(text, size) + ring * 2;
   const h = textHeight(size) + extra;
   let x = box.x;
   if (align === 'center') x = box.x + Math.floor((box.w - w) / 2);
   else if (align === 'right') x = box.x + box.w - w;
   const y = box.y + Math.floor((box.h - h) / 2);
-  if (shadow) drawText(ctx, text, x, y + 1, size, shadow);
-  drawText(ctx, text, x, y, size, color);
+  if (outline) drawTextOutlined(ctx, text, x + 1, y + 1, size, color, outline, shadow);
+  else {
+    if (shadow) drawText(ctx, text, x, y + 1, size, shadow);
+    drawText(ctx, text, x, y, size, color);
+  }
   return size;
+}
+
+/**
+ * Text with a 1 px outline all round (B4 contrast pass): the outline colour
+ * drawn at the 8 neighbouring offsets, then the text. (x, y) is the top-left
+ * of the text itself; the outline reaches 1 px further on every side.
+ */
+export function drawTextOutlined(ctx, text, x, y, size, color, outline, shadow = null) {
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) if (dx || dy) drawText(ctx, text, x + dx, y + dy, size, outline);
+  }
+  if (shadow) drawText(ctx, text, x, y + 2, size, shadow);
+  drawText(ctx, text, x, y, size, color);
 }

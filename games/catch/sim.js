@@ -547,9 +547,9 @@ export function ctlSleep(c) {
 // Colour names resolve to tokens in catch.js and tests/catch-sim.mjs:
 // 'row<N>' is BRICK_ROWS[N], 'coral', 'blue' and 'sun' are COLORS. In a mask
 // '#' is the body, 'h' its highlight, 's' its shade, 'c' cream (the sun
-// token), '.' empty. Things to catch and fish get a 1 px outline in the
-// body's shade all round (spriteGrid), so their edge reads on every scene
-// step; the nasty ones are drawn bare, spiky or ragged, in the blue token
+// token), '.' empty. Things to catch and fish get a 1 px outline all round
+// (spriteGrid), drawn in the body's edge colour (tokens.js edge(), B4), so
+// their edge reads on every scene step; the nasty ones are drawn bare, spiky or ragged, in the blue token
 // with its shade inside (PLAN §6b: shape carries the difference).
 export const LOOK = Object.freeze({
   items: Object.freeze([
