@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""RLX row H1 checks in headless Chromium. Not needed to run the app.
+"""RLX checks (rows H1 and B1) in headless Chromium and Node. Not needed to run the app.
 
 Needs Python Playwright with Chromium (pip install playwright;
 python -m playwright install chromium). Run: python3 tests/check.py
 Serves the repo under /4rk4d3/ (the GitHub Pages project subpath), then checks
 both phone widths: pixels crisp, no scroll, navigation by tap and by back,
 haptics setting persists, service worker offline, cache version bump, no
-console errors, no requests to another host. Screenshots go to tests/out/.
+console errors, no requests to another host. Row B1: runs tests/bricks-sim.mjs
+(physics in Node) and plays Bricks in the browser: pause and resume, relative
+drag, save on pause and on hide, restore after a kill, corrupt and old saves,
+haptics on and off, reduced motion, no loop while paused. Screenshots go to tests/out/.
 """
 import functools
 import http.server
@@ -14,6 +17,7 @@ import json
 import pathlib
 import shutil
 import socketserver
+import subprocess
 import sys
 import tempfile
 import threading
@@ -62,10 +66,14 @@ def serve(site_root):
 
 VIBRATE_STUB = """
 window.__vib = [];
+window.__vibAt = [];
 Object.defineProperty(Navigator.prototype, 'vibrate', {
   configurable: true,
-  value: function (p) { window.__vib.push(p); return true; },
+  value: function (p) { window.__vib.push(p); window.__vibAt.push(performance.now()); return true; },
 });
+window.__raf = 0;
+const __rafReal = window.requestAnimationFrame.bind(window);
+window.requestAnimationFrame = (cb) => { window.__raf++; return __rafReal(cb); };
 """
 
 
@@ -259,7 +267,7 @@ def run_viewport(browser, base, w, h):
     tap(page, "bricks")
     page.wait_for_url("**/games/bricks/")
     back_hit = hits(page).get("back")
-    check(page.url == base + "games/bricks/" and back_hit is not None, f"[{tag}] placeholder opens and draws offline")
+    check(page.url == base + "games/bricks/" and back_hit is not None, f"[{tag}] Bricks opens and draws offline")
     page.go_back()
     page.wait_for_url(base)
     # Slash-less folder URL, offline then online, with the worker in control.
@@ -357,8 +365,322 @@ def static_checks():
                 if ink(r, c) and ink(r, c - 1) + ink(r, c + 1) == 1 and ink(r - 1, c) + ink(r + 1, c) == 1:
                     bad.append((key, r, c))
     check(not bad, f"font: every outer corner is cut {bad}")
-    needed = set("RLXBRICKSCATCHSTACKSOONHAPTICSONOFF<")
+    needed = set("RLXBRICKSCATCHSTACKSOONHAPTICSONOFF<>0123456789")
     check(needed <= set(re.findall(r"'(.)':", body)), "font has every character the UI uses")
+
+
+def snap(page):
+    return page.evaluate("window.__bricks.snapshot()")
+
+
+def sea_point(page):
+    """A point in the sea (the thumb zone), in CSS px."""
+    lay = layout_of(page)
+    info = page.evaluate("() => { const r = document.getElementById('screen').getBoundingClientRect(); "
+                         "const c = document.getElementById('screen'); return { l: r.left, t: r.top, k: r.width / c.width, cw: c.width, ch: c.height }; }")
+    s, H = lay["scale"], lay["H"]
+    ox = (info["cw"] - 135 * s) // 2
+    oy = (info["ch"] - H * s) // 2
+    x = info["l"] + (ox + 67.5 * s) * info["k"]
+    y = info["t"] + (oy + (H - 20) * s) * info["k"]
+    return x, y, s, info["k"]
+
+
+def open_bricks(ctx, base):
+    page = ctx.new_page()
+    errors = []
+    page.on("console", lambda m: m.type == "error" and errors.append(m.text))
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(base + "games/bricks/")
+    hits(page)
+    page.wait_for_function("window.__bricks && window.__bricks.snapshot().game")
+    page.wait_for_timeout(150)
+    return page, errors
+
+
+def reopen(page, base, js):
+    """Leave Bricks for the hub, run js there, open Bricks again."""
+    page.goto(base)
+    hits(page)
+    page.evaluate(js)
+    page.goto(base + "games/bricks/")
+    hits(page)
+    page.wait_for_function("window.__bricks && window.__bricks.snapshot().game")
+    page.wait_for_timeout(150)
+
+
+def track(page, ms, x, y, scale, k):
+    """Hold a finger at (x, y) and follow the ball with relative drags, then lift."""
+    width = page.viewport_size["width"]
+    cur = x
+    page.mouse.move(cur, y)
+    page.mouse.down()
+    end = time.time() + ms / 1000
+    while time.time() < end:
+        q = snap(page)["game"]
+        if q["ball"]:
+            d = q["ball"]["x"] + 2.5 - (q["paddleX"] + 15)
+            nxt = max(2, min(width - 2, cur + max(-12, min(12, d / 1.2 * scale * k))))
+            if abs(nxt - cur) > 0.01:
+                page.mouse.move(nxt, y)
+                cur = nxt
+        page.wait_for_timeout(15)
+    page.mouse.up()
+
+
+def two_touches(ctx, page, tag):
+    """Only the first finger down drives the paddle; the next takes over when it lifts.
+    CDP cannot lift one of two touches, so this dispatches touch PointerEvents
+    (ids 11 and 12) on the canvas, the events bricks.js listens to."""
+    x, y, scale, k = sea_point(page)
+    ax, bx = x - 60, x + 60
+
+    def ev(kind, pid, px):
+        page.evaluate("""([kind, pid, px, py]) => document.getElementById('screen').dispatchEvent(new PointerEvent(kind,
+            { pointerId: pid, pointerType: 'touch', clientX: px, clientY: py, bubbles: true, cancelable: true, isPrimary: pid === 11 }))""",
+                      [kind, pid, px, y])
+
+    # Drag toward the middle so the paddle is never at a clamp.
+    q = snap(page)
+    sign = 1 if q["game"]["paddleX"] < 52.5 else -1
+    ev("pointerdown", 11, ax)
+    page.wait_for_timeout(350)
+    p0 = snap(page)["game"]["paddleX"]
+    ev("pointerdown", 12, bx)
+    ev("pointermove", 12, bx + 30 * sign)
+    q = snap(page)
+    check(q["fingers"] == 2 and q["mode"] == "running" and q["game"]["paddleX"] == p0,
+          f"[{tag}] two fingers: the second finger does not move the paddle ({q['game']['paddleX'] - p0:.2f})")
+    ev("pointermove", 11, ax + 10 * sign)
+    p1 = snap(page)["game"]["paddleX"]
+    want = 10 * sign / k / scale * 1.2
+    check(abs((p1 - p0) - want) < 1e-6, f"[{tag}] two fingers: the first finger drives it ({p1 - p0:.2f} for {want:.2f})")
+    ev("pointerup", 11, ax + 10 * sign)
+    q = snap(page)
+    check(q["fingers"] == 1 and q["mode"] == "running", f"[{tag}] two fingers: lifting the first keeps playing")
+    ev("pointermove", 12, bx + 40 * sign)
+    p2 = snap(page)["game"]["paddleX"]
+    check(abs((p2 - p1) - want) < 1e-6, f"[{tag}] two fingers: the remaining finger takes over from where it is ({p2 - p1:.2f} for {want:.2f})")
+    ev("pointerup", 12, bx + 40 * sign)
+    q = snap(page)
+    check(q["fingers"] == 0 and q["mode"] == "paused", f"[{tag}] two fingers: lifting the last one pauses")
+
+
+def run_bricks(browser, base):
+    """Row B1 in the browser at 360x800."""
+    tag = "bricks 360x800"
+    ctx = new_context(browser, 360, 800)
+    foreign = []
+    origin = base.split("/4rk4d3/")[0]
+    ctx.on("request", lambda r: (not r.url.startswith(origin) and not r.url.startswith("data:")) and foreign.append(r.url))
+    page, errors = open_bricks(ctx, base)
+    page.evaluate("localStorage.clear()")
+    page.reload()
+    hits(page)
+    page.wait_for_function("window.__bricks && window.__bricks.snapshot().game")
+    page.wait_for_timeout(200)
+
+    s0 = snap(page)
+    g0 = s0["game"]
+    check(s0["mode"] == "paused" and s0["count"] == 63 and g0["score"] == 0,
+          f"[{tag}] first launch: 9 full rows, score 0, paused ({s0['mode']}, {s0['count']})")
+    check([r["c"] for r in g0["rows"][:9]] == list(range(9)), f"[{tag}] rows coloured by the brick tokens top to bottom")
+    shot = OUT / "bricks-game-paused.png"
+    page.screenshot(path=str(shot))
+    info, s, H, bad, total, ncol, size = crisp(page, shot)
+    check(bad == 0, f"[{tag}] crisp: {total - bad}/{total} uniform {s}x{s} blocks")
+    check(info["sw"] <= info["iw"] and info["sh"] <= info["ih"], f"[{tag}] no scrolling or overflow")
+    geo = g0["geo"]
+    check(geo["horizon"] == H - 42 and geo["paddleY"] + 6 == geo["horizon"] - 16, f"[{tag}] paddle 16 px above the horizon")
+
+    # Paused: nothing moves and no animation loop runs.
+    r0 = page.evaluate("window.__raf")
+    page.wait_for_timeout(500)
+    s1 = snap(page)
+    check(s1["game"] == g0 and page.evaluate("window.__raf") == r0 and not s1["raf"],
+          f"[{tag}] paused: state frozen and no frame requested ({page.evaluate('window.__raf') - r0} rAF calls)")
+
+    # Finger down in the sea: resumes after 250 ms.
+    x, y, scale, k = sea_point(page)
+    page.mouse.move(x, y)
+    nvib = page.evaluate("window.__vib.length")
+    page.mouse.down()
+    # Dragging during the resume delay moves the paddle only: no bounce, no tick.
+    page.mouse.move(x + 6, y, steps=2)
+    page.mouse.move(x, y, steps=2)
+    page.wait_for_timeout(60)
+    s2 = snap(page)
+    check(s2["mode"] == "resuming" and s2["game"]["ball"] == g0["ball"], f"[{tag}] finger down: waits before resuming ({s2['mode']})")
+    check(page.evaluate("window.__vib.length") == nvib and abs(s2["game"]["paddleX"] - g0["paddleX"]) < 1e-9,
+          f"[{tag}] while resuming a drag moves the paddle but nothing bounces or ticks")
+    page.wait_for_timeout(300)
+    s3 = snap(page)
+    check(s3["mode"] == "running" and s3["game"]["ball"]["y"] < g0["ball"]["y"], f"[{tag}] after 250 ms the ball flies")
+
+    # Relative drag: paddle moves by finger dx x 1.2, never jumps to the finger.
+    p0 = snap(page)["game"]["paddleX"]
+    page.mouse.move(x + 20, y, steps=4)
+    p1 = snap(page)["game"]["paddleX"]
+    want = 20 / k / scale * 1.2
+    check(abs((p1 - p0) - want) < 0.05, f"[{tag}] relative drag: paddle moved {p1 - p0:.2f} for {want:.2f} expected")
+    page.mouse.move(x, y, steps=4)
+    p2 = snap(page)["game"]["paddleX"]
+    check(abs(p2 - p0) < 0.05, f"[{tag}] dragging back returns the paddle ({p2:.2f} vs {p0:.2f})")
+    page.mouse.move(x + 600, y, steps=8)
+    check(abs(snap(page)["game"]["paddleX"] - (135 - 30)) < 1e-9, f"[{tag}] paddle clamped to the field")
+    page.mouse.up()
+    # Centre the paddle again: far left (clamped at 0), then right by 52.5 / 1.2.
+    page.mouse.move(350, y)
+    page.mouse.down()
+    page.mouse.move(10, y, steps=8)
+    check(snap(page)["game"]["paddleX"] == 0, f"[{tag}] paddle clamped at the left edge")
+    page.mouse.move(10 + (52.5 / 1.2) * scale * k, y, steps=8)
+    page.mouse.up()
+    # A thumb that follows the ball, so both bricks and the paddle get hit.
+    track(page, 5000, x, y, scale, k)
+    vib = page.evaluate("window.__vib")
+    sc = snap(page)["game"]["score"]
+    check(sc > 0 and 8 in vib and 16 in vib and set(vib) <= {8, 16},
+          f"[{tag}] haptics on: brick 8 ms and paddle 16 ms ticks only ({vib}, score {sc})")
+    # The 40 ms rate limit is proven in tests/bricks-sim.mjs, which drives the
+    # real shared/haptics.js with dense brick and paddle events; real-time play
+    # here is too sparse to stress it, so no claim is made about it here.
+
+    # Lift: frozen within one frame, ring shown, state saved.
+    page.mouse.up()
+    a = snap(page)
+    page.wait_for_timeout(300)
+    b = snap(page)
+    check(a["mode"] == "paused" and a["game"]["ball"] == b["game"]["ball"] and a["game"]["time"] == b["game"]["time"],
+          f"[{tag}] lifting the thumb freezes play at once")
+    r1 = page.evaluate("window.__raf")
+    page.wait_for_timeout(400)
+    check(page.evaluate("window.__raf") == r1, f"[{tag}] no animation loop while paused")
+    page.screenshot(path=str(OUT / "bricks-game-lifted.png"))
+    saved = json.loads(page.evaluate("localStorage.getItem('rlx.v1.bricks')"))
+    check(saved == b["game"], f"[{tag}] full state saved on pause")
+    check(page.evaluate("localStorage.getItem('rlx.v1.bricks-score')") == str(b["game"]["score"]), f"[{tag}] score saved on pause")
+
+    # Hidden mid-flight: pause, save, stop the loop.
+    page.mouse.down()
+    page.wait_for_timeout(700)
+    page.evaluate("""() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }""")
+    h = snap(page)
+    saved = json.loads(page.evaluate("localStorage.getItem('rlx.v1.bricks')"))
+    r2 = page.evaluate("window.__raf")
+    page.wait_for_timeout(400)
+    check(h["mode"] == "paused" and not h["raf"] and saved == h["game"] and snap(page)["game"] == h["game"]
+          and page.evaluate("window.__raf") == r2, f"[{tag}] hidden: paused, saved, no loop")
+    page.evaluate("""() => {
+      delete document.visibilityState; delete document.hidden;
+      document.dispatchEvent(new Event('visibilitychange'));
+    }""")
+    page.mouse.up()
+    page.mouse.down()
+    page.wait_for_timeout(900)
+    mid = snap(page)["game"]
+    check(mid["ball"] is not None and mid["time"] > h["game"]["time"], f"[{tag}] plays on after coming back")
+
+    # Kill mid-flight (pagehide only, no lift) and reopen: same field and ball, paused.
+    page.evaluate("dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }))")
+    killed = json.loads(page.evaluate("localStorage.getItem('rlx.v1.bricks')"))
+    page.close()
+    page, errors2 = open_bricks(ctx, base)
+    r = snap(page)
+    check(r["mode"] == "paused" and r["game"] == killed and killed["ball"] is not None,
+          f"[{tag}] killed mid-flight and reopened: same field, ball and paddle, paused")
+    page.screenshot(path=str(OUT / "bricks-game-reopened.png"))
+    errors += errors2
+
+    # Haptics off: zero vibrate calls. The score survives the restart.
+    page.evaluate("localStorage.setItem('rlx.v1.settings', JSON.stringify({ haptics: false }))")
+    page.reload()
+    page.wait_for_function("window.__bricks && window.__bricks.snapshot().game")
+    saved_score = int(page.evaluate("localStorage.getItem('rlx.v1.bricks-score')"))
+    before = snap(page)["game"]["score"]
+    check(before == saved_score and before > 0, f"[{tag}] the score survives a restart ({saved_score} saved, {before} shown)")
+    x, y, scale, k = sea_point(page)
+    track(page, 5000, x, y, scale, k)
+    after = snap(page)["game"]["score"]
+    check(page.evaluate("window.__vib.length") == 0 and after > before, f"[{tag}] haptics off: zero vibrate calls while {after - before} bricks popped")
+    page.evaluate("localStorage.setItem('rlx.v1.settings', JSON.stringify({ haptics: true }))")
+    saved_score = int(page.evaluate("localStorage.getItem('rlx.v1.bricks-score')"))
+    page.reload()
+    page.wait_for_function("window.__bricks && window.__bricks.snapshot().game")
+    check(saved_score == after and snap(page)["game"]["score"] == after,
+          f"[{tag}] the score survives a second restart ({after} saved, {snap(page)['game']['score']} shown)")
+    two_touches(ctx, page, tag)
+
+    # Corrupt and old-version saves: fresh field, score kept.
+    # (Storage is edited from the hub: leaving Bricks saves over it.)
+    reopen(page, base, "localStorage.setItem('rlx.v1.bricks', '{nope'); localStorage.setItem('rlx.v1.bricks-score', '12')")
+    c = snap(page)
+    check(c["count"] == 63 and c["game"]["score"] == 12, f"[{tag}] corrupt save: fresh field, score kept ({c['count']}, {c['game']['score']})")
+    old = dict(c["game"], v=0, score=77)
+    reopen(page, base, "localStorage.setItem('rlx.v1.bricks', %s); localStorage.removeItem('rlx.v1.bricks-score')" % json.dumps(json.dumps(old)))
+    c = snap(page)
+    check(c["count"] == 63 and c["game"]["score"] == 77, f"[{tag}] old-version save: fresh field, score read from it ({c['game']['score']})")
+
+    # Motion: particles and trail appear; with reduced motion, never. Fresh field each time.
+    reopen(page, base, "localStorage.removeItem('rlx.v1.bricks')")
+    seen = {"particles": 0, "trail": 0}
+    x, y, scale, k = sea_point(page)
+    page.mouse.move(x, y)
+    page.mouse.down()
+    for _ in range(30):
+        page.wait_for_timeout(100)
+        q = snap(page)
+        seen["particles"] = max(seen["particles"], q["particles"])
+        seen["trail"] = max(seen["trail"], q["trail"])
+        if seen["particles"] and seen["trail"]:
+            break
+    page.screenshot(path=str(OUT / "bricks-game-play.png"))
+    page.mouse.up()
+    check(seen["particles"] > 0 and seen["trail"] > 0, f"[{tag}] brick pop particles and ball trail shown {seen}")
+    page.emulate_media(reduced_motion="reduce")
+    reopen(page, base, "localStorage.removeItem('rlx.v1.bricks')")
+    seen = {"particles": 0, "trail": 0}
+    pops0 = snap(page)["game"]["score"]
+    page.mouse.move(x, y)
+    page.mouse.down()
+    for _ in range(30):
+        page.wait_for_timeout(100)
+        q = snap(page)
+        seen["particles"] = max(seen["particles"], q["particles"])
+        seen["trail"] = max(seen["trail"], q["trail"])
+    page.mouse.up()
+    pops = snap(page)["game"]["score"] - pops0
+    check(seen == {"particles": 0, "trail": 0} and pops > 0, f"[{tag}] reduced motion: no particles, no trail over {pops} pops {seen}")
+    page.emulate_media(reduced_motion="no-preference")
+
+    # Back control mid-game goes to the hub and keeps the state.
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.wait_for_timeout(500)
+    page.mouse.up()
+    held = snap(page)["game"]
+    tap(page, "back")
+    page.wait_for_url(base)
+    check(json.loads(page.evaluate("localStorage.getItem('rlx.v1.bricks')")) == held, f"[{tag}] back to the hub keeps the saved game")
+
+    check(not errors, f"[{tag}] no console errors {errors}")
+    check(not foreign, f"[{tag}] no requests to another host {foreign}")
+    ctx.close()
+
+
+def run_node_sim():
+    """tests/bricks-sim.mjs: physics.js in Node for 10 simulated minutes and more."""
+    res = subprocess.run(["node", str(ROOT / "tests" / "bricks-sim.mjs")], capture_output=True, text=True)
+    out = res.stdout.strip().splitlines()
+    for line in out:
+        if line.startswith("FAIL"):
+            print("  sim " + line)
+    summary = out[-1] if out else res.stderr.strip()
+    check(res.returncode == 0, f"node tests/bricks-sim.mjs: {summary}")
 
 
 def run_version_bump(browser):
@@ -402,6 +724,7 @@ def main():
         print(f"serving with Cache-Control: max-age={MAX_AGE}")
     OUT.mkdir(parents=True, exist_ok=True)
     static_checks()
+    run_node_sim()
     httpd, base = serve(ROOT)
     with sync_playwright() as p:
         browser = p.chromium.launch()
@@ -410,6 +733,7 @@ def main():
         for w, h, dpr in LAYOUT_ONLY:
             run_layout_only(browser, base, w, h, dpr)
         run_resize(browser, base)
+        run_bricks(browser, base)
         run_version_bump(browser)
         browser.close()
     httpd.shutdown()

@@ -21,3 +21,23 @@ Review findings and fixes (reviewer found no blockers):
 Not verifiable headless: real home-screen install, standalone and portrait launch, the Android back gesture and real haptics on a device. Proposed as X2.
 
 Deferred: nothing else.
+
+## 2026-11-25: B1 Bricks
+
+Models that ran: main chat Sonnet 5.5; builder Opus 5.5 (claude-opus-5-5); reviewer Opus 5.5 (claude-opus-5-5), which had not seen the build; fixes applied by the builder agent, Opus 5.5.
+
+Built: Bricks in full per PLAN §6: 7 x 9 field with endless refill and the 12-row cap, 95 px/s ball on a fixed 120 Hz swept physics step (physics.js, no DOM), paddle angles and the 20 degree floor, miss splash and 600 ms respawn, relative drag at 1.2, pause on lift with thumb ring, 250 ms resume, full-state save and restore, haptics 8 and 16 ms with the 40 ms limit, all-time score, particles and trail off under reduced motion. Tests: tests/bricks-sim.mjs (134 checks, includes the 10-minute run) and Bricks checks in tests/check.py (134, all H1 checks kept). Service worker cache rlx-v4.
+
+Review findings and fixes (no blockers):
+1. should-fix, a paddle sliding into a deep ball let it sink through: ball is snapped up and bounced or pushed out sideways, tested with jitter and flick thumbs, 200 trials each. Fixed.
+2. should-fix, a still thumb gave an endless vertical loop popping nothing: serves alternate 10 degrees off vertical and a growing nudge breaks a loop of 3 launches without a pop; still-thumb tests added. Fixed.
+3. nit, two fingers doubled paddle speed: first finger drives. Fixed.
+4. nit, paddle could bounce the ball during the resume wait: no catch or tick unless running. Fixed.
+5. nit, score small against the reference: kept, PLAN says quiet. Proposed as X4.
+6. nit, weak assertions in check.py: score check, 40 ms claim and swept brick check corrected. Fixed.
+7. nit, stale placeholder label. Fixed.
+8. found while fixing, a ball wedged between wall and paddle side bounced forever: wedge escape added and tested. Fixed.
+
+Not verifiable headless: fps on a device, whether the 8 and 16 ms ticks feel different, touch feel, a real app kill, safe-area insets, the back gesture in play, how the fading row looks.
+
+Deferred: device pass and tuning (B2); PLAN §4 and §6 amendments (X1, X3); score size (X4).
