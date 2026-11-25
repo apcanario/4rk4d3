@@ -5,7 +5,7 @@
 // file under the new name, takes over at once and deletes the old caches.
 // The next launch runs the new files. Add any new shipped file to FILES.
 
-const VERSION = 'rlx-v6';
+const VERSION = 'rlx-v8';
 
 const FILES = [
   './',
@@ -23,6 +23,10 @@ const FILES = [
   './games/bricks/index.html',
   './games/bricks/bricks.js',
   './games/bricks/physics.js',
+  './games/catch/',
+  './games/catch/index.html',
+  './games/catch/catch.js',
+  './games/catch/sim.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',

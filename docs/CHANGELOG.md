@@ -104,3 +104,28 @@ Review findings and fixes (no blockers; verdict accept):
 
 Deferred: X8 (PLAN amendments for the choices made where it is silent), X9 (brick row 7 at full dusk on the smallest screen).
 
+## 2026-11-25: C1 Catch
+
+Models that ran: main chat Sonnet 5.5 (claude-sonnet-5-5); builder Opus 5.5 (claude-opus-5-5); reviewer Opus 5.5 (claude-opus-5-5), which had not seen the build; fixes applied by a second Opus 5.5 agent (claude-opus-5-5).
+
+Built:
+- games/catch/ (new, shipped): index.html, catch.js (drawing, input, pause and save, haptics; the CONFIG block at the top holds the pace gains and losses, fall-speed and spawn-gap ranges, nasty interval, tap thresholds, pause grace, fish speed and haptic lengths), sim.js (no DOM, no imports: the 120 Hz simulation, the input state machine, the sprite masks). A boat (24 x 7 coral hull, mast, cream sail) on the horizon catches 8 kinds of 7 x 7 warm things falling at 32 to 48 px/s with a 3 px sway, one every 1.7 to 1.1 s within 70 px of the last, at most 3 in the air. One blue spiky nasty every 20 to 30 s at 30 px/s; a tap (under 200 ms, under 4 px) sends a 9 x 5 fish up at 220 px/s that eats it before it lands, or a hop with no nasty. Uneaten nasties rock the boat or ink the sea. The rare treat on a parachute sets off a gull, a dolphin or a sun glint. Pace 0 to 1 (start 0.3, +0.02, -0.15), applied only to new spawns, ceiling falling to 0 over minutes 10 to 12 of the shared session clock; dusk scene by the shared drawScene. Count (all-time) and run on the HUD; eaten stored, not shown. 400 ms pause grace, 250 ms resume, save on pause, hide and pagehide, restore paused. Haptics through shared tick() only: catch 8 ms, bite 16 ms. Bricks and shared/ unchanged.
+- Hub: CATCH tile active; STACK stays SOON.
+- Tests: tests/catch-sim.mjs (new) 172 checks, including the 15-minute run on four screen heights; tests/check.py 205 checks (was 152), including Catch played with CDP touch events; tests/bricks-sim.mjs 210 checks unchanged; all pass. sw.js FILES adds games/catch/ and its three files; cache rlx-v8. README updated.
+
+Readability (CIE76 delta E in CIELAB, threshold 10, each sprite's edge colours against the scene colours under them, sunset and all 10 steps, logical H 240, 240 with a 10 px inset, 300 and 400): every pair passes. Weakest: item tiny sun outline #CCAEA7 on sky band 7 at step 6, H 240: 11.33; boat sail edge 14.07; fish 16.45; nasties 36.94; count 36.94. The sail's cream fill inside its edge is under 10 on 40 of 84 pairs (X11).
+
+Not verifiable headless: whether the pace change or the dusk slowdown is noticeable, tap versus drag feel with a real thumb, catch and bite ticks told apart by feel, Chrome's vibrate gate (the browser checks stub navigator.vibrate and read state with page.evaluate, a user gesture), fps on the phone, a real app kill, the back gesture during play.
+
+Deferred: X10 (PLAN amendments for the choices made where it is silent), X11 (sail fill), X12 (device pass of C1).
+
+Review findings and fixes (no blockers; verdict fix):
+1. should-fix, 5 fish break restore: rapid taps filled 4 hops and a leap for a nasty made 5, which restore() refuses as corrupt, so a kill and reopen lost the scene. Hops now stop at 3, so a leap always has a slot; X10 (f) updated. New sim checks: 4 rapid taps, a nasty, a tap, then save and restore give the same scene; both fail without the fix (5 fish up). Fixed.
+2. nit, the tiny sun read spiky like the urchin (corner rays). New mask: a disc with four short stubs, still 7 x 7 with its outline; perimeter squared over area 31 (was 52), the shape check unchanged. Fixed.
+3. nit, unlocked kinds lived only in the game state, so a corrupt save reset them to 2. A fresh or rebuilt scene now takes 2 plus one per 40 stored catches, up to 8, as fish kinds come from eaten; X10 (g) updated. New sim checks, including a corrupt save with 500 catches giving 8 kinds; they fail without the fix. Fixed.
+4. nit, nasty and treat spawns moved the 70 px reference, so consecutive items were over 70 px apart in about 1 percent of spawns. Only normal items move it now; the 15-minute runs check consecutive items within 70 px and each nasty and treat within 70 px of the last item (fails on all four heights without the fix); X10 (b), (d) updated. Fixed.
+5. nit, the haptics block in tests/catch-sim.mjs re-implements handle() rather than running it; real ticks are covered in tests/check.py. Deferred.
+6. nit, no test would notice the resume delay cut below 200 ms. New sim checks: resumeDelayMs longer than tapMs in CONFIG, and a touch that begins while paused, lifted after 0 to 500 ms, never fires a fish. Fixed.
+
+Accepted by the reviewer: the 50 ms bite hold (X10 (a)) and the sail's cream fill (X11).
+

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RLX checks (rows H1, B1 and B2) in headless Chromium and Node. Not needed to run the app.
+"""RLX checks (rows H1, B1, B2 and C1) in headless Chromium and Node. Not needed to run the app.
 
 Needs Python Playwright with Chromium (pip install playwright;
 python -m playwright install chromium). Run: python3 tests/check.py
@@ -12,7 +12,10 @@ drag, save on pause and on hide, restore after a kill, corrupt and old saves,
 haptics on and off, reduced motion, no loop while paused. Row B2: the session
 clock (paused time never advances it, saved with the game), the hub drawing
 the scene phase of the saved clock, Bricks at full dusk (colours kept and
-readable), the reset after the gap. Screenshots go to tests/out/.
+readable), the reset after the gap. Row C1: runs tests/catch-sim.mjs and plays
+Catch with real touch events (CDP): taps and fish, the pause grace, save and
+restore, haptics, dusk, one clock across games; the hub's CATCH tile.
+Screenshots go to tests/out/.
 """
 import functools
 import http.server
@@ -205,10 +208,28 @@ def run_viewport(browser, base, w, h):
     page.wait_for_url(base)
     check(page.url == base, f"[{tag}] back control from a directly opened game goes to the hub")
 
-    # SOON tiles are not tappable.
-    tap(page, "catch")
+    # SOON tiles are not tappable; CATCH is active (row C1).
+    tap(page, "stack")
     page.wait_for_timeout(300)
-    check(page.url == base, f"[{tag}] CATCH (SOON) is not tappable")
+    check(page.url == base, f"[{tag}] STACK (SOON) is not tappable")
+    tap(page, "catch")
+    page.wait_for_url("**/games/catch/")
+    hits(page)
+    page.wait_for_timeout(150)
+    page.screenshot(path=str(OUT / f"catch-{tag}.png"))
+    check(page.url.endswith("/4rk4d3/games/catch/"), f"[{tag}] tap CATCH opens Catch")
+    page.go_back()
+    page.wait_for_url(base)
+    hits(page)
+    check(page.url == base, f"[{tag}] back gesture (history back) returns from Catch to the hub")
+    tap(page, "catch")
+    page.wait_for_url("**/games/catch/")
+    hlen = page.evaluate("history.length")
+    tap(page, "back")
+    page.wait_for_url(base)
+    hits(page)
+    page.wait_for_timeout(100)
+    check(page.url == base and page.evaluate("history.length") == hlen, f"[{tag}] Catch back control returns to the hub, history not grown")
 
     # Haptics: default on; off persists; on fires one test tick and persists.
     page.evaluate("localStorage.clear()")
@@ -273,15 +294,22 @@ def run_viewport(browser, base, w, h):
     check(page.url == base + "games/bricks/" and back_hit is not None, f"[{tag}] Bricks opens and draws offline")
     page.go_back()
     page.wait_for_url(base)
+    hits(page)
+    tap(page, "catch")
+    page.wait_for_url("**/games/catch/")
+    check(page.url == base + "games/catch/" and hits(page).get("back") is not None, f"[{tag}] Catch opens and draws offline")
+    page.go_back()
+    page.wait_for_url(base)
     # Slash-less folder URL, offline then online, with the worker in control.
     for mode in ("offline", "online"):
         ctx.set_offline(mode == "offline")
-        page.goto(base + "games/bricks")
-        page.wait_for_url("**/games/bricks/")
-        ok = hits(page).get("back") is not None
-        check(page.url == base + "games/bricks/" and ok, f"[{tag}] slash-less games/bricks redirects and draws ({mode})")
-        tap(page, "back")
-        page.wait_for_url(base)
+        for game in ("bricks", "catch"):
+            page.goto(base + "games/" + game)
+            page.wait_for_url(f"**/games/{game}/")
+            ok = hits(page).get("back") is not None
+            check(page.url == base + f"games/{game}/" and ok, f"[{tag}] slash-less games/{game} redirects and draws ({mode})")
+            tap(page, "back")
+            page.wait_for_url(base)
     ctx.set_offline(False)
 
     check(not errors, f"[{tag}] no console errors {errors}")
@@ -310,6 +338,18 @@ def run_layout_only(browser, base, w, h, dpr):
     page.goto(base + "games/bricks/")
     hits(page)
     page.screenshot(path=str(OUT / f"bricks-{w}x{h}.png"))
+    page.goto(base + "games/catch/")
+    hits(page)
+    page.wait_for_function("window.__catch && window.__catch.snapshot().game")
+    page.wait_for_timeout(150)
+    shot = OUT / f"catch-{w}x{h}.png"
+    page.screenshot(path=str(shot))
+    info, s, H, bad, total, ncol, size = crisp(page, shot)
+    hud = json.loads(page.eval_on_selector("#screen", "c => c.dataset.hud"))
+    g = page.evaluate("window.__catch.snapshot().game")["geo"]
+    check(bad == 0 and info["sw"] <= info["iw"] and info["sh"] <= info["ih"] and hud == {"count": 1, "run": 1}
+          and g["horizon"] == H - 42 and g["deckY"] == H - 47,
+          f"[{tag}] Catch: crisp, no overflow, count and run fit their boxes, boat on the horizon ({hud})")
     check(not errors, f"[{tag}] no console errors {errors}")
     ctx.close()
 
@@ -899,6 +939,374 @@ def run_scene(browser, base):
     ctx.close()
 
 
+def csnap(page):
+    return page.evaluate("window.__catch.snapshot()")
+
+
+class Touch:
+    """Real touch input over CDP (Input.dispatchTouchEvent): Chrome turns it into
+    touch pointer events, as on the phone. One finger."""
+
+    def __init__(self, ctx, page):
+        self.cdp = ctx.new_cdp_session(page)
+        self.x = self.y = 0
+
+    def down(self, x, y):
+        self.x, self.y = x, y
+        self.cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y}]})
+
+    def move(self, x, y):
+        self.x, self.y = x, y
+        self.cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [{"x": x, "y": y}]})
+
+    def up(self):
+        self.cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+
+    def tap(self, x, y, hold_ms=30):
+        self.down(x, y)
+        time.sleep(hold_ms / 1000)
+        self.up()
+
+
+def open_catch(ctx, base):
+    page = ctx.new_page()
+    errors = []
+    page.on("console", lambda m: m.type == "error" and errors.append(m.text))
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(base + "games/catch/")
+    hits(page)
+    page.wait_for_function("window.__catch && window.__catch.snapshot().game")
+    page.wait_for_timeout(150)
+    return page, errors
+
+
+def reopen_catch(page, base, js, arg=None):
+    """Leave Catch for the hub (which saves it), run js there, open Catch again."""
+    page.goto(base)
+    hits(page)
+    page.evaluate(js, arg)
+    page.goto(base + "games/catch/")
+    hits(page)
+    page.wait_for_function("window.__catch && window.__catch.snapshot().game")
+    page.wait_for_timeout(150)
+
+
+def catch_track(page, touch, ms, x, y, per_px):
+    """Hold a finger and steer the boat under the thing nearest to landing."""
+    width = page.viewport_size["width"]
+    cur = x
+    touch.down(cur, y)
+    end = time.time() + ms / 1000
+    while time.time() < end:
+        g = csnap(page)["game"]
+        things = [o for o in g["items"] + ([g["treat"]] if g["treat"] else []) if not o["low"]]
+        if things:
+            o = max(things, key=lambda o: o["y"])
+            import math
+            ox = o["x"] + 3 * math.sin(o["ph"]) + 3.5
+            d = ox - (g["boatX"] + 12)
+            nxt = max(2, min(width - 2, cur + max(-12, min(12, d / 1.2 * per_px))))
+            if abs(nxt - cur) > 0.01:
+                touch.move(nxt, y)
+                cur = nxt
+        page.wait_for_timeout(15)
+    touch.up()
+
+
+def run_catch(browser, base):
+    """Row C1 in the browser at 360x800, played with real touch events."""
+    tag = "catch 360x800"
+    ctx = new_context(browser, 360, 800)
+    foreign = []
+    origin = base.split("/4rk4d3/")[0]
+    ctx.on("request", lambda r: (not r.url.startswith(origin) and not r.url.startswith("data:")) and foreign.append(r.url))
+    page, errors = open_catch(ctx, base)
+    page.evaluate("localStorage.clear()")
+    page.reload()
+    hits(page)
+    page.wait_for_function("window.__catch && window.__catch.snapshot().game")
+    page.wait_for_timeout(200)
+    touch = Touch(ctx, page)
+    x, y, scale, k = sea_point(page)
+    per_px = scale * k  # CSS px per logical px
+
+    s0 = csnap(page)
+    g0 = s0["game"]
+    check(s0["mode"] == "paused" and g0["caught"] == 0 and g0["pace"] == 0.3 and g0["unlocked"] == 2 and not g0["items"],
+          f"[{tag}] first launch: paused, count 0, pace 0.3, 2 kinds")
+    shot = OUT / "catch-game-paused.png"
+    page.screenshot(path=str(shot))
+    info, s, H, bad, total, _, _ = crisp(page, shot)
+    check(bad == 0 and info["sw"] <= info["iw"] and info["sh"] <= info["ih"], f"[{tag}] crisp, no scrolling or overflow")
+    r0 = page.evaluate("window.__raf")
+    page.wait_for_timeout(500)
+    s1 = csnap(page)
+    check(s1["game"] == g0 and page.evaluate("window.__raf") == r0 and not s1["raf"], f"[{tag}] paused: frozen, no frame requested")
+
+    # A quick touch while paused is the resume touch: never a tap, no fish; lifted before 250 ms it stays paused.
+    touch.tap(x, y, 40)
+    page.wait_for_timeout(100)
+    q = csnap(page)
+    check(q["mode"] == "paused" and not q["game"]["fish"], f"[{tag}] a quick touch while paused: no fish, still paused ({q['mode']})")
+
+    # Finger down: resumes after 250 ms; drag moves the boat 1.2 x, clamped.
+    touch.down(x, y)
+    page.wait_for_timeout(60)
+    q = csnap(page)
+    check(q["mode"] == "resuming" and q["game"]["items"] == g0["items"], f"[{tag}] finger down: waits before resuming")
+    page.wait_for_timeout(300)
+    check(csnap(page)["mode"] == "running", f"[{tag}] after 250 ms play runs")
+    b0 = csnap(page)["game"]["boatX"]
+    for i in range(1, 5):
+        touch.move(x + 5 * i, y)
+    page.wait_for_timeout(30)
+    b1 = csnap(page)["game"]["boatX"]
+    want = 20 / per_px * 1.2
+    check(abs((b1 - b0) - want) < 0.05, f"[{tag}] relative drag: boat moved {b1 - b0:.2f} for {want:.2f}")
+    touch.move(x + 600, y)
+    page.wait_for_timeout(30)
+    check(abs(csnap(page)["game"]["boatX"] - (135 - 24)) < 1e-9, f"[{tag}] boat clamped to the field")
+    touch.move(x - 600, y)
+    page.wait_for_timeout(30)
+    check(csnap(page)["game"]["boatX"] == 0, f"[{tag}] boat clamped at the left edge")
+    touch.move(x - 600 + 55.5 / 1.2 * per_px, y)
+    touch.up()
+
+    # Lift: play goes on through the 400 ms grace, the boat holds, then it pauses and saves.
+    a = csnap(page)
+    page.wait_for_timeout(200)
+    b = csnap(page)
+    check(b["mode"] == "running" and b["grace"] and b["game"]["time"] > a["game"]["time"] and b["game"]["boatX"] == a["game"]["boatX"],
+          f"[{tag}] 200 ms after the lift: still playing, the boat holds its position")
+    page.wait_for_timeout(350)
+    c = csnap(page)
+    page.wait_for_timeout(300)
+    d = csnap(page)
+    check(c["mode"] == "paused" and d["game"] == c["game"] and not d["raf"], f"[{tag}] after the grace: paused and frozen")
+    saved = json.loads(page.evaluate("localStorage.getItem('rlx.v1.catch')"))
+    check(saved == c["game"], f"[{tag}] full state saved on pause")
+    check(json.loads(page.evaluate("localStorage.getItem('rlx.v1.catch-count')")) == {"caught": c["game"]["caught"], "eaten": c["game"]["eaten"]},
+          f"[{tag}] counts saved on pause")
+    clk = json.loads(page.evaluate("localStorage.getItem('rlx.v1.session')") or "null")
+    check(clk is not None and clk["active"] > 0.5 and clk == c["clock"], f"[{tag}] the shared session clock counts Catch play and is saved ({clk})")
+
+    # Play: catches tick 8 ms; the run counts up.
+    page.evaluate("window.__vib = []")
+    catch_track(page, touch, 9000, x, y, per_px)
+    page.wait_for_timeout(600)
+    q = csnap(page)
+    vib = page.evaluate("window.__vib")
+    check(q["game"]["caught"] > 0 and 8 in vib and set(vib) <= {8}, f"[{tag}] catches tick 8 ms ({q['game']['caught']} caught, {vib})")
+    hud = json.loads(page.eval_on_selector("#screen", "c => c.dataset.hud"))
+    check(hud == {"count": 1, "run": 1}, f"[{tag}] count and run drawn small and fit their boxes {hud}")
+    page.screenshot(path=str(OUT / "catch-game-play.png"))
+
+    def with_nasty(ny, nx=100, boat=0):
+        """Reopen with a nasty in the air (and nothing else due soon), then resume and lift (grace)."""
+        reopen_catch(page, base, """g => { const s = JSON.parse(localStorage.getItem('rlx.v1.catch'));
+          s.items = []; s.treat = null; s.fish = []; s.spawnIn = 1.7; s.nastyIn = 25; s.treatIn = 140; s.boatX = g.boat;
+          s.nasty = { x: g.nx, y: g.ny, vy: 30, k: 0, low: false, hunted: false };
+          localStorage.setItem('rlx.v1.catch', JSON.stringify(s)); }""", {"nx": nx, "ny": ny, "boat": boat})
+        touch.down(x, y)
+        page.wait_for_timeout(400)
+        touch.up()
+
+    # A tap with a nasty in the air: a fish leaps, bites (16 ms), and the tap is not read as a pause.
+    with_nasty(200)
+    page.evaluate("window.__vib = []")
+    e0 = csnap(page)["game"]["eaten"]
+    touch.tap(x - 40, y - 200, 30)
+    page.wait_for_timeout(60)
+    q = csnap(page)
+    check(q["mode"] == "running" and any(f["m"] == "leap" for f in q["game"]["fish"]) and q["game"]["nasty"]["hunted"],
+          f"[{tag}] a tap anywhere with a nasty in the air sends a fish leaping")
+    page.wait_for_timeout(300)
+    q = csnap(page)
+    check(q["mode"] == "running" and q["game"]["eaten"] == e0 + 1 and q["game"]["nasty"] is None,
+          f"[{tag}] the fish eats the nasty; play is still running 360 ms after the tap (eaten {q['game']['eaten']})")
+    check(16 in page.evaluate("window.__vib"), f"[{tag}] the bite ticks 16 ms ({page.evaluate('window.__vib')})")
+    check(q["bits"] > 0, f"[{tag}] bite bits shown")
+    page.wait_for_timeout(500)
+    check(csnap(page)["mode"] == "paused", f"[{tag}] with no further touch, play pauses after the grace")
+    # A nasty about to land in the water: the tap still bites first.
+    hz = csnap(page)["game"]["geo"]["horizon"]
+    page.evaluate("window.__vib = []")
+    reopen_catch(page, base, """h => { const s = JSON.parse(localStorage.getItem('rlx.v1.catch'));
+      s.nasty = { x: 100, y: h - 7 - 12, vy: 30, k: 1, low: true, hunted: false }; s.boatX = 0; s.fish = []; s.items = [];
+      s.ink = 0; s.nastyIn = 25; s.spawnIn = 1.7;
+      localStorage.setItem('rlx.v1.catch', JSON.stringify(s)); }""", hz)
+    touch.down(x, y)
+    page.wait_for_timeout(300)
+    touch.up()
+    touch.tap(x, y, 20)
+    q = csnap(page)
+    above = hz - (q["game"]["nasty"]["y"] + 7) if q["game"]["nasty"] else None
+    page.wait_for_timeout(300)
+    q = csnap(page)
+    check(q["game"]["nasty"] is None and q["game"]["ink"] == 0 and q["game"]["eaten"] == e0 + 2,
+          f"[{tag}] a nasty tapped just above the water ({above if above is None else round(above, 2)} px) is eaten, no ink")
+    # A slow lift (over 200 ms) with a nasty in the air never fires a fish.
+    with_nasty(60)
+    touch.down(x, y)
+    page.wait_for_timeout(320)
+    touch.up()
+    page.wait_for_timeout(50)
+    q = csnap(page)
+    check(not q["game"]["fish"] and not q["game"]["nasty"]["hunted"], f"[{tag}] a slow lift (320 ms) fires no fish")
+    # A tap with no nasty: a hop, no haptic.
+    reopen_catch(page, base, "() => { const s = JSON.parse(localStorage.getItem('rlx.v1.catch')); s.nasty = null; s.fish = []; localStorage.setItem('rlx.v1.catch', JSON.stringify(s)); }")
+    touch.down(x, y)
+    page.wait_for_timeout(300)
+    touch.up()
+    page.evaluate("window.__vib = []")
+    touch.tap(x, y, 30)
+    page.wait_for_timeout(40)
+    q = csnap(page)
+    check(any(f["m"] == "hop" for f in q["game"]["fish"]) and 16 not in page.evaluate("window.__vib"), f"[{tag}] a tap with no nasty: a hop, no bite tick")
+
+    # A nasty landing uneaten: cosmetics only.
+    reopen_catch(page, base, """h => { const s = JSON.parse(localStorage.getItem('rlx.v1.catch'));
+      s.nasty = { x: 100, y: h - 7 - 1, vy: 30, k: 2, low: true, hunted: false }; s.boatX = 0; s.fish = []; s.items = []; s.pace = 0.5;
+      localStorage.setItem('rlx.v1.catch', JSON.stringify(s)); }""", hz)
+    before = csnap(page)
+    page.evaluate("window.__vib = []")
+    touch.down(x, y)
+    page.wait_for_timeout(500)
+    q = csnap(page)
+    page.screenshot(path=str(OUT / "catch-ink.png"))
+    touch.up()
+    check(q["game"]["ink"] > 3 and q["game"]["caught"] == before["game"]["caught"] and q["game"]["pace"] == 0.5
+          and q["run"] == before["run"] and page.evaluate("window.__vib") == [],
+          f"[{tag}] a nasty landing in the water: ink, no count, pace or run change, no haptic")
+    page.wait_for_timeout(600)
+
+    # Hidden mid-play: paused at once (no grace), saved, no loop.
+    touch.down(x, y)
+    page.wait_for_timeout(500)
+    page.evaluate("""() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }""")
+    h = csnap(page)
+    saved = json.loads(page.evaluate("localStorage.getItem('rlx.v1.catch')"))
+    r2 = page.evaluate("window.__raf")
+    page.wait_for_timeout(400)
+    check(h["mode"] == "paused" and not h["raf"] and saved == h["game"] and csnap(page)["game"] == h["game"]
+          and page.evaluate("window.__raf") == r2, f"[{tag}] hidden: paused at once, saved, no loop")
+    page.evaluate("""() => { delete document.visibilityState; delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); }""")
+    touch.up()
+
+    # Kill mid-play (pagehide only) and reopen: the same scene, paused.
+    touch.down(x, y)
+    page.wait_for_timeout(1500)
+    page.evaluate("dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }))")
+    killed = json.loads(page.evaluate("localStorage.getItem('rlx.v1.catch')"))
+    page.close()
+    page, errors2 = open_catch(ctx, base)
+    touch = Touch(ctx, page)
+    r = csnap(page)
+    check(r["mode"] == "paused" and r["game"] == killed and killed["items"], f"[{tag}] killed mid-play and reopened: the same scene, paused")
+    page.screenshot(path=str(OUT / "catch-game-reopened.png"))
+    errors += errors2
+
+    # Haptics off: zero vibrate calls through catches and a bite.
+    page.evaluate("localStorage.setItem('rlx.v1.settings', JSON.stringify({ haptics: false }))")
+    page.reload()
+    page.wait_for_function("window.__catch && window.__catch.snapshot().game")
+    touch = Touch(ctx, page)
+    page.evaluate("window.__vib = []")
+    c0 = csnap(page)["game"]["caught"]
+    catch_track(page, touch, 6000, x, y, per_px)
+    with_nasty(150)
+    touch.tap(x, y, 30)
+    page.wait_for_timeout(500)
+    q = csnap(page)
+    check(page.evaluate("window.__vib.length") == 0 and q["game"]["caught"] > c0 and q["game"]["nasty"] is None,
+          f"[{tag}] haptics off: zero vibrate calls over {q['game']['caught'] - c0} catches and a bite")
+    page.evaluate("localStorage.setItem('rlx.v1.settings', JSON.stringify({ haptics: true }))")
+    page.wait_for_timeout(500)
+
+    # The count survives restarts; corrupt and old-version saves give a fresh scene with the counts kept.
+    n = csnap(page)["game"]["caught"]
+    page.reload()
+    page.wait_for_function("window.__catch && window.__catch.snapshot().game")
+    check(csnap(page)["game"]["caught"] == n and n > 0, f"[{tag}] the count survives a restart ({n})")
+    reopen_catch(page, base, "() => { localStorage.setItem('rlx.v1.catch', '{nope'); localStorage.setItem('rlx.v1.catch-count', JSON.stringify({ caught: 12, eaten: 3 })); }")
+    q = csnap(page)["game"]
+    check(q["caught"] == 12 and q["eaten"] == 3 and not q["items"] and q["pace"] == 0.3, f"[{tag}] corrupt save: fresh scene, counts kept ({q['caught']}, {q['eaten']})")
+    n_err = len(errors2)
+    reopen_catch(page, base, """() => { const s = JSON.parse(localStorage.getItem('rlx.v1.catch')); s.v = 0; s.caught = 77; s.eaten = 9;
+      localStorage.setItem('rlx.v1.catch', JSON.stringify(s)); localStorage.removeItem('rlx.v1.catch-count'); }""")
+    q = csnap(page)["game"]
+    check(q["caught"] == 77 and q["eaten"] == 9 and q["v"] == 1 and len(errors2) == n_err,
+          f"[{tag}] old-version save: no error, fresh scene, counts read from it ({q['caught']}, {q['eaten']})")
+
+    # Reduced motion: a bite shows no bits.
+    page.emulate_media(reduced_motion="reduce")
+    with_nasty(150)
+    touch.tap(x, y, 30)
+    mx = 0
+    for _ in range(20):
+        page.wait_for_timeout(30)
+        q = csnap(page)
+        mx = max(mx, q["bits"])
+    check(mx == 0 and q["game"]["nasty"] is None, f"[{tag}] reduced motion: a bite shows no bits")
+    page.emulate_media(reduced_motion="no-preference")
+
+    # Full dusk: step 10, the boat and the nasty keep their colours.
+    page.goto(base)
+    hits(page)
+    page.evaluate("localStorage.setItem('rlx.v1.session', JSON.stringify({ active: 720, last: Date.now() - 1000 }))")
+    page.goto(base + "games/catch/")
+    hits(page)
+    page.wait_for_function("window.__catch && window.__catch.snapshot().game")
+    page.wait_for_timeout(200)
+    q = csnap(page)
+    shot = OUT / "catch-dusk.png"
+    page.screenshot(path=str(shot))
+    gg = q["game"]
+    hull = (round(gg["boatX"]) + 12, gg["geo"]["deckY"] + 3)
+    sky_px = (2, gg["geo"]["top"] + 2)
+    got = logical_pixels(page, shot, [hull, sky_px])
+    check(q["step"] == 10 and got[0] == "#F05A68" and delta_e(got[0], got[1]) >= 10,
+          f"[{tag}] Catch at 12 minutes: full dusk, hull keeps coral ({got})")
+    # One clock across games: Bricks reads the same clock Catch saved.
+    page.goto(base + "games/bricks/")
+    hits(page)
+    page.wait_for_function("window.__bricks && window.__bricks.snapshot().game")
+    check(snap(page)["clock"]["active"] == 720 and snap(page)["step"] == 10, f"[{tag}] Bricks shows the same session clock (one clock across games)")
+    page.goto(base + "games/catch/")
+    hits(page)
+    page.wait_for_function("window.__catch && window.__catch.snapshot().game")
+
+    # Back control mid-game goes to the hub and keeps the state.
+    touch = Touch(ctx, page)
+    touch.down(x, y)
+    page.wait_for_timeout(500)
+    touch.up()
+    page.wait_for_timeout(600)
+    held = csnap(page)["game"]
+    tap(page, "back")
+    page.wait_for_url(base)
+    check(json.loads(page.evaluate("localStorage.getItem('rlx.v1.catch')")) == held, f"[{tag}] back to the hub keeps the saved game")
+
+    check(not errors and not errors2, f"[{tag}] no console errors {errors + errors2}")
+    check(not foreign, f"[{tag}] only same-origin requests {foreign}")
+    ctx.close()
+
+
+def run_catch_sim():
+    """tests/catch-sim.mjs: sim.js in Node (the 15-minute run and more)."""
+    res = subprocess.run(["node", str(ROOT / "tests" / "catch-sim.mjs")], capture_output=True, text=True)
+    out = res.stdout.strip().splitlines()
+    for line in out:
+        if line.startswith("FAIL"):
+            print("  sim " + line)
+    summary = out[-1] if out else res.stderr.strip()
+    check(res.returncode == 0, f"node tests/catch-sim.mjs: {summary}")
+
+
 def run_node_sim():
     """tests/bricks-sim.mjs: physics.js and the session clock in Node (10- and 15-minute runs and more)."""
     res = subprocess.run(["node", str(ROOT / "tests" / "bricks-sim.mjs")], capture_output=True, text=True)
@@ -952,6 +1360,7 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     static_checks()
     run_node_sim()
+    run_catch_sim()
     httpd, base = serve(ROOT)
     with sync_playwright() as p:
         browser = p.chromium.launch()
@@ -962,6 +1371,7 @@ def main():
         run_resize(browser, base)
         run_bricks(browser, base)
         run_scene(browser, base)
+        run_catch(browser, base)
         run_version_bump(browser)
         browser.close()
     httpd.shutdown()

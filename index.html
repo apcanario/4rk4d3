@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="shared/theme.css">
 </head>
 <body>
-<canvas class="screen" id="screen" role="img" aria-label="RLX: Bricks. Catch and Stack coming soon. Haptics setting."></canvas>
+<canvas class="screen" id="screen" role="img" aria-label="RLX: Bricks and Catch. Stack coming soon. Haptics setting."></canvas>
 <script type="module">
 import { COLORS, SEA_BANDS, mix, shade } from './shared/tokens.js';
 import { drawFitted, fitSize, measure } from './shared/font.js';
@@ -28,7 +28,7 @@ initPage();
 
 const TILES = [
   { id: 'bricks', label: 'BRICKS', active: true, href: 'games/bricks/' },
-  { id: 'catch', label: 'CATCH', active: false },
+  { id: 'catch', label: 'CATCH', active: true, href: 'games/catch/' },
   { id: 'stack', label: 'STACK', active: false },
 ];
 
