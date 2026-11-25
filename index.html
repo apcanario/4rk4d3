@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="shared/theme.css">
 </head>
 <body>
-<canvas class="screen" id="screen" role="img" aria-label="RLX: Bricks and Catch. Stack coming soon. Haptics setting."></canvas>
+<canvas class="screen" id="screen" role="img" aria-label="RLX: Bricks, Catch and Putt. Stack coming soon. Haptics setting."></canvas>
 <script type="module">
 import { COLORS, mix, edge } from './shared/tokens.js';
 import { drawFitted, fitSize, measure } from './shared/font.js';
@@ -29,11 +29,13 @@ initPage();
 const TILES = [
   { id: 'bricks', label: 'BRICKS', active: true, href: 'games/bricks/' },
   { id: 'catch', label: 'CATCH', active: true, href: 'games/catch/' },
+  { id: 'putt', label: 'PUTT', active: true, href: 'games/putt/' },
   { id: 'stack', label: 'STACK', active: false },
 ];
 
-// Tile height and gap, largest first; short screens take a smaller pair.
-const TILE_SIZES = [[22, 6], [20, 5], [18, 4], [16, 3]];
+// Tile height and gap, largest first; short screens take a smaller pair
+// (U1: the smallest pair added so four tiles fit a logical height of 240).
+const TILE_SIZES = [[22, 6], [20, 5], [18, 4], [16, 3], [15, 2]];
 const SUN_CLEAR = SUN_RADIUS + 4; // tiles end this far above the horizon to keep the sun clear
 const TOGGLE_H = 15;
 const TOGGLE_W = 75;
@@ -192,7 +194,7 @@ function draw(ctx, s) {
   for (const t of TILES) drawn[t.id] = drawTile(ctx, t, rects[t.id], labelSize);
   canvas.dataset.labels = JSON.stringify(drawn);
   drawToggle(ctx, rects.haptics);
-  publishHits(canvas, s, { bricks: rects.bricks, catch: rects.catch, stack: rects.stack, haptics: rects.haptics });
+  publishHits(canvas, s, { bricks: rects.bricks, catch: rects.catch, putt: rects.putt, stack: rects.stack, haptics: rects.haptics });
 }
 
 const canvas = document.getElementById('screen');

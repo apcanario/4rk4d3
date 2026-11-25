@@ -323,7 +323,7 @@ It reuses the shared kit. If shared code has no session clock and scene phase ye
 ### Gesture and pause (this game's own)
 
 - Gesture: pull back, aim, release. One thumb.
-- Pause: none on lifting the thumb, because the ball rolls after release. Putt is turn-based, so it is idle whenever the ball is at rest. Closing the app saves, and reopening resumes the exact state.
+- Pause: none on lifting the thumb, because the ball rolls after release. Putt is turn-based, so it is idle whenever the ball is at rest. Nothing is saved: opening Putt always starts a fresh level (see No saved state, and the hard rules).
 
 ### Look
 

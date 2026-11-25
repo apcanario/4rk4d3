@@ -195,3 +195,24 @@ Models that ran: written in the design chat on Fable; applied to the repo in a d
 Changed: docs/PLAN.md merged, not replaced. Sections 2 (hard rules), 2a (evidence) and 2b (wind-down rules) replaced by the update's; section 6a (row B2) replaced by the update's Bricks fix; new sections 6c U1 Putt, 6d S1 Stack, 6e X1 Strip-down added after 6b; section 8 Parked is now P3 only. Sections 3, 4, 5, 6 and 6b are kept as they were, each with one line under its heading saying it is superseded in part by the hard rules of update 2 and that row X1 brings the build in line. docs/style-reference-putt.jpg added. BACKLOG: Queue is U1, S1, X1, then B3; P2 Stack removed from Parked (now S1); P3 kept.
 
 B2 was already Done (the wind-down build, 2026-11-25), so it was not re-queued and C1 was left as it is. The update's B2 adds the thumb-travel fraction (50 percent of the screen width moves the paddle end to end, one shared config value) which is not built: it needs its own small row.
+
+## 2026-11-25: U1 Putt
+
+Models that ran: main chat Sonnet 5.5 (claude-sonnet-5-5); builder Opus 5.5 (claude-opus-5-5); reviewer Opus 5.5 (claude-opus-5-5), which had not seen the build; fixes applied by a second Opus 5.5 agent (claude-opus-5-5).
+
+Built: games/putt/ (index.html, putt.js, sim.js, gen.js; sim.js and gen.js have no DOM) per PLAN §6c: pull-back-and-release shot with a dotted guide and power bar, 120 Hz swept physics (220 px/s top speed, 55 px/s^2, 85 percent bounce, sand, water back to the shot's origin, hole capture under 140 px/s), a seeded level generator with a solver on the same sim.js and a fallback after 30 rejects, levels built in a worker ahead of play, the dusk draw of level 1 only from minute 10, haptics 10, 6 and 24 ms, no text, no storage, edge touches under 24 CSS px ignored. PUTT tile on the hub (tiles step down to 15 px at logical height 240). sw.js adds games/putt/ and its four files, cache rlx-v11. README updated. Tests: tests/putt-sim.mjs (new, 69 checks, 200 levels per difficulty on five heights, 3000 random shots with no tunnelling), tests/check.py 305 (was 268), bricks-sim 230 and catch-sim 189 unchanged; all pass. shared/, Bricks and Catch unchanged.
+
+Plan conflict: PLAN §6c's Gesture section said closing the app saves and reopening resumes; the hard rules and "No saved state" say nothing is stored. Putt stores nothing, and the sentence was struck from §6c.
+
+Review findings and fixes (no blockers; verdict fix, minor):
+1. should-fix, Putt play time never reaches the shared clock, so reopening restarts the ramp. Not changed: Pedro said a later row removes the clock. No row.
+2. should-fix, the first opening drew an empty sea until the worker returned (a level-3 draw takes about 170 to 500 ms on desktop). Level 1 and 2 draws are now built on the page at the first frame; a level-3 request goes out at module load. Equal odds kept. New browser check: a level-1 or 2 opening has its course in the first frame (fails without the fix); a level-3 opening lands within 3 s. Fixed in part: a level-3 opening still shows the sea alone until the worker lands (262 ms headless); phone check in X19.
+3. nit, the fallback ignored its seed. Hole x, block size and place now follow the seed; 40 seeds give 40 different courses (was 1), 171 fallbacks solved within 1 to 2 strokes and keep the placement rules. Fixed.
+4. nit, diagonals could be 19.80 px. The leg is now 15 to 35 px, so 21.2 to 49.5 px; test tolerance tightened to 1e-6. Fixed.
+5. nit, the 24 ms sink tick could be swallowed by the 40 ms gap after a bounce near the hole. A bounce within 8 steps before the drop no longer ticks, and a sink tick that still lands in the gap goes out when it ends. 178 test shots lose the sink tick with the old rule and none with the new one. Fixed.
+6. nit, up to 20 s after the last touch counts as active play. The fix agent's edit was refused by the permission system; not made. X18.
+Judged acceptable by the reviewer: no drawScene (sea full height, no sun or stars; matches the reference), Putt's own buzz() in place of shared tick(), the smaller hub tiles.
+
+Not verifiable headless: no wait on the first opening and between holes on the phone, the three ticks by feel, Chrome's vibrate gate, the back gesture, touch feel, fps, reduced motion in a browser.
+
+Deferred: X18 (idle window), X19 (device pass), X20 (PLAN amendments for the choices made where it is silent), X21 (rule number in §6c).

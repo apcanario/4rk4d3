@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RLX checks (rows H1, B1, B2, C1 and B4) in headless Chromium and Node. Not needed to run the app.
+"""RLX checks (rows H1, B1, B2, C1, B4 and U1) in headless Chromium and Node. Not needed to run the app.
 
 Needs Python Playwright with Chromium (pip install playwright;
 python -m playwright install chromium). Run: python3 tests/check.py
@@ -18,6 +18,12 @@ restore, haptics, dusk, one clock across games; the hub's CATCH tile. Row B4:
 the contrast standard on the hub (wordmark, tiles, toggle, tag) at sunset and
 all 10 steps on logical heights 240, 300 and 400, and the drawn colours of the
 hub, Bricks and Catch at sunset, step 5 and step 10 (see tests/contrast.mjs).
+Row U1: runs tests/putt-sim.mjs and plays Putt with real touch events: the
+PUTT tile, a level at once and the next built in a Web Worker, no HUD, edge
+touches ignored, a cancelled pull, real shots planned with the page's own
+sim.js until the ball drops (10, 6 and 24 ms ticks), the next level sliding
+in with no wait, level 1 only from minute 10, nothing written to storage, a
+new level on every opening, offline.
 Screenshots go to tests/out/.
 """
 import functools
@@ -131,8 +137,8 @@ def tap(page, name):
     page.touchscreen.tap(p["x"], p["y"])
 
 
-def crisp(page, shot_path):
-    """Every logical pixel must be a uniform scale x scale block in the screenshot."""
+def crisp(page, shot_path, scale=None):
+    """Every logical pixel must be a uniform scale x scale block in the screenshot (scale: given, or the page's layout)."""
     from PIL import Image
 
     info = page.evaluate("""() => {
@@ -141,7 +147,7 @@ def crisp(page, shot_path):
                sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight };
     }""")
     img = Image.open(shot_path).convert("RGB")
-    s = layout_of(page)["scale"]
+    s = scale or layout_of(page)["scale"]
     ox = (info["cw"] - 135 * s) // 2
     H = info["ch"] // s
     oy = (info["ch"] - H * s) // 2
@@ -233,6 +239,17 @@ def run_viewport(browser, base, w, h):
     hits(page)
     page.wait_for_timeout(100)
     check(page.url == base and page.evaluate("history.length") == hlen, f"[{tag}] Catch back control returns to the hub, history not grown")
+    # Row U1: the PUTT tile opens Putt; the back gesture (history back) returns.
+    tap(page, "putt")
+    page.wait_for_url("**/games/putt/")
+    page.wait_for_function("window.__putt && window.__putt.snapshot().level", timeout=20000)
+    page.wait_for_timeout(150)
+    page.screenshot(path=str(OUT / f"putt-{tag}.png"))
+    check(page.url.endswith("/4rk4d3/games/putt/"), f"[{tag}] tap PUTT opens Putt")
+    page.go_back()
+    page.wait_for_url(base)
+    hits(page)
+    check(page.url == base, f"[{tag}] back gesture (history back) returns from Putt to the hub")
 
     # Haptics: default on; off persists; on fires one test tick and persists.
     page.evaluate("localStorage.clear()")
@@ -303,9 +320,23 @@ def run_viewport(browser, base, w, h):
     check(page.url == base + "games/catch/" and hits(page).get("back") is not None, f"[{tag}] Catch opens and draws offline")
     page.go_back()
     page.wait_for_url(base)
+    tap(page, "putt")
+    page.wait_for_url("**/games/putt/")
+    page.wait_for_function("window.__putt && window.__putt.snapshot().level", timeout=20000)
+    ps = page.evaluate("window.__putt.snapshot()")
+    check(page.url == base + "games/putt/" and ps["mode"] == "worker" and ps["level"]["fallback"] is False,
+          f"[{tag}] Putt opens offline and its worker builds the level ({ps['mode']})")
+    page.go_back()
+    page.wait_for_url(base)
     # Slash-less folder URL, offline then online, with the worker in control.
     for mode in ("offline", "online"):
         ctx.set_offline(mode == "offline")
+        page.goto(base + "games/putt")
+        page.wait_for_url("**/games/putt/")
+        page.wait_for_function("window.__putt && window.__putt.snapshot().level", timeout=20000)
+        check(page.url == base + "games/putt/", f"[{tag}] slash-less games/putt redirects and draws ({mode})")
+        page.goto(base)
+        hits(page)
         for game in ("bricks", "catch"):
             page.goto(base + "games/" + game)
             page.wait_for_url(f"**/games/{game}/")
@@ -353,6 +384,17 @@ def run_layout_only(browser, base, w, h, dpr):
     check(bad == 0 and info["sw"] <= info["iw"] and info["sh"] <= info["ih"] and hud == {"count": 1, "run": 1}
           and g["horizon"] == H - 42 and g["deckY"] == H - 47,
           f"[{tag}] Catch: crisp, no overflow, count and run fit their boxes, boat on the horizon ({hud})")
+    page.goto(base + "games/putt/")
+    page.wait_for_function("window.__putt && window.__putt.snapshot().level", timeout=20000)
+    page.wait_for_timeout(150)
+    shot = OUT / f"putt-{w}x{h}.png"
+    page.screenshot(path=str(shot))
+    ps = page.evaluate("window.__putt.snapshot()")
+    info, s, H, bad, total, ncol, size = crisp(page, shot, ps["geo"]["scale"])
+    lv = ps["level"]
+    check(bad == 0 and info["sw"] <= info["iw"] and info["sh"] <= info["ih"] and lv["H"] == H and lv["y1"] + 3 == H - 26 - ps["geo"]["bottom"]
+          and lv["y0"] - 3 == 6 + ps["geo"]["top"] and lv["x0"] - 3 == 6 and lv["x1"] + 3 == 129,
+          f"[{tag}] Putt: crisp, no overflow, the course inset 6 px at the sides and top, 26 px above the bottom (H {H})")
     check(not errors, f"[{tag}] no console errors {errors}")
     ctx.close()
 
@@ -411,7 +453,7 @@ def static_checks():
                 if ink(r, c) and ink(r, c - 1) + ink(r, c + 1) == 1 and ink(r - 1, c) + ink(r + 1, c) == 1:
                     bad.append((key, r, c))
     check(not bad, f"font: every outer corner is cut {bad}")
-    needed = set("RLXBRICKSCATCHSTACKSOONHAPTICSONOFF<>0123456789")
+    needed = set("RLXBRICKSCATCHPUTTSTACKSOONHAPTICSONOFF<>0123456789")
     check(needed <= set(re.findall(r"'(.)':", body)), "font has every character the UI uses")
 
 
@@ -1388,7 +1430,7 @@ def run_contrast_hub(browser, base):
             hg = r["haptics"]
             sea = [(f"sea band {i + 1}", pal["sea"][i]) for i, (a, b) in enumerate(sea_y) if a < hg["y"] + hg["h"] and b > hg["y"]]
             items = [("wordmark (large)", "cr", MIN_CR, C["coral"], tok["edgeCoral"], sky(bands(12, 40)))]
-            for t in ("bricks", "catch"):
+            for t in ("bricks", "catch", "putt"):
                 items.append((f"{t} tile", "cr", MIN_CR, C["coral"], tok["edgeCoral"], sky(bands(r[t]["y"], r[t]["y"] + r[t]["h"])) + sun))
             items.append(("stack tile (inactive)", "de", MIN_DE, tok["soonFill"], tok["edgeCoral"],
                           sky(bands(r["stack"]["y"], r["stack"]["y"] + r["stack"]["h"])) + sun))
@@ -1410,7 +1452,7 @@ def run_contrast_hub(browser, base):
         shot = OUT / f"b4-hub-labels-{tag.split()[-1]}.png"
         page.screenshot(path=str(shot))
         glyphs, outlines = {}, set()
-        for t in ("bricks", "catch"):
+        for t in ("bricks", "catch", "putt"):
             rt = r[t]
             ys = list(range(rt["y"] + 2, rt["y"] + rt["h"] - 2))
             xs = list(range(rt["x"] + 2, rt["x"] + rt["w"] // 2))
@@ -1555,6 +1597,269 @@ def run_node_sim():
     check(res.returncode == 0, f"node tests/bricks-sim.mjs: {summary}")
 
 
+def run_putt_sim():
+    """tests/putt-sim.mjs: sim.js and gen.js in Node (200 levels per difficulty and more)."""
+    res = subprocess.run(["node", str(ROOT / "tests" / "putt-sim.mjs")], capture_output=True, text=True)
+    out = res.stdout.strip().splitlines()
+    for line in out:
+        if line.startswith("FAIL"):
+            print("  sim " + line)
+    summary = out[-1] if out else res.stderr.strip()
+    check(res.returncode == 0, f"node tests/putt-sim.mjs: {summary}")
+
+
+def psnap(page):
+    return page.evaluate("window.__putt.snapshot()")
+
+
+# Plans one shot in the page with Putt's own sim.js and gen.js (the same modules the game runs): from a
+# thumb at (cx0, cy0) CSS px, every whole-degree direction at seven pull lengths; the pull is turned
+# into a shot by __putt.shotFor, exactly as the game does. Picks a shot that sinks, else the one that
+# rests nearest the hole by walking distance. With side set, a full-power pull straight sideways.
+PLAN_SHOT_JS = """async ({ cx0, cy0, side }) => {
+  const S = await import(new URL('./sim.js', location.href).href);
+  const G = await import(new URL('./gen.js', location.href).href);
+  const snap = window.__putt.snapshot();
+  const w = S.buildWorld(snap.level);
+  const b = snap.ball;
+  const play = { launchSpeed: 220, decel: 55, stopSpeed: 4, bounce: 0.85, sandFactor: 3, captureSpeed: 140 };
+  const field = G.distanceField(w);
+  const sim = (ex, ey) => {
+    const shot = window.__putt.shotFor(cx0, cy0, ex, ey);
+    if (!shot) return null;
+    const ball = S.newBall(b.x, b.y);
+    S.shoot(ball, shot.dx, shot.dy, shot.speed);
+    let bounces = 0;
+    while (ball.moving) { const ev = S.step(w, ball, play); if ((ev & S.EV_BOUNCE) && ball.vn >= 8) bounces++; }
+    return { ex, ey, sunk: ball.sunk, x: ball.x, y: ball.y, bounces, water: !ball.sunk && ball.x === b.x && ball.y === b.y };
+  };
+  if (side) return sim(cx0 + side * 170, cy0);
+  let best = null;
+  for (let a = 0; a < 360; a++) {
+    for (const len of [16, 32, 53, 80, 107, 133, 165]) {
+      const ex = Math.round(cx0 + Math.cos(a * Math.PI / 180) * len);
+      const ey = Math.round(cy0 + Math.sin(a * Math.PI / 180) * len);
+      const r = sim(ex, ey);
+      if (!r) continue;
+      r.score = r.sunk ? -1 : r.water ? 1e9 : field.at(r.x, r.y);
+      if (!best || r.score < best.score) best = r;
+    }
+  }
+  return best;
+}"""
+
+
+def putt_stroke(page, touch, cx0, cy0, ex, ey):
+    """Pull back from (cx0, cy0) to (ex, ey) with a real finger, in steps, and release."""
+    touch.down(cx0, cy0)
+    page.wait_for_timeout(20)
+    for i in range(1, 6):
+        touch.move(cx0 + (ex - cx0) * i / 5, cy0 + (ey - cy0) * i / 5)
+        page.wait_for_timeout(16)
+    touch.up()
+
+
+def putt_until_rest(page, max_ms=8000):
+    t0 = time.time()
+    while time.time() - t0 < max_ms / 1000:
+        s = psnap(page)
+        if not s["ball"]["moving"]:
+            return s
+        page.wait_for_timeout(30)
+    return psnap(page)
+
+
+def putt_play_hole(page, touch, tag, cx0=180, cy0=420, max_strokes=20, first_side=0):
+    """Play the current hole to the end with planned real shots. Returns a log of the strokes."""
+    log = []
+    start_no = psnap(page)["levelNo"]
+    for k in range(max_strokes):
+        side = first_side if k == 0 else 0
+        plan = page.evaluate(PLAN_SHOT_JS, {"cx0": cx0, "cy0": cy0, "side": side})
+        before = psnap(page)
+        putt_stroke(page, touch, cx0, cy0, plan["ex"], plan["ey"])
+        page.wait_for_timeout(40)
+        after = putt_until_rest(page)
+        log.append({"plan": plan, "before": before, "after": after})
+        if after["ball"]["sunk"] or after["levelNo"] != start_no:
+            break
+    return log
+
+
+STORAGE_JS = """async () => ({
+  local: Object.fromEntries(Object.keys(localStorage).map((k) => [k, localStorage.getItem(k)])),
+  session: Object.fromEntries(Object.keys(sessionStorage).map((k) => [k, sessionStorage.getItem(k)])),
+  idb: indexedDB.databases ? (await indexedDB.databases()).map((d) => d.name) : [],
+  cookie: document.cookie,
+})"""
+
+
+def run_putt(browser, base):
+    """Row U1 in the browser at 360x800, played with real touch events."""
+    tag = "putt 360x800"
+    ctx = new_context(browser, 360, 800)
+    foreign = []
+    origin = base.split("/4rk4d3/")[0]
+    ctx.on("request", lambda r: (not r.url.startswith(origin) and not r.url.startswith("data:")) and foreign.append(r.url))
+    page = ctx.new_page()
+    errors = []
+    page.on("console", lambda m: m.type == "error" and errors.append(m.text))
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(base)
+    hits(page)
+    page.evaluate("localStorage.clear(); sessionStorage.clear()")
+    page.evaluate("localStorage.setItem('rlx.v1.session', JSON.stringify({ active: 30, last: Date.now() }))")
+    stored0 = page.evaluate(STORAGE_JS)
+    t0 = time.time()
+    tap(page, "putt")
+    page.wait_for_url("**/games/putt/")
+    page.wait_for_function("window.__putt && window.__putt.snapshot().level", timeout=20000)
+    first_ms = (time.time() - t0) * 1000
+    s = psnap(page)
+    check(s["level"]["fallback"] is False and s["mode"] == "worker" and first_ms < 3000 and s["opening"]["diff"] == s["level"]["diff"],
+          f"[{tag}] opening Putt shows a generated level ({first_ms:.0f} ms from the tap, level {s['level']['diff']}; levels 1 and 2 built on the page, 3 in the worker)")
+    openings = [s["opening"]]
+    page.wait_for_function("window.__putt.snapshot().ready.random !== null", timeout=20000)
+    s = psnap(page)
+    check(s["ready"]["random"] in (1, 2, 3), f"[{tag}] the next level is built in the background while this one is played (level {s['ready']['random']} ready)")
+    check(s["clock"]["active"] >= 30 and s["step"] == 0, f"[{tag}] Putt reads the shared session clock ({s['clock']['active']:.1f} s)")
+    hits_attr = page.eval_on_selector("#screen", "c => ({ hits: c.dataset.hits || null, hud: c.dataset.hud || null, layout: c.dataset.layout || null })")
+    check(hits_attr == {"hits": None, "hud": None, "layout": None}, f"[{tag}] no HUD, no button, no back control: no hit areas or HUD on the canvas {hits_attr}")
+    shot = OUT / f"putt-play-{tag.split()[-1]}.png"
+    page.screenshot(path=str(shot))
+    info, sc, H, bad, total, ncol, size = crisp(page, shot, s["geo"]["scale"])
+    check(bad == 0 and info["sw"] <= info["iw"] and info["sh"] <= info["ih"], f"[{tag}] crisp, no scrolling ({ncol} colours)")
+    touch = Touch(ctx, page)
+    page.evaluate("window.__vib = []")
+
+    # Touches that begin within 24 CSS px of either edge move nothing.
+    lv = s["level"]
+    for x in (5, 23, 337, 355):
+        putt_stroke(page, touch, x, 420, 180, 600)
+        page.wait_for_timeout(60)
+    s = psnap(page)
+    check(s["ball"]["x"] == lv["tee"]["x"] and s["ball"]["y"] == lv["tee"]["y"] and not s["ball"]["moving"] and not s["aiming"]
+          and page.evaluate("window.__vib.length") == 0, f"[{tag}] touches that begin within 24 CSS px of the left or right edge are ignored")
+    # A touch 25 px in does aim.
+    touch.down(26, 420)
+    touch.move(26, 470)
+    page.wait_for_timeout(50)
+    aiming = psnap(page)["aiming"]
+    page.screenshot(path=str(OUT / f"putt-aim-{tag.split()[-1]}.png"))
+    # Pull back to within 4 logical px (10 CSS px at this scale) and release: cancelled.
+    touch.move(26, 428)
+    touch.up()
+    page.wait_for_timeout(80)
+    s = psnap(page)
+    check(aiming and not s["ball"]["moving"] and s["ball"]["x"] == lv["tee"]["x"] and page.evaluate("window.__vib.length") == 0,
+          f"[{tag}] a touch 26 px in aims; pulling back to within 4 px and releasing cancels the shot (no move, no tick)")
+
+    # Play the hole with planned real shots: the first a full-power pull sideways, into a wall.
+    page.evaluate("window.__vib = []; window.__vibAt = []")
+    log = putt_play_hole(page, touch, tag, first_side=1)
+    agree = all((l["after"]["ball"]["sunk"] and l["plan"]["sunk"]) or (abs(l["after"]["ball"]["x"] - l["plan"]["x"]) < 1e-6
+                and abs(l["after"]["ball"]["y"] - l["plan"]["y"]) < 1e-6) for l in log)
+    check(agree, f"[{tag}] every real shot ends exactly where the page's own sim.js said it would ({len(log)} strokes)")
+    last = log[-1]["after"]
+    check(last["ball"]["sunk"] or last["levelNo"] != log[0]["before"]["levelNo"], f"[{tag}] the ball drops in the hole after {len(log)} strokes")
+    vib = page.evaluate("window.__vib")
+    at = page.evaluate("window.__vibAt")
+    gaps = [b - a for a, b in zip(at, at[1:])]
+    bounced = sum(l["plan"]["bounces"] for l in log)
+    check(log[0]["plan"]["bounces"] > 0 and vib.count(10) == len(log) and vib.count(24) == 1 and 6 in vib and set(vib) <= {10, 6, 24},
+          f"[{tag}] ticks: release 10 ms (one per stroke), bounce 6 ms, drop 24 ms and nothing else ({vib}; {bounced} planned bounces)")
+    check(all(g >= 40 - 0.5 for g in gaps), f"[{tag}] at most one vibrate call per 40 ms (smallest gap {min(gaps) if gaps else None})")
+    # The next level slides in after about 800 ms, with no wait.
+    before_no = log[0]["before"]["levelNo"]
+    lvl_before = log[0]["before"]["level"]
+    t_sink = time.time()
+    slid = False
+    while time.time() - t_sink < 3:
+        s = psnap(page)
+        slid = slid or s["sliding"]
+        if s["levelNo"] != before_no and not s["sliding"]:
+            break
+        page.wait_for_timeout(20)
+    waited = time.time() - t_sink
+    s = psnap(page)
+    check(s["levelNo"] == before_no + 1 and slid and s["level"]["fallback"] is False and s["level"]["seed"] != lvl_before["seed"]
+          and s["ball"]["x"] == s["level"]["tee"]["x"] and not s["ball"]["sunk"],
+          f"[{tag}] after the drop the next (generated, not fallback) level slides in from the top, ball on its tee ({waited:.2f} s after the last stroke settled)")
+    page.wait_for_function("window.__putt.snapshot().ready.random !== null", timeout=20000)
+    check(psnap(page)["ready"]["random"] in (1, 2, 3), f"[{tag}] the level after that is ready in the background again")
+    page.screenshot(path=str(OUT / f"putt-next-{tag.split()[-1]}.png"))
+    s = psnap(page)
+    check(s["clock"]["active"] > 30 + 1, f"[{tag}] the session clock counts Putt play in memory ({s['clock']['active']:.1f} s)")
+    check(not s["raf"] or s["ball"]["moving"], f"[{tag}] idle at rest: no animation loop")
+
+    # Nothing written to storage.
+    stored1 = page.evaluate(STORAGE_JS)
+    check(stored1 == stored0, f"[{tag}] nothing written to storage (localStorage, sessionStorage, IndexedDB, cookies): {stored1}")
+
+    # Opening Putt again always gives a new level.
+    seeds = {s["level"]["seed"]}
+    for i in range(3):
+        page.go_back()
+        page.wait_for_url(base)
+        hits(page)
+        tap(page, "putt")
+        page.wait_for_url("**/games/putt/")
+        page.wait_for_function("window.__putt && window.__putt.snapshot().level", timeout=20000)
+        s = psnap(page)
+        seeds.add(s["level"]["seed"])
+        openings.append(s["opening"])
+        if s["levelNo"] != 1:
+            seeds.add(None)
+    check(len(seeds) == 4 and None not in seeds, f"[{tag}] every opening from the hub starts a fresh level ({len(seeds)} different)")
+    # The first frame already has its course on a level-1 or 2 opening; a level 3 is asked of the worker
+    # at module load and the sea is drawn alone until it lands. Open until both kinds are seen (or 12 openings).
+    while len(openings) < 12 and not (any(o["diff"] < 3 for o in openings) and any(o["diff"] == 3 for o in openings)):
+        page.go_back()
+        page.wait_for_url(base)
+        hits(page)
+        tap(page, "putt")
+        page.wait_for_url("**/games/putt/")
+        page.wait_for_function("window.__putt && window.__putt.snapshot().level", timeout=20000)
+        openings.append(psnap(page)["opening"])
+    easy_open = [o for o in openings if o["diff"] < 3]
+    hard_open = [o for o in openings if o["diff"] == 3]
+    check(easy_open and all(o["atFirstFrame"] for o in easy_open),
+          f"[{tag}] a level-1 or 2 opening has its course in the first frame ({sum(o['atFirstFrame'] for o in easy_open)}/{len(easy_open)} openings)")
+    check(all(o["atFirstFrame"] or (o["landedMs"] is not None and o["landedMs"] < 3000) for o in hard_open),
+          f"[{tag}] a level-3 opening lands from the worker started at module load ({[round(o['landedMs']) if o['landedMs'] is not None else 'first frame' for o in hard_open]} ms after load; {len(hard_open)} of {len(openings)} openings)")
+
+    # From minute 10 of the session clock every new course is level 1, drawn at full dusk.
+    page.go_back()
+    page.wait_for_url(base)
+    hits(page)
+    page.evaluate("localStorage.setItem('rlx.v1.session', JSON.stringify({ active: 600, last: Date.now() }))")
+    stored0 = page.evaluate(STORAGE_JS)
+    tap(page, "putt")
+    page.wait_for_url("**/games/putt/")
+    page.wait_for_function("window.__putt && window.__putt.snapshot().level && window.__putt.snapshot().ready.random !== null", timeout=20000)
+    page.wait_for_function("window.__putt.snapshot().ready.easy !== null", timeout=20000)
+    s = psnap(page)
+    scene = page.eval_on_selector("#screen", "c => c.dataset.scene")
+    page.screenshot(path=str(OUT / f"putt-dusk-{tag.split()[-1]}.png"))
+    diffs = [s["level"]["diff"], s["ready"]["random"], s["ready"]["easy"]]
+    log = putt_play_hole(page, touch, tag)
+    t_sink = time.time()
+    while time.time() - t_sink < 3:
+        s2 = psnap(page)
+        if s2["levelNo"] != s["levelNo"] and not s2["sliding"]:
+            break
+        page.wait_for_timeout(20)
+    s2 = psnap(page)
+    diffs.append(s2["level"]["diff"])
+    check(scene == "10" and diffs == [1, 1, 1, 1] and s2["levelNo"] == s["levelNo"] + 1,
+          f"[{tag}] from minute 10 every new course is level 1 (first, queued, kept ready, next: {diffs}), the scene at full dusk ({scene})")
+    check(page.evaluate(STORAGE_JS) == stored0, f"[{tag}] at dusk too, nothing written to storage")
+
+    check(not errors, f"[{tag}] no console errors {errors}")
+    check(not foreign, f"[{tag}] no requests to another host {foreign}")
+    ctx.close()
+
+
 def run_version_bump(browser):
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="rlx-bump-"))
     site = tmp / "site"
@@ -1598,6 +1903,7 @@ def main():
     static_checks()
     run_node_sim()
     run_catch_sim()
+    run_putt_sim()
     httpd, base = serve(ROOT)
     with sync_playwright() as p:
         browser = p.chromium.launch()
@@ -1609,6 +1915,7 @@ def main():
         run_bricks(browser, base)
         run_scene(browser, base)
         run_catch(browser, base)
+        run_putt(browser, base)
         run_contrast_hub(browser, base)
         run_contrast_pages(browser, base)
         run_version_bump(browser)

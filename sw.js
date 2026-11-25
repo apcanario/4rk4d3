@@ -5,7 +5,7 @@
 // file under the new name, takes over at once and deletes the old caches.
 // The next launch runs the new files. Add any new shipped file to FILES.
 
-const VERSION = 'rlx-v10';
+const VERSION = 'rlx-v11';
 
 const FILES = [
   './',
@@ -27,6 +27,11 @@ const FILES = [
   './games/catch/index.html',
   './games/catch/catch.js',
   './games/catch/sim.js',
+  './games/putt/',
+  './games/putt/index.html',
+  './games/putt/putt.js',
+  './games/putt/sim.js',
+  './games/putt/gen.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
