@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#FFF7EC">
+<meta name="color-scheme" content="light">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="format-detection" content="telephone=no">
+<title>RLX: Bricks</title>
+<link rel="manifest" href="../../manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="../../icons/icon-192.png">
+<link rel="stylesheet" href="../../shared/theme.css">
+</head>
+<body>
+<canvas class="screen" id="screen" role="img" aria-label="Bricks. Back control top left returns to the hub."></canvas>
+<script type="module">
+// Row H1 placeholder: the scene, the word BRICKS and a back control, so the
+// hub-to-game navigation can be tested. Row B1 replaces this with the game
+// (bricks.js, physics.js).
+import { COLORS } from '../../shared/tokens.js';
+import { drawFitted } from '../../shared/font.js';
+import {
+  createScreen, drawScene, drawBackControl, BACK_SIZE, initPage, hitTest, publishHits, goToHub,
+} from '../../shared/pixel.js';
+
+initPage();
+
+let pressed = false;
+let rects = {};
+
+function layout(s) {
+  const side = Math.max(s.safe.left, s.safe.right);
+  const back = { x: 4 + side, y: 5 + s.safe.top, w: BACK_SIZE.w, h: BACK_SIZE.h };
+  const wx = back.x + back.w + 6;
+  const word = { x: wx, y: back.y - 1, w: s.W - 6 - side - wx, h: back.h + 2 };
+  return { back, word };
+}
+
+function draw(ctx, s) {
+  rects = layout(s);
+  drawScene(ctx, s.W, s.H);
+  drawBackControl(ctx, rects.back.x, rects.back.y, pressed);
+  drawFitted(ctx, 'BRICKS', rects.word, COLORS.coral, { align: 'left', maxSize: 4 });
+  publishHits(canvas, s, { back: rects.back });
+}
+
+const canvas = document.getElementById('screen');
+const screen = createScreen(canvas, draw);
+const PAD = 6; // thumb-friendly hit area around the small control
+
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  pressed = hitTest(screen.toLogical(e.clientX, e.clientY), rects.back, PAD);
+  if (pressed) screen.render();
+});
+canvas.addEventListener('pointerup', (e) => {
+  e.preventDefault();
+  const hit = hitTest(screen.toLogical(e.clientX, e.clientY), rects.back, PAD);
+  const was = pressed;
+  pressed = false;
+  screen.render();
+  if (hit && was) goToHub();
+});
+const release = () => { if (pressed) { pressed = false; screen.render(); } };
+canvas.addEventListener('pointercancel', release);
+canvas.addEventListener('pointerleave', release);
+addEventListener('pageshow', () => { pressed = false; screen.render(); });
+</script>
+</body>
+</html>

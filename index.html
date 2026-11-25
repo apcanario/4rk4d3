@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#FFF7EC">
+<meta name="color-scheme" content="light">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="format-detection" content="telephone=no">
+<title>RLX</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="stylesheet" href="shared/theme.css">
+</head>
+<body>
+<canvas class="screen" id="screen" role="img" aria-label="RLX: Bricks. Catch and Stack coming soon. Haptics setting."></canvas>
+<script type="module">
+import { COLORS, SEA_BANDS, mix, shade } from './shared/tokens.js';
+import { drawFitted, fitSize, measure } from './shared/font.js';
+import {
+  createScreen, drawScene, pixelBody, initPage, hitTest, publishHits, openPage, SEA_HEIGHT,
+} from './shared/pixel.js';
+import { hapticsOn, setHaptics } from './shared/settings.js';
+import { testTick } from './shared/haptics.js';
+
+initPage();
+
+const TILES = [
+  { id: 'bricks', label: 'BRICKS', active: true, href: 'games/bricks/' },
+  { id: 'catch', label: 'CATCH', active: false },
+  { id: 'stack', label: 'STACK', active: false },
+];
+
+const TILE_H = 22;
+const TILE_GAP = 6;
+const TOGGLE_H = 15;
+const TOGGLE_W = 75;
+const SOON_FILL = mix(COLORS.skyBottom, '#FFFFFF', 0.45);
+const SOON_INK = mix(COLORS.coral, COLORS.skyBottom, 0.45);
+const TAG_FILL = '#78B4D8';
+const OFF_FILL = mix(SEA_BANDS[0], '#FFFFFF', 0.45);
+
+let pressed = null;
+let haptics = hapticsOn();
+let rects = {};
+
+function layout(s) {
+  const { W, H, safe } = s;
+  const side = Math.max(safe.left, safe.right);
+  const mx = 8 + side;
+  const horizon = H - SEA_HEIGHT;
+  const r = {};
+  r.wordmark = { x: mx, y: safe.top + 12, w: W - mx * 2, h: 28 };
+  const tw = W - (mx + 8) * 2;
+  const stackH = TILES.length * TILE_H + (TILES.length - 1) * TILE_GAP;
+  // Keep the sun clear when the lower half has room; never rise above it.
+  let ty = horizon - 28 - stackH;
+  if (ty < Math.floor(H / 2)) ty = Math.min(Math.floor(H / 2), horizon - 8 - stackH);
+  ty = Math.max(ty, r.wordmark.y + r.wordmark.h + 10);
+  TILES.forEach((t, i) => {
+    r[t.id] = { x: mx + 8, y: ty + i * (TILE_H + TILE_GAP), w: tw, h: TILE_H };
+  });
+  const toggleY = Math.min(horizon + 13, H - safe.bottom - 3 - TOGGLE_H);
+  r.haptics = { x: Math.floor((W - TOGGLE_W) / 2), y: toggleY, w: TOGGLE_W, h: TOGGLE_H };
+  return r;
+}
+
+function drawTile(ctx, t, r, labelSize) {
+  const down = pressed === t.id ? 1 : 0;
+  const y = r.y + down;
+  const fill = t.active ? COLORS.coral : SOON_FILL;
+  pixelBody(ctx, r.x, y, r.w, r.h, fill, 2);
+  const ink = t.active ? COLORS.sun : SOON_INK;
+  const pad = 8;
+  let right = r.x + r.w - pad;
+  if (t.active) {
+    // chevron: this one opens
+    ctx.fillStyle = COLORS.sun;
+    const cx = right - 4;
+    const cy = y + Math.floor((r.h - 7) / 2);
+    [0, 1, 2, 3, 2, 1, 0].forEach((c, i) => ctx.fillRect(cx + c, cy + i, 2, 1));
+    right = cx - 4;
+  } else {
+    // SOON tag
+    const tagW = measure('SOON', 1) + 6;
+    const tagH = 11;
+    const tx = right - tagW + 2;
+    const tagY = y + Math.floor((r.h - tagH) / 2);
+    pixelBody(ctx, tx, tagY, tagW, tagH, TAG_FILL, 1);
+    drawFitted(ctx, 'SOON', { x: tx + 3, y: tagY + 2, w: tagW - 6, h: tagH - 3 }, '#FFFFFF', { maxSize: 1 });
+    right = tx - 4;
+  }
+  const box = { x: r.x + pad, y: y + 3, w: right - (r.x + pad), h: r.h - 6 };
+  const shadow = t.active ? shade(COLORS.coral) : null;
+  drawFitted(ctx, t.label, box, ink, { align: 'left', maxSize: labelSize, shadow });
+}
+
+function drawToggle(ctx, r) {
+  const down = pressed === 'haptics' ? 1 : 0;
+  const y = r.y + down;
+  const fill = haptics ? COLORS.blue : OFF_FILL;
+  pixelBody(ctx, r.x, y, r.w, r.h, fill, 2);
+  const text = haptics ? 'HAPTICS ON' : 'HAPTICS OFF';
+  const box = { x: r.x + 4, y: y + 3, w: r.w - 8, h: r.h - 5 };
+  // one size for both states, fitted to the longer label
+  const size = fitSize('HAPTICS OFF', box.w, box.h, 2);
+  drawFitted(ctx, text, box, haptics ? '#FFFFFF' : COLORS.blue, { maxSize: size });
+}
+
+function draw(ctx, s) {
+  rects = layout(s);
+  const firstTile = rects[TILES[0].id].y;
+  const wordBottom = rects.wordmark.y + rects.wordmark.h;
+  const open = firstTile - wordBottom;
+  drawScene(ctx, s.W, s.H, {
+    clouds: [
+      [96, wordBottom + Math.round(open * 0.2)],
+      [10, wordBottom + Math.round(open * 0.5)],
+      [62, wordBottom + Math.round(open * 0.78)],
+    ],
+  });
+  drawFitted(ctx, 'RLX', rects.wordmark, COLORS.coral, { maxSize: 6 });
+
+  // One label size for every tile: the largest that fits them all.
+  let labelSize = 16;
+  for (const t of TILES) {
+    const r = rects[t.id];
+    const reserve = t.active ? 16 : measure('SOON', 1) + 6 + 8;
+    labelSize = Math.min(labelSize, fitSize(t.label, r.w - 8 - reserve, r.h - 7, 16));
+  }
+  for (const t of TILES) drawTile(ctx, t, rects[t.id], Math.max(1, labelSize));
+  drawToggle(ctx, rects.haptics);
+  publishHits(canvas, s, { bricks: rects.bricks, catch: rects.catch, stack: rects.stack, haptics: rects.haptics });
+}
+
+const canvas = document.getElementById('screen');
+const screen = createScreen(canvas, draw);
+
+function targetAt(e) {
+  const p = screen.toLogical(e.clientX, e.clientY);
+  if (hitTest(p, rects.haptics, 3)) return 'haptics';
+  for (const t of TILES) if (t.active && hitTest(p, rects[t.id], 2)) return t.id;
+  return null;
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  pressed = targetAt(e);
+  if (pressed) screen.render();
+});
+
+canvas.addEventListener('pointerup', (e) => {
+  e.preventDefault();
+  const hit = targetAt(e);
+  const was = pressed;
+  pressed = null;
+  if (hit && hit === was) {
+    if (hit === 'haptics') {
+      haptics = setHaptics(!haptics);
+      if (haptics) testTick();
+    } else {
+      const t = TILES.find((x) => x.id === hit);
+      if (t && t.active) {
+        screen.render();
+        openPage(t.href);
+        return;
+      }
+    }
+  }
+  screen.render();
+});
+
+const release = () => { if (pressed) { pressed = null; screen.render(); } };
+canvas.addEventListener('pointercancel', release);
+canvas.addEventListener('pointerleave', release);
+addEventListener('pageshow', () => { pressed = null; haptics = hapticsOn(); screen.render(); });
+</script>
+</body>
+</html>
