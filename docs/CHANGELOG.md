@@ -49,3 +49,30 @@ Models that ran: written in the design chat on Fable; applied to the repo in a d
 Changed: docs/PLAN.md replaced with the bundle's version (new sections 2a evidence, 2b wind-down rules, 6a row B2, 6b row C1; Bricks ball speed now follows the pace; P2 Stack reworded). docs/style-reference-catch.jpg added. BACKLOG: B2 (wind-down rules in Bricks) and C1 (Catch) added to the Queue; P1 and P4 removed from Parked (P1 is now C1, P4 is replaced by the sunset exit ramp in B2); P2 reworded, P3 kept.
 
 Renumbered: the existing Queue row B2 (real-device pass of B1 and tuning) is now B3, because the plan's B2 is the wind-down row. The B1 entry above still calls it B2. Proposed rows X1 to X4 untouched.
+
+## 2026-11-25: B1a Bricks haptics bug
+
+Models that ran: main chat Sonnet 5.5 (claude-sonnet-5-5); builder Opus 5.5 (claude-opus-5-5); reviewer Opus 5.5 (claude-opus-5-5), which had not seen the build; doc fixes applied by the main chat, Sonnet 5.5.
+
+Diagnosis (headless Chromium 158 through Playwright, real navigator.vibrate kept, input as CDP touch events, state read over CDP without a user gesture):
+1. vibrate called with no user activation: ruled out for the normal path, ruled in for one edge. Chrome gates navigator.vibrate on sticky activation; for touch only pointerup/touchend grants it, not pointerdown or touchmove. Observed: Bricks loaded directly has no activation, vibrate(8) returns false and Chrome logs "Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet"; a touch drag ending in touchend grants it (touch-action none on the canvas, so no pointercancel; preventDefault on pointerdown does not stop it); a tap on BRICKS in the hub carries activation into Bricks (same-origin navigation from a tap), vibrate(8) returns true and nothing is logged. Two real holds after the tap: 4 calls each, all returned true, both 8 and 16 ms. Edge: a Bricks page loaded without that tap (direct URL, reload, Chrome reloading a killed tab) is silent until the first lift. Proposed as X6.
+2. Hub test tick: works. testTick() runs in the pointerup handler (index.html), which is itself an activating event; headless it returned true. Bricks calls tick() from pointermove and from the rAF physics loop, which rely on sticky activation; that holds after the hub tap or the first lift.
+3. Setting read: ruled out. shared/settings.js reads rlx.v1.settings from localStorage on every tick, default haptics true, a non-boolean falls back to true.
+4. 40 ms limiter: ruled out. shared/haptics.js uses performance.now() for both the stamp and the check; the rAF timestamp is not used. A tick inside 40 ms of another is dropped by design (PLAN §6); paddle and brick events are far apart in time (the ball has to travel between them), and headless play produced both lengths.
+5. Pause or running gate: ruled out. Paddle ticks in pointermove fire only when mode is running, which is when the finger is down and play is live; brick and paddle events from P.step are handled in the same frame they are produced, inside the running branch.
+6. Stale service worker: ruled out in the code, open on the device. sw.js is cache-first under rlx-v4, FILES holds both shared/haptics.js and games/bricks/bricks.js, both are cached together under one version. Earlier builds (up to rlx-v4) may have run on the phone: a stale worker updates after one launch and takes effect on the next, so a phone that has been opened only once since the last deploy can still run old files. Not ruled out for the device; X5 covers it.
+Also found: the existing Bricks checks in tests/check.py cannot see the activation gate (vibrate stubbed, mouse input, page.evaluate runs as a user gesture). Proposed as X7.
+
+Cause: no code defect found that explains haptics never firing. On the normal path (hub, tap BRICKS, play) the code calls navigator.vibrate with 8 and 16 ms and Chromium accepts every call. The cause is most likely on the device; this is not proven.
+
+Fix: none. No code change, no test, no service worker bump; cache stays rlx-v4.
+
+Not verifiable headless: that Chrome for Android carries activation across the hub tap as desktop Chromium does; the phone's vibration settings, ringer or Do Not Disturb mode, battery saver; whether 8 and 16 ms pulses are strong enough to feel on his motor. Pedro's check is X5.
+
+Review (reviewer found no blockers; verdict accept):
+1. should-fix, item 6 said the repo has one commit, so no older code could be served; false (the clone is shallow and earlier builds shipped). Restated above. Fixed.
+2. should-fix, X5 lacked a stale-worker step: it now says to close and reopen RLX twice before testing. Fixed.
+3. nit, activation carry-over across the hub tap on Chrome for Android (as opposed to desktop Chromium) is unverified: stated above.
+
+Deferred: X5 (device check by Pedro), X6 (silent first hold after a load without a tap), X7 (a test that sees the vibrate gate).
+
