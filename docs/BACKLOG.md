@@ -4,6 +4,9 @@ Rows are defined in docs/PLAN.md. Nothing is built that is not a row here. A don
 
 ## Queue
 
+- U1 Putt: top-down snooker and mini golf with generated endless levels (PLAN §6c, look in docs/style-reference-putt.jpg)
+- S1 Stack: a sliding block dropped by tap onto a tower that sinks into the sea (PLAN §6d)
+- X1 Strip-down: remove every HUD, all saved state and the haptics setting; fullscreen; back gesture only; one active hub tile per built game (PLAN §6e)
 - B3 Real-device pass of B1 and tuning from Pedro's feel report (fps, haptic feel, kill and reopen, back gesture; serve angle 10 and loop nudge 8 degrees in CONFIG)
 
 ## Done
@@ -17,7 +20,6 @@ Rows are defined in docs/PLAN.md. Nothing is built that is not a row here. A don
 
 ## Parked
 
-- P2 Stack: blocks slide across, tap to drop them. When specced it takes the wind-down rules: the pace is the slide speed, the skill signal is the run of clean drops, the exit ramp is the shared sunset.
 - P3 APK wrapper, with a native haptics bridge if the web ticks feel mushy.
 
 ## Proposed

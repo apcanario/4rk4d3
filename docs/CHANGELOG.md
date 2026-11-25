@@ -187,3 +187,11 @@ Reviewer's note, kept: the pause ring, chevrons and haptics toggle pass by their
 Suites after the review fixes: bricks-sim 230 checks, 0 failures; catch-sim 189 (was 186), 0 failures; check.py 268 (was 238), 0 failures in five full runs. Service worker cache rlx-v10.
 
 Deferred: X15 (PLAN text for the new values), X16 (effects still outside the standard: the ball trail, a pop particle's highlight bit, the splash's white top), X17 (device pass).
+
+## 2026-11-25: plan update 2: new hard rules (full screen, no points, no saved state, back gesture), rows U1, B2, S1, X1
+
+Models that ran: written in the design chat on Fable; applied to the repo in a docs-only session by Sonnet 5.5 (claude-sonnet-5-5), no agents. No code changed.
+
+Changed: docs/PLAN.md merged, not replaced. Sections 2 (hard rules), 2a (evidence) and 2b (wind-down rules) replaced by the update's; section 6a (row B2) replaced by the update's Bricks fix; new sections 6c U1 Putt, 6d S1 Stack, 6e X1 Strip-down added after 6b; section 8 Parked is now P3 only. Sections 3, 4, 5, 6 and 6b are kept as they were, each with one line under its heading saying it is superseded in part by the hard rules of update 2 and that row X1 brings the build in line. docs/style-reference-putt.jpg added. BACKLOG: Queue is U1, S1, X1, then B3; P2 Stack removed from Parked (now S1); P3 kept.
+
+B2 was already Done (the wind-down build, 2026-11-25), so it was not re-queued and C1 was left as it is. The update's B2 adds the thumb-travel fraction (50 percent of the screen width moves the paddle end to end, one shared config value) which is not built: it needs its own small row.

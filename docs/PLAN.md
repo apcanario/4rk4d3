@@ -7,44 +7,55 @@ A one-thumb arcade for Pedro's Android phone: a hub of small endless games to pi
 ## 2. Hard rules (every game, every screen)
 
 - Android only: Chrome now, an APK WebView later. No iOS or Safari work of any kind.
-- Portrait, one thumb, one input: a horizontal drag. No second gesture is needed to play.
+- Portrait, one thumb. Each game defines its own gesture and its own pause behaviour in its row.
+- Full screen. No game shows a title, a number, a button or any other HUD. The manifest's display mode is fullscreen.
+- Going home: the Android back gesture (a swipe in from the side edge) returns from a game to the hub. There is no on-screen back control. Every game ignores a touch that begins within 24 CSS px of the left or right edge of the screen, so an edge swipe never moves anything in the game.
+- No points of any kind: no score, count, rally, strokes, level number or difficulty marker, neither on screen nor stored.
+- No saved game state. Nothing about a game is written to storage. Opening a game from the hub always starts it fresh. If Android kept the app alive in the background it carries on where it was; if not, it opens at the hub. Nothing at all is stored.
 - No fail state: no lives, no game over, no timers, no streaks, no daily goals, no notifications, no leaderboards, no accounts, no ads, no network calls.
-- No sound at all. Haptics only, with one on/off setting.
-- Instant in, instant out: lifting the thumb pauses, closing the app saves, reopening resumes the exact state.
+- No sound at all. Haptics are always on. There are no settings and no options anywhere: the hub is the game tiles and nothing else.
 - Vanilla HTML, CSS and JS, ES modules, no build step, no dependencies, no CDN. Static files on GitHub Pages.
-- Text never wraps or overflows its tile or button: fit the text size to the box.
+- Text on the hub never wraps or overflows its tile or button: fit the text size to the box.
 
 ## 2a. Evidence
 
 Pedro asked for the games to fit what research says about winding down. Three findings drive the rules below.
 
 - Flow needs a little challenge. In a 2018 experiment by Sweeny and colleagues, a too-easy Tetris bored players and a too-hard one frustrated them; the adaptive version produced the most flow, and more flow went with less worry.
-- Recovery after work runs on detachment and on a sense of mastery (diary study in Applied Psychology, 2024; Collins and Cox, 2013).
+- Recovery after work runs on detachment and on a sense of mastery (diary study in Applied Psychology, 2024; Collins and Cox, 2013). Pedro chose to drop all points and counts, so mastery here comes from the play itself, not from a number.
 - ADHD symptoms are associated with gaming disorder (Koncz and colleagues, 2023, meta-analysis), so the app must make stopping easy.
 
 None of these studies tested casual games as a wind-down for adults with ADHD. The rules are informed by research, not validated by it. RLX is described as a calm game and makes no health claim.
 
 ## 2b. Wind-down rules (every game)
 
-1. Gentle adaptive pace. Each game has one hidden pace value. It rises slowly while play is clean and drops after a miss, inside tight bounds. It is never shown and never announced. There is still no fail state.
-2. One quiet skill signal. Each game shows the length of the current clean run as a small number. It resets silently on a miss. No best score, no record message, no celebration.
-3. A sunset exit ramp, shared by all games.
-   - A session clock counts active play time only (not paused time). It lives in shared code and is one clock across all games.
-   - Over the first 10 minutes the scene moves from sunset to dusk in 10 visible steps: the sun sinks until it is below the horizon, the sky bands shift to the dusk tokens, the sea darkens, and a few white stars appear in the last steps.
-   - From minute 10 to minute 12 the pace of the current game eases down to its minimum and stays there.
-   - Nothing locks and nothing is said. Playing on in the dusk is allowed.
-   - The clock resets when the app has had no active play for 5 minutes or more. The scene then starts again at sunset.
-   - The hub always shows the current phase of the scene.
-4. Still banned: streaks across days, daily goals, notifications, leaderboards, variable rewards, anything that argues for one more go.
+Each game's row says how it applies these. A game may replace rule 1 with its own difficulty scheme.
 
-New tokens (shared/tokens.js and theme.css)
+1. Gentle adaptive pace. Each game has one hidden pace value. It rises slowly while play is clean and drops after a miss, inside tight bounds. It is never shown and never announced.
+2. A sunset exit ramp, shared by all games.
+   - A session clock counts active play time only. It lives in shared code, in memory, and is one clock across all games.
+   - Over the first 10 minutes the scene moves from sunset to dusk in 10 visible steps: the sun sinks below the horizon, the sky bands shift to the dusk tokens, the sea darkens, a few white stars appear in the last steps.
+   - From minute 10 to minute 12 the current game eases down to its gentlest and stays there.
+   - Nothing locks and nothing is said. Playing on in the dusk is allowed.
+   - The clock resets when the app starts, and when the page has been hidden for 5 minutes or more.
+   - The hub shows the current phase of the scene.
+3. Still banned: streaks, daily goals, notifications, leaderboards, variable rewards, anything that argues for one more go.
+
+There is no skill number any more: the rule that asked for one is withdrawn, along with all points.
+
+Dusk tokens (shared/tokens.js and theme.css)
 - dusk sky-top #CDB8E0, dusk sky-bottom #F0A9A6
 - dusk sea bands #6FA3C4 #5F93B8 #5083AB
 - star #FFFFFF
-- Each of the 10 steps is a flat mix between the sunset and dusk values. No smooth fades: the change is stepped, in keeping with the pixel look.
-- Bricks, paddle, ball and lettering keep their colours in every phase. Check that all of them stay clearly readable against the dusk sky.
+- Each of the 10 steps is a flat mix between the sunset and dusk values. No smooth fades.
+- Game pieces keep their colours in every phase and must stay clearly readable against the dusk scene.
+
+Shared pieces, built once
+- The session clock, the scene phase (a value from 0 to 1 that pixel.js draws in 10 steps), the dusk tokens and the stars are shared code. The first row that needs them builds them as described here. Every later row reuses them and changes nothing in them.
 
 ## 3. Look
+
+Superseded in part by the hard rules of update 2; row X1 brings the build in line.
 
 Light summer sunset, rounded 8-bit. docs/style-reference.jpg is the approved reference; match it.
 
@@ -80,6 +91,8 @@ Motion
 
 ## 4. Repo layout
 
+Superseded in part by the hard rules of update 2; row X1 brings the build in line.
+
 - /index.html: the hub
 - /shared/: tokens.js, theme.css, font.js, pixel.js (canvas setup, scaling, stepped-corner rect, dither, scene), haptics.js, store.js (localStorage in try/catch, versioned keys), settings.js
 - /games/bricks/: index.html, bricks.js, physics.js
@@ -88,6 +101,8 @@ Motion
 - README.md
 
 ## 5. Row H1: shell and hub (session 1)
+
+Superseded in part by the hard rules of update 2; row X1 brings the build in line.
 
 Build
 - The shared modules listed above.
@@ -107,6 +122,8 @@ Accept
 - No console errors; no requests to any host but its own.
 
 ## 6. Row B1: Bricks (session 2)
+
+Superseded in part by the hard rules of update 2; row X1 brings the build in line.
 
 Field
 - 7 columns of 15 x 7 bricks with 2 px gaps, centred. A HUD line above: back control on the left, quiet score on the right.
@@ -163,29 +180,36 @@ Accept
 
 After B1, Pedro plays it and reports on feel. Tuning is a follow-up row.
 
-## 6a. Row B2: wind-down rules in Bricks (session 3)
+## 6a. Row B2: Bricks fix
+
+Bricks was built with a constant ball speed. This row gives it the adaptive pace and the exit ramp, and shortens the thumb travel.
+
+Changes to section 6 (Bricks)
+- Replace the constant ball speed with the pace: minimum 80, starting value 90, maximum 125 logical px per second.
+- Each clean paddle return adds 1. Each miss takes off 12. The value is clamped to the range.
+- A speed change takes effect only at a paddle bounce, never in mid-flight.
+- In the dusk phase (minutes 10 to 12 of the session clock) the ceiling falls from 125 to 80, and the speed follows it down at paddle bounces.
+- Opening Bricks, or a reset of the session clock, starts the speed at 90.
+- Thumb travel: moving the thumb across 50 percent of the screen width carries the paddle from one end of its travel to the other. The build used about 65 percent, which is a stretch for one thumb. The sensitivity is derived from the fraction, not set as a fixed multiplier: sensitivity = paddle travel / (0.50 x screen width), which is about 1.56 for a 135 px field and a 30 px paddle. The fraction is one named value in shared config, so every drag game uses the same one.
+- No rally number and no other number is added.
 
 Build
-- shared: the session clock, the scene phase (a value from 0 to 1 that pixel.js draws in 10 steps), the dusk tokens, stars.
-- Hub: draws the current phase.
-- Bricks: the pace rule, the rally number, the dusk slowdown.
-- Minimum speed, starting speed, maximum speed, gain per return, loss per miss, ramp length (10 minutes), slowdown length (2 minutes) and reset gap (5 minutes) go in the config blocks: game values in bricks.js, clock and scene values in shared.
-- Save and restore: pace, session clock and the time of the last active play, alongside the existing state. Rally is not saved.
-- The physics module stays free of the DOM. The clock is passed in, so the headless test can drive it.
+- If shared code has no session clock and scene phase yet, build them as section 2b describes. If it has, reuse them.
+- Bricks: the pace rule, the dusk slowdown, the thumb-travel fraction.
+- Minimum, starting and maximum speed, gain per return and loss per miss go in the config block of bricks.js. The thumb-travel fraction, ramp length, slowdown length and reset gap go in shared config.
+- The physics module stays free of the DOM. The clock is passed in.
 
 Accept
-- Speed never leaves the range of 80 to 125, in play and in the headless test.
-- A speed change is never applied in mid-flight.
+- Speed never leaves the range of 80 to 125, in play and in the headless test, and never changes in mid-flight.
 - After 12 minutes of active play the ball is at 80 and the scene is at full dusk. Paused time does not advance the clock.
-- After 5 minutes without active play, the next session starts at sunset with the speed at 90.
-- The rally number counts up on each paddle return and resets on a miss with no other effect.
-- Bricks, paddle, ball and lettering are readable in every one of the 10 scene steps.
-- Everything B1 accepted still holds: no stuck ball, no flat loop, no tunnelling, pause within one frame, exact resume, haptics unchanged.
-- The headless test is extended: 15 simulated minutes with a tracking paddle that misses now and then; speed stays in range, falls to 80 by minute 12, and the brick count stays bounded.
-
-After B2, Pedro plays it and reports whether the pace change is noticeable. It should not be.
+- A thumb movement of 50 percent of the screen width moves the paddle exactly end to end, at 360 and at 412 CSS px wide. The paddle can still be placed to the pixel with a slow drag.
+- Bricks, paddle and ball are readable in every one of the 10 scene steps.
+- Everything B1 accepted about play still holds: no stuck ball, no flat loop, no tunnelling, pause within one frame, haptics unchanged.
+- The headless test is extended to 15 simulated minutes with a tracking paddle that misses now and then: speed stays in range, falls to 80 by minute 12, and the brick count stays bounded.
 
 ## 6b. Row C1: Catch (session 4)
+
+Superseded in part by the hard rules of update 2; row X1 brings the build in line.
 
 
 Sections 2, 2b, 3 and 7 apply unchanged. Catch reuses the shared kit from H1: tokens, pixel.js, font.js, haptics.js, store.js, settings.js.
@@ -288,6 +312,201 @@ Catch follows the wind-down rules of section 2b. C1 is built after B2, so the se
 - Boat, items, nasties and fish are readable in every one of the 10 scene steps.
 - A headless test runs sim.js in Node for 15 simulated minutes with a boat that tracks the nearest item, misses now and then, and taps on every nasty: no NaN, item counts stay within the limits, every nasty is eaten, pace stays in range and is 0 by minute 12.
 
+## 6c. Row U1: Putt
+
+docs/style-reference-putt.jpg is the approved look. Its lettering does not apply: nothing is written on screen.
+
+Putt is a cross between snooker and mini golf, seen from above. The ball starts at the bottom, the hole is at the top, and banked shots off the walls get it there. Levels never end: each one is generated from random parameters.
+
+It reuses the shared kit. If shared code has no session clock and scene phase yet, this row builds them as section 2b describes; if it has, it reuses them.
+
+### Gesture and pause (this game's own)
+
+- Gesture: pull back, aim, release. One thumb.
+- Pause: none on lifting the thumb, because the ball rolls after release. Putt is turn-based, so it is idle whenever the ball is at rest. Closing the app saves, and reopening resumes the exact state.
+
+### Look
+
+- Top-down beach course in the existing palette. The course floor is sand (the cream of sky-top). Walls and cushions are coral with the usual highlight and drop shade. Around the course is sea, in the sea bands.
+- Ball: the blue ball token, 5 x 5 with cut corners. Hole: a dark plum disc with a 1 px lighter rim and a tiny coral flag beside it.
+- Blocks and pegs in salmon and pink. Sand traps in a deeper peach. Water in the sea blues with a glint dash.
+- Diagonal walls are drawn as pixel stair-steps; the physics treats them as true 45 degree lines.
+- No HUD: no title, no number, no button, no difficulty marker.
+- The sunset exit ramp applies: sand and sea step toward the dusk tokens over 10 minutes, the same 10 steps as the other games.
+
+### Course
+
+- Logical width 135. The course is inset 6 px each side, starts 6 px from the top and ends 26 px above the bottom edge. Its height follows the screen.
+- Tee: bottom of the course, within 20 px of centre.
+- Hole: in the top fifth of the course, at a random x.
+
+### Shot control
+
+- Touch anywhere, pull back and release, like drawing a cue. The shot goes in the opposite direction to the pull. The drag is relative, so the thumb never has to be on the ball.
+- Power is the pull length, capped at 60 logical px. A dotted guide runs from the ball to the first wall it would hit, plus the first 12 px of the rebound. A short bar by the ball shows power.
+- Pulling back to within 4 px of the start and releasing cancels the shot.
+- No input is taken while the ball is moving.
+
+### Physics
+
+- Fixed 120 Hz step in sim.js, no DOM, swept collisions so the ball cannot pass through a wall.
+- Top launch speed 220 logical px per second. Constant deceleration of 55 px per second squared, as on a snooker cloth; the ball stops below 4 px per second. A full-power shot travels about 440 px, enough for two or three banks.
+- Walls, blocks and pegs return 85 percent of the speed. Angle in equals angle out.
+- Sand trap: deceleration is tripled while the ball is in it.
+- Water: the ball plops and returns to where that shot was taken. The stroke still counts. Nothing else is lost.
+- Hole: the ball drops if its centre comes within the hole radius at under 140 px per second. Faster than that, it skips over.
+
+### Play
+
+- Any number of tries. No par, no stroke count, no timer, no fail state.
+- Starting over: go home and open Putt again. It opens on a new level.
+- Sinking the ball: a short drop, then the next level slides in from the top after about 800 ms.
+
+### Level generator (gen.js, no DOM)
+
+Every level comes from a seed and a difficulty. The same seed and screen height always give the same level, which keeps the headless tests repeatable.
+
+Difficulty
+- Three levels of difficulty, called 1, 2 and 3 here. Each new course draws one at random with equal odds. The level is not shown on screen.
+- In the dusk phase (minute 10 of the session clock onward) the draw is level 1 only. This is the exit ramp easing the game down, as rule 3 of the wind-down rules asks.
+- This random draw is Putt's difficulty scheme, in place of the adaptive pace of wind-down rule 1.
+
+Building blocks
+- Outline: a rectangle, with 0 to 4 corners cut at 45 degrees (cut size 10 to 24 px).
+- Bars: a straight wall from one side that leaves a gap of at least 22 px.
+- Diagonals: free-standing 45 degree walls, 20 to 50 px long.
+- Blocks: rectangles from 8 x 8 to 24 x 12.
+- Pegs: round posts of radius 3.
+- Sand traps and water: rectangles from 16 to 30 px a side.
+
+Parameters by difficulty (each drawn at random inside its range)
+
+| | Level 1 | Level 2 | Level 3 |
+|---|---|---|---|
+| Cut corners | 0 to 2 | 1 to 3 | 2 to 4 |
+| Bars | 0 to 1 | 1 to 2 | 2 to 3 |
+| Diagonals | 0 to 1 | 1 to 2 | 2 to 3 |
+| Blocks | 1 to 2 | 1 to 3 | 2 to 4 |
+| Pegs | 0 | 0 to 2 | 1 to 3 |
+| Sand traps | 0 | 0 to 1 | 0 to 1 |
+| Water | 0 | 0 to 1 | 1 |
+| Hole radius | 5 | 5 | 4 |
+| Straight line from tee to hole | allowed | not allowed | not allowed |
+| Strokes the solver needs | 1 to 2 | 2 to 3 | 3 to 4 |
+
+Placement rules
+- Every passage is at least 14 px wide.
+- Nothing sits within 12 px of the tee or the hole.
+- Pieces do not overlap each other.
+
+Solvable, always
+- Each candidate level is checked by a solver that uses the same sim.js: from the ball's position it tries 96 directions at 5 powers, keeps the best dozen resting spots, and searches up to the stroke limit of that difficulty.
+- A level is kept only if the solver sinks the ball within the range in the table. Too easy for its difficulty is rejected as well as too hard.
+- After 30 rejected candidates the generator falls back to an open level-1 course, so there is never a dead end.
+- The next level is generated in the background while the current one is being played, in a Web Worker or in small slices, so there is never a wait between holes.
+
+### Haptics
+
+- Release 10 ms, wall or peg bounce 6 ms, ball dropping in the hole 24 ms. Nothing else. At most one vibrate call per 40 ms. Whenever navigator.vibrate exists.
+
+### No saved state
+
+- Nothing is stored. Opening Putt from the hub always starts on a new level.
+
+### Files
+
+- /games/putt/: index.html, putt.js, sim.js, gen.js. sim.js and gen.js must not touch the DOM.
+- The hub gets a PUTT tile.
+- Launch speed, deceleration, bounce, capture speed, pull cap, every range in the table, solver sampling and the reject limit sit in config blocks: play values in putt.js, generator values in gen.js.
+
+### Accept
+
+- 200 generated levels per difficulty in a headless Node run: every one is solved by the solver within its stroke range, none breaks a placement rule, and no level-2 or level-3 course has a straight line from tee to hole.
+- The same seed and height give the same level every time.
+- The ball never passes through a wall, never leaves the course, and always comes to rest.
+- A ball in water returns to the spot the shot was taken from.
+- No wait is visible between holes on Pedro's phone.
+- Opening Putt from the hub always gives a new level. Nothing is written to storage.
+- No text, number or button is on screen.
+- From minute 10 of the session clock every new course is level 1.
+- The three haptic ticks can be told apart.
+- Every other game behaves exactly as before this row.
+
+### Not included, on purpose
+
+- No restart or skip control, no strokes, no counts, no difficulty marker.
+- No moving obstacles.
+
+## 6d. Row S1: Stack
+
+A block slides from side to side above a tower. A tap drops it. The tower grows floor by floor and sinks slowly into the sea, so it never ends.
+
+Gesture and pause (this game's own)
+- Gesture: a tap anywhere on screen drops the block. One thumb.
+- Pause: none on lifting the thumb. The block keeps sliding until it is dropped. The game pauses only when the page is hidden.
+
+Look
+- The shared sunset scene. The tower stands on the horizon, in the middle of the screen.
+- Each floor is a rounded block 8 px tall, with the usual highlight line and drop shade. Colours cycle through the brick-row tokens, one per floor.
+- No HUD of any kind.
+
+Play
+- The first floor is 60 px wide and already in place. Each new block starts with the width of the floor below it and slides at the height of the next floor, from wall to wall and back.
+- Tap: the block drops straight down.
+- The part that lands on the floor below stays. Any overhang breaks off as a few pixel bits that fall into the sea.
+- Near-perfect drop (within 2 px of aligned): the block snaps into line, nothing breaks off, and the next block is 2 px wider, up to 60.
+- Complete miss (no overlap at all): the block plops into the sea. The same block comes back. Nothing is lost.
+- When a floor ends up narrower than 12 px, the next block is quietly 60 px wide again and lands as a fresh platform. There is no game over.
+- Camera: once the top of the tower passes the middle of the screen, every drop slides the whole tower down by one floor. The lowest floors disappear behind the sea.
+
+Pace and exit ramp
+- Pace is the slide speed: minimum 40, starting value 50, maximum 80 logical px per second.
+- A drop with 80 percent overlap or more adds 1. A drop with under 50 percent overlap, or a complete miss, takes off 8. Clamped to the range. A new speed applies from the next block.
+- In the dusk phase the ceiling falls from 80 to 40, and the speed follows it down.
+- Opening Stack, or a reset of the session clock, starts the speed at 50.
+
+Haptics
+- Drop that lands 8 ms, near-perfect drop 16 ms, nothing on a miss. At most one vibrate call per 40 ms. Whenever navigator.vibrate exists.
+
+Files
+- /games/stack/: index.html, stack.js, sim.js. sim.js must not touch the DOM.
+- The hub's STACK tile becomes active.
+- Block height, starting width, reset width, snap distance, width regained, speed range, gains and losses sit in one config block at the top of stack.js.
+- If shared code has no session clock and scene phase yet, build them as section 2b describes. If it has, reuse them.
+
+Accept
+- 15 simulated minutes in a headless Node run with a player that taps with varying accuracy: no NaN, width stays between 0 and 60, speed stays between 40 and 80 and is 40 by minute 12, the tower never grows off the top of the screen.
+- A floor narrower than 12 px is always followed by a 60 px block.
+- A complete miss changes nothing but the pace.
+- The two haptic ticks can be told apart.
+- Opening Stack from the hub always starts a new tower. Nothing is written to storage.
+- No text, number or button is on screen.
+- Every other game behaves exactly as before this row.
+
+## 6e. Row X1: Strip-down
+
+Rows built before this update still carry things the new hard rules remove. This row takes them out of everything already built at that point: the hub, Bricks, Catch if it exists, and any other game present.
+
+Build
+- Remove every HUD: titles, back controls, scores, counts, rally or run numbers, difficulty markers, restart controls. Each game uses the whole screen.
+- Remove all saving and restoring of game state. Remove the stored all-time counts. Remove the haptics setting, its switch on the hub, settings.js and store.js: haptics are always on and nothing is stored. Clear every stored key on first run so nothing stale is left behind.
+- Opening a game from the hub starts it fresh, every time.
+- Set the manifest's display mode to fullscreen.
+- Going home is the Android back gesture only. Every game ignores touches that begin within 24 CSS px of the left or right edge.
+- Hub: one active tile for every game that exists. No SOON tile for a game that is built.
+- Update the README and sections 5 and 6 of PLAN.md so they describe what is now true.
+- Check on Pedro's phone, in the installed app: an edge swipe in fullscreen returns to the hub with one swipe. If Android needs two swipes in fullscreen, say so in the reply and switch the manifest to standalone; that is the one thing in this row that cannot be verified from a desktop browser.
+
+Accept
+- No game screen shows any text, number or button.
+- After play in every game, storage is empty.
+- The hub shows the game tiles and nothing else: no switch, no setting.
+- Catch uses the shared thumb-travel fraction: 50 percent of the screen width moves the boat end to end.
+- Killing the app and reopening it opens the hub; opening a game starts it fresh.
+- From every game, the back gesture returns to the hub, and an edge swipe never moves a paddle, a boat or an aim.
+- Play itself is unchanged in every game: physics, pace, haptics and the exit ramp behave as before this row.
+- The headless tests of every game still pass, with their save and count checks removed.
+
 ## 7. Process
 
 - Nothing is built that is not a row of docs/BACKLOG.md, in three lists: Queue, Done, Parked. A done row leaves the Queue.
@@ -303,5 +522,4 @@ The starter for every later session:
 
 ## 8. Parked
 
-- P2 Stack: blocks slide across, tap to drop them. When specced it takes the wind-down rules: the pace is the slide speed, the skill signal is the run of clean drops, the exit ramp is the shared sunset.
 - P3 APK wrapper, with a native haptics bridge if the web ticks feel mushy.
