@@ -13,7 +13,9 @@ const ROOT = new URL('../', import.meta.url);
 const read = (p) => readFileSync(fileURLToPath(new URL(p, ROOT)), 'utf8');
 let passed = 0;
 const fails = [];
+let THEME_TAG = ''; // row D1: '[dark] ' while a check runs in the dark theme
 function check(cond, msg) {
+  msg = THEME_TAG + msg;
   console.log((cond ? 'PASS ' : 'FAIL ') + msg);
   if (cond) passed++;
   else fails.push(msg);
@@ -704,7 +706,11 @@ check(/^\/\/[^\n]*\n(\/\/[^\n]*\n)*\n\/\/[^\n]*\nexport const SESSION/.test(read
   check(T.SEA_BANDS.length === 3 && T.DUSK.seaBands.length === 3, 'three sea bands at every step');
 }
 
-{
+for (const THEME of [T.LIGHT, T.DARK]) {
+  // Row D1: every readability check runs in both themes (the Node checks have no colour scheme: forced).
+  T.forceTheme(THEME);
+  THEME_TAG = THEME === T.DARK ? '[dark] ' : '';
+
   // Readability, row B4 contrast pass (standard in tests/contrast.mjs and the
   // B4 changelog entry): every foreground against every scene colour drawn
   // behind it, at sunset and each of the 10 steps, on logical heights 240
@@ -779,21 +785,73 @@ check(/^\/\/[^\n]*\n(\/\/[^\n]*\n)*\n\/\/[^\n]*\nexport const SESSION/.test(read
   const pxSrc = read('shared/pixel.js').replace(/\/\/.*$/gm, '');
   check(!/drawBackControl|BACK_SIZE|goToHub|openPage/.test(pxSrc), 'pixel.js has no back control and no navigation (row X1)');
   check(hexIn(pxSrc).length === 0, 'no colour literals in pixel.js: tokens only');
+  T.forceTheme(null);
+  THEME_TAG = '';
 }
 
 {
-  // theme.css mirrors tokens.js: every token value and name is in both.
+  // theme.css mirrors tokens.js: every token value and name is in both, the light set in :root and
+  // (row D1) the dark set in the prefers-color-scheme: dark block.
   const css = read('shared/theme.css');
+  const darkAt = css.indexOf('@media (prefers-color-scheme: dark)');
+  const lightCss = css.slice(0, darkAt);
+  const darkCss = css.slice(darkAt, css.indexOf('\n}\n', darkAt));
   const kebab = (k) => k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
-  const want = [
-    ...Object.entries(T.COLORS).map(([k, v]) => [kebab(k), v]),
-    ...T.BRICK_ROWS.map((v, i) => [`brick-${i + 1}`, v]),
-    ...T.SEA_BANDS.map((v, i) => [`sea-${i + 1}`, v]),
-    ['dusk-sky-top', T.DUSK.skyTop], ['dusk-sky-bottom', T.DUSK.skyBottom],
-    ...T.DUSK.seaBands.map((v, i) => [`dusk-sea-${i + 1}`, v]),
+  const want = (S) => [
+    ...Object.entries(S.COLORS).map(([k, v]) => [kebab(k), v]),
+    ...S.BRICK_ROWS.map((v, i) => [`brick-${i + 1}`, v]),
+    ...S.SEA_BANDS.map((v, i) => [`sea-${i + 1}`, v]),
+    ['dusk-sky-top', S.DUSK.skyTop], ['dusk-sky-bottom', S.DUSK.skyBottom],
+    ...S.DUSK.seaBands.map((v, i) => [`dusk-sea-${i + 1}`, v]),
   ];
-  const missing = want.filter(([k, v]) => !new RegExp(`--${k}:\\s*${v};`, 'i').test(css));
-  check(missing.length === 0, `shared/theme.css mirrors every token in shared/tokens.js (${missing.map(([k, v]) => `--${k} ${v}`).join(', ') || 'all'})`);
+  for (const [S, part, name] of [[T.LIGHT, lightCss, 'light'], [T.DARK, darkCss, 'dark']]) {
+    const missing = want(S).filter(([k, v]) => !new RegExp(`--${k}:\\s*${v};`, 'i').test(part));
+    check(darkAt > 0 && missing.length === 0, `shared/theme.css mirrors every ${name} token in shared/tokens.js (${missing.map(([k, v]) => `--${k} ${v}`).join(', ') || 'all'})`);
+  }
+  // The live views read the active set; the default (no colour scheme, as in Node) is light.
+  check(T.tokens() === T.LIGHT && T.COLORS.skyTop === T.LIGHT.COLORS.skyTop && T.BRICK_ROWS.length === 9 && T.SEA_BANDS[0] === T.LIGHT.SEA_BANDS[0],
+    'with no colour scheme the active set is light, and COLORS, BRICK_ROWS and SEA_BANDS read it');
+  T.forceTheme(T.DARK);
+  const darkView = T.COLORS.skyTop === T.DARK.COLORS.skyTop && T.SEA_BANDS.join() === T.DARK.SEA_BANDS.join()
+    && T.DUSK.skyTop === T.DARK.DUSK.skyTop && JSON.stringify(T.BRICK_ROWS) === JSON.stringify(T.DARK.BRICK_ROWS)
+    && T.edge(T.COLORS.coral) === T.mix(T.DARK.COLORS.coral, T.DARK.COLORS.edgeTarget, T.EDGE_AMOUNT);
+  T.forceTheme(null);
+  check(darkView, 'with the dark set active, COLORS, DUSK, BRICK_ROWS, SEA_BANDS and edge() read the dark set');
+}
+
+{
+  // Row D1: the dark scene. The same 11 states, flat mixes toward the dark dusk tokens; a crescent moon where
+  // the sun is, sinking as the sun does; stars from the first step; nothing but the scene's colours.
+  T.forceTheme(T.DARK);
+  const draw = (phase, H = 300) => {
+    const fills = [];
+    const ctx = { fillStyle: '#000000', fillRect(x, y, w, h) { if (w > 0 && h > 0) fills.push([this.fillStyle, x, y, w, h]); } };
+    PX.drawScene(ctx, 135, H, { phase });
+    return fills;
+  };
+  const steps = Array.from({ length: 11 }, (_, k) => draw(k / 10));
+  const pals = steps.map((_, k) => T.scenePalette(k / 10));
+  const D = T.DARK;
+  check(pals.every((pal, k) => pal.sky[0] === T.mix(D.COLORS.skyTop, D.DUSK.skyTop, k / 10) && pal.sea[2] === T.mix(D.SEA_BANDS[2], D.DUSK.seaBands[2], k / 10))
+    && pals[10].sky[0] === D.DUSK.skyTop, 'dark: each step is a flat mix from the night tokens to the darker dark-dusk tokens');
+  let stray = 0;
+  steps.forEach((fills, k) => {
+    const ok = new Set([...pals[k].sky, ...pals[k].sea, D.COLORS.sun, D.COLORS.cloud, D.COLORS.star, T.mix(D.COLORS.sun, pals[k].sea[0], 0.15)]);
+    for (const f of fills) if (!ok.has(f[0])) stray++;
+  });
+  check(stray === 0, `dark: every pixel of every step is a band, moon, cloud, star or moon-path colour (${stray} others)`);
+  const horizon = 300 - PX.SEA_HEIGHT;
+  const moon = steps.map((fills) => fills.filter((f) => f[0] === D.COLORS.sun && f[2] < horizon));
+  const height = moon.map((m) => (m.length ? horizon - Math.min(...m.map((f) => f[2])) : 0));
+  const lightSun = PX.sunRuns(96, horizon, PX.SUN_RADIUS, 0, -Infinity, false).reduce((a, r) => a + r[2], 0);
+  const moonPx = moon[0].reduce((a, f) => a + f[3], 0);
+  check(height.every((v, k) => k === 0 || v < height[k - 1]) && height[10] === 0 && moonPx > 0 && moonPx < lightSun * 0.6,
+    `dark: a crescent (${moonPx} px, the sun's disc is ${lightSun}) sinks each step and is down at dusk (height ${height.join(',')})`);
+  const stars = steps.map((fills) => fills.filter((f) => f[0] === D.COLORS.star && f[3] === 1 && f[4] === 3).length);
+  check(stars[0] > 0 && stars.every((n, k) => k === 0 || n >= stars[k - 1]) && stars[10] > stars[0], `dark: stars from the first step, more at the end (${stars.join(',')})`);
+  T.forceTheme(null);
+  const lightStars = Array.from({ length: 11 }, (_, k) => PX.starsAt(k));
+  check(lightStars.slice(0, 8).every((n) => n === 0), 'light: still no stars before step 8');
 }
 
 {

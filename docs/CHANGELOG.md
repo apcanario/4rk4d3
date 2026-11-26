@@ -422,3 +422,17 @@ Adapted from the design chat's draft to the repo: the contrast rule points at th
 Not verified: nothing here was built or tested. The dark hex values are starting points and have not been through tests/contrast.mjs. The mockups are design pictures, not on the 135 px grid.
 
 Queue after this update: D1, U2, A1. The Proposed rows (X39, X34, X35, X36) are untouched.
+
+## 2026-11-26: D1 dark theme
+
+Models that ran: main chat Sonnet 5.5; builder Opus 5.5; reviewer Opus 5.5, which had not seen the build; findings applied by a fresh Opus 5.5 agent.
+
+Built: PLAN §6g. Frozen LIGHT and DARK token sets in shared/tokens.js (mirrored in theme.css), one active-set function read from prefers-color-scheme and its change event, scenePalette mixing inside it; night scene (crescent moon, stars from step 0, navy sea with a moon path) on the same 10-step ramp; hub and the four games dark by tokens only, redrawn within two frames on a switch with no state change; two media-queried theme-color metas and color-scheme on every page, manifest unchanged; Android shell: DayNight theme, values-night launch colour #141026, algorithmic darkening off, uiMode handled by the activity, androidx.webkit dependency. sw.js rlx-v22.
+
+Token values moved from the §3 starting values (contrast check decided): blue #8FB8E8 to #6C8AB1 (0.26 toward #0A0714); cloud #4C3A6E to #463566; keel #0A0714 to #8B898F (black reaches only 2.02 against the night sea). Derived: inkCloud dark #4F2A8F; new tokens white, edgeTarget, line, trapOn; Putt trap mix 0.22 in dark; dark mast and pole line 0.25. sand, wetSand and foam added as tokens, unused until U2 and A1. One test narrowed: in dark Catch's keel is not checked against the pale glint dashes, because a check proves they never lie behind it.
+
+Tests: bricks-sim 242, catch-sim 199, putt-sim 73, stack-sim 112, haptics-native 19, contrast.mjs, tests/check.py 1378 PASS, 0 failures (new: theme, live switch, no colour literal, night ramp, mid-play switch). Light pixel-identical to before in 15 of 15 screenshots.
+
+Review findings and fixes: night ramp had no browser check, fixed (scene-dark); live switch tested only on a fresh opening, fixed (theme-play, mid-play); colour-name blind spot in the literal check, fixed; PLAN figure 2.1 corrected to 2.02. The reviewer's hub star count of 3 was not reproduced: all 4 show at 360x800. Not fixed, Pedro's call: the grey keel, card ring and pale Putt hole (D1b).
+
+Not verifiable here: the Android shell (never built or run), a live mode switch inside the APK, how dark reads on the phone (D1a). Deferred: nothing else.

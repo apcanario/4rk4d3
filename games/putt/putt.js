@@ -34,7 +34,9 @@ export const CONFIG = Object.freeze({
   easyLeadS: 120, // from this long before dusk, a level-1 course is kept ready
 });
 
-import { LOGICAL_WIDTH, COLORS, BRICK_ROWS, mix, shade, highlight, edge, scenePalette } from '../../shared/tokens.js';
+import {
+  LOGICAL_WIDTH, COLORS, BRICK_ROWS, mix, shade, highlight, line, trapOn, scenePalette, tokens, onThemeChange,
+} from '../../shared/tokens.js';
 import { createScreen, initPage, atSideEdge, pixelBody, ditherRow, reducedMotion, MIN_HEIGHT } from '../../shared/pixel.js';
 import { MIN_GAP_MS, canVibrate, send } from '../../shared/haptics.js';
 import { sessionClock, addPlay, phaseOf, sceneStep, SESSION } from '../../shared/session.js';
@@ -50,22 +52,27 @@ const PLAY = Object.freeze({
 
 /* ---------- colours (tokens only) ---------- */
 
-const WALL = COLORS.coral;
-const BLOCKS = [BRICK_ROWS[2], BRICK_ROWS[4]]; // salmon and pink
-const PEG = BRICK_ROWS[5];
-const HOLE = COLORS.keel; // the deep plum
-const HOLE_RIM = mix(COLORS.keel, COLORS.cloud, 0.35);
-const FLAG = COLORS.coral;
-const POLE = edge(COLORS.coral);
-const BALL = COLORS.blue;
-const TRAP_AMOUNT = 0.55; // sand traps: the sand mixed this far toward brick row 4's peach
+// From the active token set; retheme() makes them again when the phone
+// switches between light and dark (row D1).
+let WALL, BLOCKS, PEG, HOLE, HOLE_RIM, FLAG, POLE, BALL;
+function retheme() {
+  WALL = COLORS.coral;
+  BLOCKS = [BRICK_ROWS[2], BRICK_ROWS[4]]; // salmon and pink
+  PEG = BRICK_ROWS[5];
+  HOLE = COLORS.keel; // the deep plum
+  HOLE_RIM = mix(COLORS.keel, COLORS.white, 0.35);
+  FLAG = COLORS.coral;
+  POLE = line(COLORS.coral); // the edge colour in light, a lighter line in dark (row D1)
+  BALL = COLORS.blue;
+}
+retheme();
 const DROP_AMOUNT = 0.2; // the drop shade a solid casts on the floor below it
 
 function palette(step) {
   const t = step / SESSION.sceneSteps;
   const pal = scenePalette(t);
   const sand = pal.sky[0]; // the sky-top token (cream) at this step
-  const trap = mix(sand, BRICK_ROWS[3], TRAP_AMOUNT);
+  const trap = trapOn(sand); // the sand mixed toward brick row 4's peach (shared/tokens.js TRAP_AMOUNT, dark TRAP_AMOUNT_DARK)
   const water = pal.sea[1];
   return {
     sea: pal.sea,
@@ -433,13 +440,13 @@ function install(lv) {
 /* ---------- drawing ---------- */
 
 function seaFor(W, H, step) {
-  const key = `${W}x${H}:${step}`;
+  const key = `${W}x${H}:${step}:${tokens().name}`;
   if (seaCache.key !== key) seaCache = { key, canvas: paintSea(W, H, step) };
   return seaCache.canvas;
 }
 
 function courseFor(lv, r, step, no) {
-  const key = `${no}:${step}`;
+  const key = `${no}:${step}:${tokens().name}`;
   if (courseCache.key !== key) courseCache = { key, canvas: paintCourse(lv, r, step) };
   return courseCache.canvas;
 }
@@ -500,13 +507,13 @@ function drawPull(ctx, step) {
   const tx = Math.round(aim.x);
   const ty = Math.round(aim.y);
   const len = Math.hypot(tx - ax, ty - ay);
-  ctx.fillStyle = COLORS.cloud;
+  ctx.fillStyle = COLORS.white;
   for (let d = 6; d < len - 7; d += 4) ctx.fillRect(Math.round(ax + ((tx - ax) * d) / len), Math.round(ay + ((ty - ay) * d) / len), 1, 1);
   const inner = (x, y, r, c) => ring(ctx, x, y, r, c, null);
   inner(ax, ay, 3, highlight(pal.sea[0]));
   inner(ax, ay, 2, COLORS.ink);
   inner(ax, ay, 1, highlight(pal.sea[0]));
-  ring(ctx, tx, ty, 6, COLORS.cloud, COLORS.ink);
+  ring(ctx, tx, ty, 6, COLORS.white, COLORS.ink);
   inner(tx, ty, 5, COLORS.ink);
   inner(tx, ty, 4, pal.sea[1]);
 }
@@ -516,7 +523,7 @@ function drawSplash(ctx, now) {
   if (u >= 1) { splash = null; return; }
   const x = Math.round(splash.x);
   const y = Math.round(splash.y);
-  ctx.fillStyle = COLORS.cloud;
+  ctx.fillStyle = COLORS.white;
   const r = u < 0.5 ? 2 : 3;
   ctx.fillRect(x - r, y, 1, 1);
   ctx.fillRect(x + r, y, 1, 1);
@@ -535,7 +542,9 @@ function draw(ctx, s) {
     const u = Math.min(1, (now - slide.t0) / CONFIG.slideMs);
     const off = Math.round(u * s.H);
     ctx.drawImage(courseFor(slide.from.level, slide.from.ras, step, slide.from.no), 0, off);
-    if (slide.to.step !== step) slide.to = { ...slide.to, step, canvas: paintCourse(slide.to.level, slide.to.ras, step) };
+    if (slide.to.step !== step || slide.to.theme !== tokens().name) {
+      slide.to = { ...slide.to, step, theme: tokens().name, canvas: paintCourse(slide.to.level, slide.to.ras, step) };
+    }
     ctx.drawImage(slide.to.canvas, 0, off - s.H);
     return;
   }
@@ -735,6 +744,13 @@ canvas.addEventListener('pointercancel', (e) => {
 });
 
 /* ---------- lifecycle ---------- */
+
+// Row D1: the phone switched between light and dark. Only the colours change:
+// the caches are keyed by theme, so the next frame paints the same course and ball in the other set.
+onThemeChange(() => {
+  retheme();
+  redraw();
+});
 
 document.addEventListener('visibilitychange', () => {
   const now = performance.now();

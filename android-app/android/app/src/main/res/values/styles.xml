@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- RLX (PLAN §6f): no action bar, the sky colour behind everything, content into a display cutout. -->
-    <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+    <!-- RLX (PLAN §6f): no action bar, the sky colour behind everything, content into a display cutout.
+         Row D1 (PLAN §6g): DayNight, so the theme follows the phone's night mode; its isLightTheme is what
+         the WebView reports to the pages as prefers-color-scheme (apps targeting API 33+). rlx_sky has a
+         night value (values-night/colors.xml), so the window, the launch window and the splash follow too. -->
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:windowBackground">@color/rlx_sky</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>

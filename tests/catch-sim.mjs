@@ -16,7 +16,9 @@ const ROOT = new URL('../', import.meta.url);
 const read = (p) => readFileSync(fileURLToPath(new URL(p, ROOT)), 'utf8');
 let passed = 0;
 const fails = [];
+let THEME_TAG = ''; // row D1: '[dark] ' while a check runs in the dark theme
 function check(cond, msg) {
+  msg = THEME_TAG + msg;
   console.log((cond ? 'PASS ' : 'FAIL ') + msg);
   if (cond) passed++;
   else fails.push(msg);
@@ -708,7 +710,10 @@ function itemAt(s, x, y, vy = 40) {
     `the nasty ones are spiky or ragged, the things to catch rounder: perimeter^2/area ${rn.map((v) => v.toFixed(0)).join(',')} against at most ${Math.max(...ri).toFixed(0)}`);
 }
 
-{
+for (const THEME of [T.LIGHT, T.DARK]) {
+  // Row D1: every readability check runs in both themes (the Node checks have no colour scheme: forced).
+  T.forceTheme(THEME);
+  THEME_TAG = THEME === T.DARK ? '[dark] ' : '';
   // Readability, row B4 contrast pass (standard in tests/contrast.mjs and the
   // B4 changelog entry): the boat, the things to catch, the nasty ones, the
   // fish (row X1: no HUD; row X33: no pause marker) against every scene colour under them,
@@ -756,8 +761,10 @@ function itemAt(s, x, y, vy = 40) {
       const add = (what, rule, fill, e, bgs) => { for (const [on, bg] of bgs) M.add(what, rule, fill, e, on, bg, { tag, k }); };
       add('boat hull', 'cr', C.coral, edge(C.coral), boatBg);
       // The hull reaches at most 3 rows below the horizon (deck 5 above it, 7 tall, a 1 px dip): sea band 1.
-      add('boat keel', 'cr', keel, null, [...pal.sea.map((c, i) => [`sea band ${i + 1}`, c]), ...sea1.slice(1)]);
-      add('boat mast', 'cr', edge(C.coral), null, boatBg);
+      // Row D1: the keel's rows (at most 3 below the horizon, checked below) never reach a glint row, so the
+      // pale dashes are never behind it (measured against them in light anyway, where the deep keel clears them).
+      add('boat keel', 'cr', keel, null, [...pal.sea.map((c, i) => [`sea band ${i + 1}`, c]), ...(THEME === T.DARK ? sea1.slice(1, 2) : sea1.slice(1))]);
+      add('boat mast', 'cr', T.line(C.coral), null, boatBg);
       add('boat sail', 'de', sail, edge(sail), boatBg);
       add('boat sail fill', 'de', sail, null, boatBg);
       add('boat jib', 'de', T.BRICK_ROWS[5], edge(T.BRICK_ROWS[5]), boatBg);
@@ -785,12 +792,15 @@ function itemAt(s, x, y, vy = 40) {
       check(r.length > 0 && r.every((x) => x.ok), `[${tag}] sunset and all 10 steps, ${label} (weakest ${CT.worst(r).v.toFixed(2)}, ${r.filter((x) => !x.ok).length} under)`);
     }
   }
+  // Row D1: the keel's rows end above every glint row of the sea (deck 5 above the horizon, 7 tall, a 1 px dip).
+  const keelRows = Math.max(...screens.map(([, H, safeTop]) => { const g = geoFor(H, safeTop); return g.deckY + S.BOAT_H + 1 - g.horizon; }));
+  check(keelRows <= Math.min(...PX.GLINTS.map((q) => q[1])), `the keel reaches ${keelRows} rows below the horizon, above the first glint row ${Math.min(...PX.GLINTS.map((q) => q[1]))}`);
   check(sail !== C.sun && CT.deltaE(sail, C.sun) >= CT.MIN_DE, `the sail is not the sun's colour: delta E ${CT.deltaE(sail, C.sun).toFixed(2)}`);
   // What is measured is what is drawn: catch.js draws with these colours.
   const src = catchSrc.replace(/\/\/.*$/gm, '');
   check(/o: edge\(body\)/.test(src), 'catch.js outlines things to catch and fish in the edge colour');
   check(/HULL_EDGE = edge\(COLORS\.coral\)/.test(src) && /pixelBody\(ctx, x, deck, S\.BOAT_W, S\.BOAT_H, HULL, 2, HULL_EDGE\)/.test(src)
-    && /MAST = edge\(COLORS\.coral\)/.test(src), 'catch.js draws the hull in coral with its edge all round, the mast in the edge');
+    && /MAST = line\(COLORS\.coral\)/.test(src), 'catch.js draws the hull in coral with its edge all round, the mast in the line colour (the edge in light)');
   check(/KEEL = COLORS\.keel/.test(src) && /ctx\.rect\(x, g\.horizon, S\.BOAT_W, S\.BOAT_H\);\s*ctx\.clip\(\);\s*steppedRect\(ctx, x, deck, S\.BOAT_W, S\.BOAT_H, KEEL, 2\);/.test(src),
     "catch.js redraws the hull's rows at and below the horizon in the keel colour");
   check(/GLINT = COLORS\.glint/.test(src) && (src.match(/fillStyle = GLINT;/g) || []).length === 2 && !/fillStyle = COLORS\.cloud;/.test(src),
@@ -802,6 +812,9 @@ function itemAt(s, x, y, vy = 40) {
   const drawBody = src.slice(src.indexOf('function draw(ctx, s)'), src.indexOf('function draw(ctx, s)') + src.slice(src.indexOf('function draw(ctx, s)')).indexOf('\n}\n'));
   check(drawBody.length > 0 && !/mode/.test(drawBody) && !/\bRING_|drawRing/.test(src),
     'catch.js draws no pause marker: no ring, and draw() does not depend on the pause mode (X33)');
+
+  T.forceTheme(null);
+  THEME_TAG = '';
 }
 
 /* ---------- haptics: the shared tick with the game's events ---------- */

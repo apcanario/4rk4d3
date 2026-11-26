@@ -24,7 +24,7 @@ export const CONFIG = Object.freeze({
   loopNudgeDeg: 8, // ...the path turns this far, alternating sides
 });
 
-import { COLORS, BRICK_ROWS, SEA_BANDS, highlight, edge } from '../../shared/tokens.js';
+import { COLORS, BRICK_ROWS, SEA_BANDS, highlight, edge, onThemeChange } from '../../shared/tokens.js';
 import {
   createScreen, drawScene, initPage, pixelBody, SEA_HEIGHT, reducedMotion, atSideEdge, thumbSensitivity,
 } from '../../shared/pixel.js';
@@ -73,12 +73,18 @@ function sprite(w, h, color, steps) {
   return c;
 }
 
-const BRICK_SPRITES = BRICK_ROWS.map((c) => sprite(P.BRICK_W, P.BRICK_H, c, 1));
-const PARTICLE_HI = BRICK_ROWS.map((c) => highlight(c));
-const TRAIL_COLOR = highlight(COLORS.blue);
-const SPLASH_TOP = COLORS.cloud;
-const SPLASH_BODY = highlight(SEA_BANDS[0]);
-const PADDLE_EDGE = edge(COLORS.coral); // B4: the paddle's 1 px edge all round
+// Colours kept between frames, from the active token set; retheme() makes them
+// again when the phone switches between light and dark (row D1).
+let BRICK_SPRITES, PARTICLE_HI, TRAIL_COLOR, SPLASH_TOP, SPLASH_BODY, PADDLE_EDGE;
+function retheme() {
+  BRICK_SPRITES = BRICK_ROWS.map((c) => sprite(P.BRICK_W, P.BRICK_H, c, 1));
+  PARTICLE_HI = BRICK_ROWS.map((c) => highlight(c));
+  TRAIL_COLOR = highlight(COLORS.blue);
+  SPLASH_TOP = COLORS.white;
+  SPLASH_BODY = highlight(SEA_BANDS[0]);
+  PADDLE_EDGE = edge(COLORS.coral); // B4: the paddle's 1 px edge all round
+}
+retheme();
 
 /* ---------- layout and drawing ---------- */
 
@@ -150,7 +156,7 @@ function draw(ctx, s) {
     else P.setGeometry(game, rects.geo);
     bgStep = -1;
   }
-  if (sceneStep(phase) !== bgStep) {
+  if (sceneStep(phase) !== bgStep || !bg) {
     bg = paintBackground(s, phase);
     bgStep = sceneStep(phase);
     canvas.dataset.scene = String(bgStep);
@@ -336,6 +342,14 @@ function sleep() {
   if (raf) cancelAnimationFrame(raf);
   raf = 0;
 }
+
+// Row D1: the phone switched between light and dark. Only the colours change:
+// the next frame paints the same field, ball and paddle in the other set.
+onThemeChange(() => {
+  retheme();
+  bg = null;
+  redraw();
+});
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') sleep();

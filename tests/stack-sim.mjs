@@ -16,7 +16,9 @@ const ROOT = new URL('../', import.meta.url);
 const read = (p) => readFileSync(fileURLToPath(new URL(p, ROOT)), 'utf8');
 let passed = 0;
 const fails = [];
+let THEME_TAG = ''; // row D1: '[dark] ' while a check runs in the dark theme
 function check(cond, msg) {
+  msg = THEME_TAG + msg;
   console.log((cond ? 'PASS ' : 'FAIL ') + msg);
   if (cond) passed++;
   else fails.push(msg);
@@ -455,10 +457,14 @@ for (const [H, seed] of [[240, 1], [300, 2], [340, 3], [400, 4]]) {
 
 /* ---------- readability (the B4 standard, sunset and all 10 steps) ---------- */
 
-{
+for (const THEME of [T.LIGHT, T.DARK]) {
+  // Row D1: every readability check runs in both themes (the Node checks have no colour scheme: forced).
+  T.forceTheme(THEME);
+  THEME_TAG = THEME === T.DARK ? '[dark] ' : '';
+
   check(/const FLOORS = BRICK_ROWS;/.test(stackSrc) && /pixelBody\(ctx, x0, yy, dw, CONFIG\.blockH, colour, dw >= 10 \? 2 : 1, edge\(colour\)\)/.test(stackSrc)
     && /steppedRect\(ctx, x0, yy, dw, CONFIG\.blockH, edge\(colour\), 1\)/.test(stackSrc)
-    && /ctx\.fillStyle = edge\(b\.c\);/.test(stackSrc) && /const SPLASH = COLORS\.cloud;/.test(stackSrc),
+    && /ctx\.fillStyle = edge\(b\.c\);/.test(stackSrc) && /const splashColour = \(\) => COLORS\.white;/.test(stackSrc),
     'stack.js draws with the colours measured here (floors in the brick rows in their edge, bits with an edge row, the splash white)');
   const P = CT.pairs();
   for (let k = 0; k <= SE.SESSION.sceneSteps; k++) {
@@ -474,7 +480,7 @@ for (const [H, seed] of [[240, 1], [300, 2], [340, 3], [400, 4]]) {
         P.add(`bit ${i + 1}`, 'de', c, T.edge(c), on, bg, where);
       }
     });
-    for (let i = 0; i < 3; i++) P.add('splash', 'de', T.COLORS.cloud, null, `sea band ${i + 1}`, pal.sea[i], where);
+    for (let i = 0; i < 3; i++) P.add('splash', 'de', T.COLORS.white, null, `sea band ${i + 1}`, pal.sea[i], where);
   }
   const under = P.rows.filter((x) => !x.ok);
   const w = CT.worst(P.rows);
@@ -484,6 +490,8 @@ for (const [H, seed] of [[240, 1], [300, 2], [340, 3], [400, 4]]) {
   const pairsBad = [];
   for (const a of T.BRICK_ROWS) for (const b of T.BRICK_ROWS) if (a !== b && CT.deltaE(T.edge(a), b) < CT.MIN_DE) pairsBad.push([a, b]);
   check(!pairsBad.length, `a floor's edge stands off the next floor's fill (delta E >= ${CT.MIN_DE}) ${JSON.stringify(pairsBad.slice(0, 3))}`);
+  T.forceTheme(null);
+  THEME_TAG = '';
 }
 
 console.log(`\n${passed + fails.length} checks, ${fails.length} failure(s)`);

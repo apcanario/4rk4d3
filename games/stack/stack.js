@@ -35,7 +35,7 @@ export const CONFIG = Object.freeze({
   splashMs: 300, // the plop in the sea
 });
 
-import { COLORS, BRICK_ROWS, edge } from '../../shared/tokens.js';
+import { COLORS, BRICK_ROWS, edge, tokens } from '../../shared/tokens.js';
 import { createScreen, initPage, atSideEdge, drawScene, pixelBody, steppedRect, reducedMotion, SEA_HEIGHT } from '../../shared/pixel.js';
 import { MIN_GAP_MS, canVibrate, send } from '../../shared/haptics.js';
 import { sessionClock, watchReset, addPlay, phaseOf, sceneStep, slowdownOf, SESSION } from '../../shared/session.js';
@@ -45,8 +45,9 @@ initPage();
 
 /* ---------- colours (tokens only) ---------- */
 
+// Read from the active token set when drawn (row D1: Stack redraws every frame, so a switch shows on the next one).
 const FLOORS = BRICK_ROWS; // one per floor, cycling
-const SPLASH = COLORS.cloud;
+const splashColour = () => COLORS.white;
 const colourOf = (i) => FLOORS[S.colourOf(i, FLOORS.length)];
 
 /* ---------- state ---------- */
@@ -84,7 +85,7 @@ function buzz(ms) {
 /* ---------- drawing ---------- */
 
 function sceneFor(W, H, step) {
-  const key = `${W}x${H}:${step}`;
+  const key = `${W}x${H}:${step}:${tokens().name}`;
   if (sceneCache.key !== key) {
     const c = document.createElement('canvas');
     c.width = W;
@@ -130,7 +131,7 @@ function drawSplash(ctx, now) {
   const x = Math.round(splash.x);
   const y = Math.round(splash.y);
   const r = u < 0.5 ? 2 : 4;
-  ctx.fillStyle = SPLASH;
+  ctx.fillStyle = splashColour();
   ctx.fillRect(x - r, y, 1, 1);
   ctx.fillRect(x + r, y, 1, 1);
   ctx.fillRect(x, y - 1 - (u < 0.5 ? 1 : 2), 1, 1);

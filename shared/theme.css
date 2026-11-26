@@ -1,4 +1,5 @@
-/* RLX page theme. Tokens mirror shared/tokens.js (PLAN §3, B4 contrast pass); keep both in step. */
+/* RLX page theme. Tokens mirror shared/tokens.js (PLAN §3, B4 contrast pass; row D1: the dark set
+   below, picked by the phone's prefers-color-scheme); keep both in step. */
 :root {
   --sky-top: #FFF7EC;
   --sky-bottom: #FFCDC0;
@@ -12,6 +13,11 @@
   --ink-cloud: #483080;
   --sun: #FFF4D6;
   --cloud: #FFFFFF;
+  --white: #FFFFFF;
+  --edge-target: #783C5A;
+  --sand: #FFE6D2;
+  --wet-sand: #FFCFBA;
+  --foam: #FFFAF3;
   --sea-1: #96D0E6;
   --sea-2: #84C4DE;
   --sea-3: #74B8D6;
@@ -32,6 +38,49 @@
   --dusk-sea-1: #6FA3C4;
   --dusk-sea-2: #5F93B8;
   --dusk-sea-3: #5083AB;
+}
+
+
+/* Row D1: the same beach at night (PLAN §3 Dark theme, §6g). */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sky-top: #141026;
+    --sky-bottom: #3A2152;
+    --coral: #FF7385;
+    --blue: #6C8AB1;
+    --ink: #CDD6FF;
+    --card: #A0D0E8;
+    --sail: #A0D0E8;
+    --keel: #8B898F;
+    --glint: #FFA2CE;
+    --ink-cloud: #4F2A8F;
+    --sun: #FFE9C9;
+    --cloud: #463566;
+    --white: #FFFFFF;
+    --shade-target: #0A0714;
+    --edge-target: #0A0714;
+    --star: #FFFFFF;
+    --sand: #2B2142;
+    --wet-sand: #3B2C58;
+    --foam: #CDD6FF;
+    --sea-1: #24406B;
+    --sea-2: #1F3760;
+    --sea-3: #1C2F55;
+    --brick-1: #F05A68;
+    --brick-2: #F77476;
+    --brick-3: #FF8C7A;
+    --brick-4: #FFA38C;
+    --brick-5: #FF96B2;
+    --brick-6: #F57DA8;
+    --brick-7: #FFA2CE;
+    --brick-8: #78B4D8;
+    --brick-9: #A0D0E8;
+    --dusk-sky-top: #0C0918;
+    --dusk-sky-bottom: #241436;
+    --dusk-sea-1: #1A2F52;
+    --dusk-sea-2: #162849;
+    --dusk-sea-3: #132140;
+  }
 }
 
 html,

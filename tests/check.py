@@ -107,13 +107,15 @@ window.requestAnimationFrame = (cb) => { window.__raf++; return __rafReal(cb); }
 """
 
 
-def new_context(browser, w, h, dpr=DPR):
+def new_context(browser, w, h, dpr=DPR, scheme="light"):
+    # Row D1: the phone's colour scheme (prefers-color-scheme); every existing check runs in light, as before.
     ctx = browser.new_context(
         viewport={"width": w, "height": h},
         device_scale_factor=dpr,
         is_mobile=True,
         has_touch=True,
         service_workers="allow",
+        color_scheme=scheme,
     )
     ctx.add_init_script(VIBRATE_STUB)
     return ctx
@@ -549,6 +551,29 @@ def run_resize(browser, base):
     ctx.close()
 
 
+# Row D1 review: the full CSS named-colour list (CSS Color Module Level 4, 148 names) and transparent.
+CSS_NAMED_COLOURS = (
+    "aliceblue", "antiquewhite", "aqua", "aquamarine", "azure", "beige", "bisque", "black", "blanchedalmond", "blue",
+    "blueviolet", "brown", "burlywood", "cadetblue", "chartreuse", "chocolate", "coral", "cornflowerblue", "cornsilk",
+    "crimson", "cyan", "darkblue", "darkcyan", "darkgoldenrod", "darkgray", "darkgreen", "darkgrey", "darkkhaki",
+    "darkmagenta", "darkolivegreen", "darkorange", "darkorchid", "darkred", "darksalmon", "darkseagreen",
+    "darkslateblue", "darkslategray", "darkslategrey", "darkturquoise", "darkviolet", "deeppink", "deepskyblue",
+    "dimgray", "dimgrey", "dodgerblue", "firebrick", "floralwhite", "forestgreen", "fuchsia", "gainsboro",
+    "ghostwhite", "gold", "goldenrod", "gray", "green", "greenyellow", "grey", "honeydew", "hotpink", "indianred",
+    "indigo", "ivory", "khaki", "lavender", "lavenderblush", "lawngreen", "lemonchiffon", "lightblue", "lightcoral",
+    "lightcyan", "lightgoldenrodyellow", "lightgray", "lightgreen", "lightgrey", "lightpink", "lightsalmon",
+    "lightseagreen", "lightskyblue", "lightslategray", "lightslategrey", "lightsteelblue", "lightyellow", "lime",
+    "limegreen", "linen", "magenta", "maroon", "mediumaquamarine", "mediumblue", "mediumorchid", "mediumpurple",
+    "mediumseagreen", "mediumslateblue", "mediumspringgreen", "mediumturquoise", "mediumvioletred", "midnightblue",
+    "mintcream", "mistyrose", "moccasin", "navajowhite", "navy", "oldlace", "olive", "olivedrab", "orange",
+    "orangered", "orchid", "palegoldenrod", "palegreen", "paleturquoise", "palevioletred", "papayawhip", "peachpuff",
+    "peru", "pink", "plum", "powderblue", "purple", "rebeccapurple", "red", "rosybrown", "royalblue", "saddlebrown",
+    "salmon", "sandybrown", "seagreen", "seashell", "sienna", "silver", "skyblue", "slateblue", "slategray",
+    "slategrey", "snow", "springgreen", "steelblue", "tan", "teal", "thistle", "tomato", "turquoise", "violet",
+    "wheat", "white", "whitesmoke", "yellow", "yellowgreen", "transparent",
+)
+
+
 def static_checks():
     import re
 
@@ -601,6 +626,49 @@ def static_checks():
     check(texty == {"shared/font.js"}, f"no page draws text: nothing imports the font, the hub included (row H2) {sorted(texty)}")
     hub = (ROOT / "index.html").read_text() + (ROOT / "hub" / "cards.js").read_text()
     check(not re.search(r"SOON|HAPTICS|haptics|TOGGLE|TAG_", hub), "the hub has no SOON tile code and no haptics switch (row X1)")
+
+    # Row D1: every colour is a token. No colour literal (hex, rgb(), hsl() or a CSS colour name) is drawn
+    # or set anywhere in the shipped hub and games outside shared/tokens.js and its mirror shared/theme.css;
+    # the only others are the pages' theme-color metas, which must be the light and dark sky-top tokens,
+    # and the manifest's colours, which stay the light sky-top (a manifest cannot switch).
+    sets = json.loads(subprocess.run(["node", "--input-type=module", "-e",
+                                      "import * as T from './shared/tokens.js'; console.log(JSON.stringify({ light: T.LIGHT.COLORS.skyTop, dark: T.DARK.COLORS.skyTop }))"],
+                                     cwd=ROOT, capture_output=True, text=True).stdout)
+    named = r"\b(?:white|black|red|green|blue|yellow|orange|pink|purple|gray|grey|navy|teal|cyan|magenta|silver|gold|brown|violet|indigo|maroon|olive|lime|aqua|fuchsia|beige|coral|salmon|crimson|transparent)\b"
+    literal = re.compile(r"#[0-9A-Fa-f]{3,8}\b|\b(?:rgba?|hsla?)\s*\(\s*[\d.]")  # rgb(20, ...), not a function named rgb
+    exact_name = re.compile(r"(['\"`])\s*(" + "|".join(CSS_NAMED_COLOURS) + r")\s*\1", re.I)
+    # The only genuine false positives in the tree: Catch's LOOK table names its sprites' colours by token key, and
+    # two keys of COLORS are also CSS colour names. catch.js colourOf() resolves them as COLORS[name] (a token), so
+    # 'coral' (an item, the fish and the treat canopy: COLORS.coral) and 'blue' (the nasties: COLORS.blue) are
+    # token names, not colours.
+    NAME_ALLOW = {"games/catch/sim.js": ("coral", "blue")}
+    offenders, metas_ok = [], True
+    for f in sorted(files):
+        if not f.endswith((".js", ".html", ".css")) or f in ("shared/tokens.js", "shared/theme.css"):
+            continue
+        text = (ROOT / f).read_text()
+        if f.endswith(".html"):
+            metas = re.findall(r'<meta name="theme-color" content="([^"]+)" media="\(prefers-color-scheme: (light|dark)\)">', text)
+            metas_ok &= sorted(metas) == sorted([(sets["light"], "light"), (sets["dark"], "dark")]) and '<meta name="color-scheme" content="light dark">' in text
+            text = re.sub(r'<meta name="theme-color"[^>]*>', "", text)
+        code = re.sub(r"//[^\n]*|/\*.*?\*/", "", text, flags=re.S)
+        hits_ = literal.findall(code)
+        # A CSS colour name used as a value: fillStyle/strokeStyle/color/background strings in quotes.
+        hits_ += re.findall(r"(?:fillStyle|strokeStyle|color|background)\s*[:=]\s*['\"]" + named, code)
+        if f.endswith(".css"):
+            hits_ += re.findall(r":\s*" + named, code)
+        # D1 review: a CSS colour name kept in a variable first (const X = 'navy') escapes the check above, so any
+        # string literal that is exactly a CSS colour name (the full named-colour list) is flagged as well,
+        # unless the allow-list below names it for this file.
+        hits_ += [m.group(2) for m in exact_name.finditer(code) if m.group(2).lower() not in NAME_ALLOW.get(f, ())]
+        if hits_:
+            offenders.append((f, hits_[:3]))
+    check(not offenders, f"no colour literal in the shipped hub, games or shared code outside tokens.js and theme.css (row D1) {offenders}")
+    check(metas_ok, f"every page's theme-color follows the theme: light {sets['light']} and dark {sets['dark']} by media query, color-scheme light dark")
+    check(manifest["background_color"] == manifest["theme_color"] == sets["light"], "the manifest's colours stay the light sky-top (a manifest cannot switch)")
+    scheme = {p.relative_to(ROOT).as_posix() for p in shipped_js if "prefers-color-scheme" in re.sub(r"//.*", "", p.read_text())
+              and p.suffix == ".js"}
+    check(scheme == {"shared/tokens.js"}, f"the theme is read in one place, shared/tokens.js, from prefers-color-scheme (no setting, no toggle) {sorted(scheme)}")
 
 
 def snap(page):
@@ -1087,6 +1155,94 @@ def run_scene(browser, base):
     ctx.close()
 
 
+# Row D1 review: the moon's runs as shared/pixel.js sunRuns draws them (night, and the day disc for its unlit part).
+MOON_RUNS_JS = """async ({ sunX, horizon, r, sink }) => {
+  const px = await import(new URL('shared/pixel.js', document.baseURI).href);
+  return { night: px.sunRuns(sunX, horizon, r, sink, -Infinity, true), disc: px.sunRuns(sunX, horizon, r, sink, -Infinity, false) };
+}"""
+
+
+def run_scene_dark(browser, base):
+    """Row D1 review: the exit ramp in the dark theme on the hub (360x800), at steps 0, 5, 8 and 10: the scene
+    palette is the dark sunset-to-dusk mix of shared/tokens.js, the crescent moon sinks and is gone at step 10,
+    and the stars are out from step 0 (4) and 6 from step 8 on (shared/pixel.js starsAt)."""
+    import re
+
+    tag = "scene dark 360x800"
+    ctx = new_context(browser, 360, 800, scheme="dark")
+    page = ctx.new_page()
+    errors = []
+    page.on("console", lambda m: m.type == "error" and errors.append(m.text))
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(base)
+    hits(page)
+    tok = page.evaluate("""async () => { const T = await import(new URL('shared/tokens.js', document.baseURI).href);
+      const px = await import(new URL('shared/pixel.js', document.baseURI).href);
+      return { active: T.tokens().name, pals: Array.from({ length: 11 }, (_, k) => T.scenePalette(k / 10)),
+        C: T.DARK.COLORS, D: T.DARK.DUSK, sea: [...T.DARK.SEA_BANDS], bands: T.SKY_BANDS,
+        stars: Array.from({ length: 11 }, (_, k) => px.starsAt(k)) }; }""")
+    C, D = tok["C"], tok["D"]
+    check(tok["active"] == "dark", f"[{tag}] the dark token set is active ({tok['active']})")
+    # The stars as the build defines them (shared/pixel.js STARS, read from the source): [x, fraction of the open sky].
+    src = (ROOT / "shared" / "pixel.js").read_text()
+    i0 = src.index("const STARS")
+    star_list = [(int(x), float(f)) for x, f in re.findall(r"\[(\d+),\s*([\d.]+)\]", src[i0:src.index("];", i0)])]
+    prev_lit, prev_top = None, None
+    for k, active in ((0, 0), (5, 300), (8, 480), (10, 600)):
+        t = k / 10
+        page.evaluate(SET_CLOCK_JS, active)
+        page.wait_for_timeout(150)
+        shot = OUT / f"hub-scene-dark-step{k}.png"
+        page.screenshot(path=str(shot))
+        step = int(page.eval_on_selector("#screen", "c => c.dataset.scene"))
+        g = json.loads(page.eval_on_selector("#screen", "c => c.dataset.grid"))
+        hz, sun_x, r = g["horizon"], g["sunX"], g["sunRadius"]
+        # Palette: every value a flat mix between its dark sunset and dark dusk token (tokens.js scenePalette).
+        top_c, bot_c = mix_hex(C["skyTop"], D["skyTop"], t), mix_hex(C["skyBottom"], D["skyBottom"], t)
+        want = {"sky": [mix_hex(top_c, bot_c, i / (tok["bands"] - 1)) for i in range(tok["bands"])],
+                "sea": [mix_hex(c, D["seaBands"][i], t) for i, c in enumerate(tok["sea"])]}
+        if k == 10:
+            check(want["sky"][0] == D["skyTop"] and want["sky"][-1] == D["skyBottom"] and want["sea"] == list(D["seaBands"]),
+                  f"[{tag}] step 10 is the dark DUSK tokens ({want['sky'][0]}, {want['sea']})")
+        sky0, sea0 = logical_pixels(page, shot, [(1, 1), (1, hz + 2)])
+        check(step == k and tok["pals"][k] == want and sky0 == want["sky"][0] and sea0 == want["sea"][0],
+              f"[{tag} step {k}] the dark palette at step {k}: tokens.js scenePalette equals the dark sunset-to-dusk mix, "
+              f"and the hub draws it (step {step}, sky {sky0} want {want['sky'][0]}, sea {sea0} want {want['sea'][0]})")
+        # The crescent moon: every pixel of its runs drawn in the moon colour, the rest of the day disc not.
+        sink = round(t * r)
+        runs = page.evaluate(MOON_RUNS_JS, {"sunX": sun_x, "horizon": hz, "r": r, "sink": sink})
+        lit = [(x + i, y) for x, y, w in runs["night"] for i in range(w)]
+        disc = [(x + i, y) for x, y, w in runs["disc"] for i in range(w)]
+        dark_part = sorted(set(disc) - set(lit))
+        got_lit = logical_pixels(page, shot, lit) if lit else []
+        got_dark = logical_pixels(page, shot, dark_part) if dark_part else []
+        box = [(x, y) for x in range(sun_x - r, sun_x + r + 1) for y in range(max(0, hz - r), hz)]
+        moon_in_box = sum(c == C["sun"] for c in logical_pixels(page, shot, box))
+        top_y = min((y for _, y in lit), default=None)
+        if k < 10:
+            sank = prev_lit is None or (len(lit) < prev_lit and top_y > prev_top)
+            check(lit and all(c == C["sun"] for c in got_lit) and dark_part and not any(c == C["sun"] for c in got_dark)
+                  and moon_in_box == len(lit) and sank,
+                  f"[{tag} step {k}] a crescent moon, sunk {sink} px: its {len(lit)} lit pixels in {C['sun']}, the {len(dark_part)} "
+                  f"of the disc's unlit part not, top row y {top_y}" + ("" if prev_lit is None else f" (was {prev_lit} px, top {prev_top}): it sinks"))
+            prev_lit, prev_top = len(lit), top_y
+        else:
+            check(not runs["night"] and moon_in_box == 0,
+                  f"[{tag} step 10] the moon is gone below the horizon ({len(runs['night'])} runs, {moon_in_box} moon pixels in the sky round x {sun_x})")
+        # Stars: shared/pixel.js starsAt gives 4 from step 0 (NIGHT_STARS) and 6 from step 8 (the two of step 8 on top).
+        n = tok["stars"][k]
+        s0, s1 = g["stars"]
+        centres = [(x, round(s0 + f * (s1 - s0))) for x, f in star_list]
+        # At 360x800 every star drawn is in open sky (none sits under a cloud or the moon), so all n show:
+        # each one's plus (centre and four arms) is in the star colour, and the stars not yet out are not drawn.
+        shown = [all(c == C["star"] for c in logical_pixels(page, shot, [(x, y), (x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)]))
+                 for x, y in centres]
+        check(n == (4 if k < 8 else 6) and shown[:n] == [True] * n and not any(shown[n:]),
+              f"[{tag} step {k}] {n} stars out (starsAt; 4 from step 0, 6 from step 8), {sum(shown)} drawn in {C['star']} {shown}")
+    check(not errors, f"[{tag}] no console errors {errors}")
+    ctx.close()
+
+
 def csnap(page):
     return page.evaluate("window.__catch.snapshot()")
 
@@ -1425,7 +1581,7 @@ HUB_TOKENS_JS = """async () => {
   const edge = T.edge || T.shade;
   return {
     pals: Array.from({ length: 11 }, (_, k) => T.scenePalette(k / 10)), C, bands: T.SKY_BANDS,
-    edgeCoral: edge(C.coral), soonFill: T.mix(C.skyBottom, C.cloud, 0.45),
+    edgeCoral: edge(C.coral), lineCoral: (T.line || edge)(C.coral), theme: T.tokens ? T.tokens().name : 'light', soonFill: T.mix(C.skyBottom, C.cloud, 0.45),
     // B4 review: keel, glint and ink cloud (absent before it: null, so old tokens fail cleanly).
     keel: C.keel || null, glint: C.glint || null,
     inked: Array.from({ length: 11 }, (_, k) => T.scenePalette(k / 10).sea.map((c) => T.mix(c, C.inkCloud || T.shade(C.blue), T.INK_CLOUD_AMOUNT || 0.35))),
@@ -1445,7 +1601,7 @@ HUB_PARTS_JS = """async (step) => {
       what: p.what, bg: !!p.bg, measure: p.measure !== false, colour: p.colour || null, rule: p.rule || null, fill: p.fill || null,
       edge: p.edge || null, exempt: p.exempt || null, x: p.x, y: p.y, w: p.w, h: p.h, colours: p.colours || [] }));
   }
-  return { parts, frame: M.FRAME_COLOURS, windows: g.windows };
+  return { parts, frame: M.frameColours(), windows: g.windows };
 }"""
 
 # Row H2: the colours of the bare hub scene under each card (and the 1 px ring round it) at a step.
@@ -1499,12 +1655,13 @@ def pieces_fit(page, tag):
     check(not clash and not outside, f"[{tag}] in every card the pieces sit inside the window and none overlaps another (overlaps {clash[:4]}, outside {outside[:4]})")
 
 
-def run_contrast_hub(browser, base):
+def run_contrast_hub(browser, base, scheme="light"):
     """Rows B4 and H2: each card's frame against the scene, and every piece in a card against the window colours
     behind it, at sunset and all 10 steps; the colours drawn in each window at sunset, step 5 and dusk."""
     for w, h, dpr, vtag in CONTRAST_HUB_VIEWS:
+        vtag = vtag if scheme == "light" else f"{scheme} {vtag}"
         tag = f"contrast hub {vtag}"
-        ctx = new_context(browser, w, h, dpr)
+        ctx = new_context(browser, w, h, dpr, scheme)
         page = ctx.new_page()
         page.goto(base)
         lay = layout_of(page)
@@ -1568,10 +1725,11 @@ def run_contrast_hub(browser, base):
         ctx.close()
 
 
-def run_contrast_pages(browser, base):
+def run_contrast_pages(browser, base, scheme="light"):
     """Row B4: the drawn colours of the hub, Bricks and Catch at sunset, step 5 and step 10 (games opened from the hub)."""
     for w, h, vtag in CONTRAST_VIEWS:
-        ctx = new_context(browser, w, h, 3)
+        vtag = vtag if scheme == "light" else f"{scheme}-{vtag}"
+        ctx = new_context(browser, w, h, 3, scheme)
         page = ctx.new_page()
         page.goto(base)
         hits(page)
@@ -1619,7 +1777,7 @@ def run_contrast_pages(browser, base):
             page.screenshot(path=str(shot))
             bx, deck = round(gg["boatX"]), gg["geo"]["deckY"]
             got = logical_pixels(g_, shot, [(bx + 12, deck), (bx + 12, deck + 3), (bx + 12, deck - 3), (bx + 11, deck - 6)])
-            check(q["step"] == k and got == [tok["edgeCoral"], C["coral"], C["sail"], tok["edgeCoral"]],
+            check(q["step"] == k and got == [tok["edgeCoral"], C["coral"], C["sail"], tok["lineCoral"]],
                   f"[{tag}] Catch: hull coral in its edge, sail in its own colour, mast in the edge ({got})")
             no_pause_marker(g_, shot, tag, "__catch", "Catch from the hub")
             # B4 review: the hull's rows at and below the horizon in the keel; with an ink cloud and a
@@ -1981,6 +2139,25 @@ def android_checks():
           "theme: content into the cutout (shortEdges), splash with no icon on the sky colour")
     colors = (app / "android" / "app" / "src" / "main" / "res" / "values" / "colors.xml").read_text()
     check("#FFF7EC" in colors, "the launch colour is sky-top #FFF7EC")
+    # Row D1 (PLAN §6g): the app's theme follows the phone's night mode (DayNight, so the WebView reports it as
+    # prefers-color-scheme), the launch, splash and window colour has a night value (the dark sky-top), the
+    # WebView never darkens a page by itself, and a switch while open rebases the theme without recreating the
+    # activity (uiMode handled, so a game keeps its state). Static only: the build and the phone are not run here.
+    night = app / "android" / "app" / "src" / "main" / "res" / "values-night" / "colors.xml"
+    dark_top = json.loads(subprocess.run(["node", "--input-type=module", "-e",
+                                          "import * as T from './shared/tokens.js'; console.log(JSON.stringify(T.DARK.COLORS.skyTop))"],
+                                         cwd=ROOT, capture_output=True, text=True).stdout)
+    check(night.is_file() and f'<color name="rlx_sky">{dark_top}</color>' in night.read_text() and '<color name="rlx_sky">#FFF7EC</color>' in colors,
+          f"rlx_sky: #FFF7EC by day, the dark sky-top {dark_top} at night (values-night)")
+    check('<style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">' in styles
+          and styles.count("@color/rlx_sky") >= 3 and "forceDark" not in styles,
+          "the app theme is DayNight (follows the system night mode); window, launch window and splash use rlx_sky")
+    check("uiMode" in man, "uiMode is handled by the activity: a night-mode switch does not recreate it (the game keeps its state)")
+    main_src = (app / "android" / "app" / "src" / "main" / "java" / "io" / "github" / "apcanario" / "rlx" / "MainActivity.java").read_text()
+    check("setAlgorithmicDarkeningAllowed(web.getSettings(), false)" in main_src and "WebViewFeature.ALGORITHMIC_DARKENING" in main_src
+          and "public void onConfigurationChanged(Configuration newConfig)" in main_src and "getTheme().rebase()" in main_src
+          and "setBackgroundColor(sky)" in main_src and 'androidx.webkit:webkit:$androidxWebkitVersion' in gradle,
+          "MainActivity: no algorithmic darkening, the theme rebased on a night-mode switch, the window and WebView background follow")
     java = app / "android" / "app" / "src" / "main" / "java" / "io" / "github" / "apcanario" / "rlx"
     plug = (java / "RlxHapticsPlugin.java").read_text()
     main_ = (java / "MainActivity.java").read_text()
@@ -2331,10 +2508,11 @@ def run_stack(browser, base):
     ctx.close()
 
 
-def run_contrast_stack(browser, base):
+def run_contrast_stack(browser, base, scheme="light"):
     """Row S1: Stack's floors drawn in the brick-row tokens with their edge, at sunset, step 5 and step 10, on three heights."""
     for w, h, vtag in CONTRAST_VIEWS:
-        ctx = new_context(browser, w, h, 3)
+        vtag = vtag if scheme == "light" else f"{scheme}-{vtag}"
+        ctx = new_context(browser, w, h, 3, scheme)
         page = ctx.new_page()
         page.goto(base)
         hits(page)
@@ -2357,6 +2535,243 @@ def run_contrast_stack(browser, base):
                   and delta_e(tok["edges"][0], sea0) >= MIN_DE,
                   f"[{tag}] the first floor coral in its edge, standing on the horizon, the sea in front ({got})")
         ctx.close()
+
+
+# Row D1: the theme follows the phone. The state of each game kept across a switch (what must not move).
+THEME_STATE_JS = {
+    "bricks": "(() => { const g = window.__bricks.snapshot().game; return JSON.stringify({ rows: g.rows, ball: g.ball, paddleX: g.paddleX, speed: g.speed, pace: g.pace }); })()",
+    "catch": "(() => { const g = window.__catch.snapshot().game; return JSON.stringify(g); })()",
+    "putt": "(() => { const q = window.__putt.snapshot(); return JSON.stringify({ level: q.level, ball: q.ball, levelNo: q.levelNo }); })()",
+    "stack": "(() => { const g = window.__stack.snapshot().game; return JSON.stringify({ floors: g.floors, base: g.base, block: g.block.i, w: g.block.w }); })()",
+}
+
+THEME_TOKENS_JS = """async () => {
+  const T = await import(new URL('shared/tokens.js', document.baseURI).href);
+  const pal = (s) => T.scenePalette(0, s);
+  return { light: { sky: pal(T.LIGHT).sky[0], sea: pal(T.LIGHT).sea[0] }, dark: { sky: pal(T.DARK).sky[0], sea: pal(T.DARK).sea[0] },
+           active: T.tokens().name, lightTop: T.LIGHT.COLORS.skyTop, darkTop: T.DARK.COLORS.skyTop };
+}"""
+
+PAGE_CHROME_JS = """() => {
+  const metas = [...document.querySelectorAll('meta[name=theme-color]')].map((m) => ({ media: m.media, content: m.content, on: !m.media || matchMedia(m.media).matches }));
+  const bg = getComputedStyle(document.body).backgroundColor;
+  return { metas, bg, scheme: document.querySelector('meta[name=color-scheme]').content,
+           stored: localStorage.length + sessionStorage.length, cookie: document.cookie };
+}"""
+
+
+def rgb_css(hex_):
+    return "rgb(%d, %d, %d)" % tuple(int(hex_[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def corner(page, shot_name):
+    """The colour of the screen's top-left device pixel area (logical pixel 0, 0): the sky (Putt: the sea)."""
+    from PIL import Image
+    shot = OUT / shot_name
+    page.screenshot(path=str(shot))
+    return "#%02X%02X%02X" % Image.open(shot).convert("RGB").getpixel((2, 2))
+
+
+def run_theme(browser, base):
+    """Row D1: dark mode on the phone opens the hub and every game dark; light as before; a switch while a game
+    is open shows within a frame and moves nothing; the page chrome follows; nothing is stored."""
+    for scheme in ("light", "dark"):
+        tag = f"theme {scheme} 360x800"
+        ctx = new_context(browser, 360, 800, DPR, scheme)
+        page = ctx.new_page()
+        errors = []
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        page.goto(base)
+        hits(page)
+        tok = page.evaluate(THEME_TOKENS_JS)
+        want = tok[scheme]
+        chrome = page.evaluate(PAGE_CHROME_JS)
+        on = [m["content"] for m in chrome["metas"] if m["on"]]
+        top = tok["lightTop"] if scheme == "light" else tok["darkTop"]
+        check(tok["active"] == scheme and corner(page, f"d1-hub-{scheme}.png") == want["sky"],
+              f"[{tag}] the hub opens {scheme}: the active token set and its sky ({tok['active']})")
+        check(on == [top] and chrome["bg"] == rgb_css(top) and chrome["scheme"] == "light dark",
+              f"[{tag}] page chrome: the theme-color that applies is sky-top {top}, the page background too ({on}, {chrome['bg']})")
+        for name in GAMES:
+            g_ = open_tile(page, name)
+            g_.wait_for_timeout(200)
+            got = corner(page, f"d1-{name}-{scheme}.png")
+            exp = want["sea"] if name == "putt" else want["sky"]
+            gc = g_.evaluate(PAGE_CHROME_JS)
+            check(got == exp and gc["bg"] == rgb_css(top), f"[{tag}] {name} opened from its card is {scheme} ({got}, want {exp}; background {gc['bg']})")
+            check(gc["stored"] == 0 and gc["cookie"] == "", f"[{tag}] {name}: nothing stored ({gc['stored']} keys, cookie {gc['cookie']!r})")
+            back_to_hub(page)
+        chrome = page.evaluate(PAGE_CHROME_JS)
+        check(chrome["stored"] == 0 and chrome["cookie"] == "" and not errors, f"[{tag}] hub: nothing stored, no page errors {errors}")
+        ctx.close()
+
+    # A live switch, from light to dark and back, with each game open: the look changes within a frame, the state does not.
+    ctx = new_context(browser, 360, 800, DPR, "light")
+    page = ctx.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(base)
+    hits(page)
+    tok = page.evaluate(THEME_TOKENS_JS)
+    page.emulate_media(color_scheme="dark")
+    page.wait_for_timeout(100)
+    check(corner(page, "d1-hub-switch-dark.png") == tok["dark"]["sky"], "[theme switch] the hub turns dark while open")
+    page.emulate_media(color_scheme="light")
+    page.wait_for_timeout(100)
+    check(corner(page, "d1-hub-switch-light.png") == tok["light"]["sky"], "[theme switch] and light again")
+    for name in GAMES:
+        tag = f"theme switch {name}"
+        g_ = open_tile(page, name)
+        g_.wait_for_timeout(200)
+        before = g_.evaluate(THEME_STATE_JS[name])
+        shot0 = OUT / f"d1-switch-{name}-0.png"
+        page.screenshot(path=str(shot0))
+        page.emulate_media(color_scheme="dark")
+        # Two animation frames after the switch: the page has drawn the dark look.
+        g_.evaluate("() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
+        dark = corner(page, f"d1-switch-{name}-dark.png")
+        mid = g_.evaluate(THEME_STATE_JS[name])
+        if name in ("bricks", "catch"):  # a fresh, paused opening draws the same in both runs: no colour left over from light
+            from PIL import Image, ImageChops
+            diff = ImageChops.difference(Image.open(OUT / f"d1-switch-{name}-dark.png").convert("RGB"),
+                                         Image.open(OUT / f"d1-{name}-dark.png").convert("RGB")).getbbox()
+            check(diff is None, f"[{tag}] switched to dark, the frame equals the same opening made in dark, pixel for pixel ({diff})")
+        exp = tok["dark"]["sea" if name == "putt" else "sky"]
+        check(dark == exp, f"[{tag}] switched to dark with the game open: dark within two frames ({dark}, want {exp})")
+        check(mid == before, f"[{tag}] the switch moves nothing in the game (state kept)")
+        page.emulate_media(color_scheme="light")
+        g_.evaluate("() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
+        light = corner(page, f"d1-switch-{name}-light.png")
+        after = g_.evaluate(THEME_STATE_JS[name])
+        check(light == tok["light"]["sea" if name == "putt" else "sky"] and after == before,
+              f"[{tag}] and back to light: light again ({light}), state kept")
+        if name != "stack":  # Stack's block slides on; the paused games draw the very frame they drew before
+            from PIL import Image, ImageChops
+            shot1 = OUT / f"d1-switch-{name}-1.png"
+            page.screenshot(path=str(shot1))
+            diff = ImageChops.difference(Image.open(shot0).convert("RGB"), Image.open(shot1).convert("RGB")).getbbox()
+            check(diff is None, f"[{tag}] light, dark and light again: the frame is the one drawn before the switch, pixel for pixel ({diff})")
+        back_to_hub(page)
+    chrome = page.evaluate(PAGE_CHROME_JS)
+    check(chrome["stored"] == 0 and chrome["cookie"] == "" and not errors, f"[theme switch] nothing stored, no page errors {errors}")
+    ctx.close()
+
+
+# Row D1 review: the whole game state for the mid-play switch, less what time alone moves while the game runs on
+# (Stack's block slides on with no finger down: its x and direction; nothing else changes without a tap).
+THEME_FULL_JS = {
+    "bricks": "JSON.stringify(window.__bricks.snapshot().game)",
+    "catch": "JSON.stringify(window.__catch.snapshot().game)",
+    "putt": "(() => { const q = window.__putt.snapshot(); return JSON.stringify({ level: q.level, levelNo: q.levelNo, ball: q.ball, aiming: q.aiming, sliding: q.sliding, sinking: q.sinking }); })()",
+    "stack": "(() => { const g = window.__stack.snapshot().game; const { x, dir, ...b } = g.block; return JSON.stringify({ ...g, block: b }); })()",
+}
+
+
+def theme_play(page, touch, name):
+    """Play a game opened from the hub until it is mid-game, then bring it to rest (Bricks and Catch: the finger
+    lifted, paused; Putt: the ball stopped after a shot; Stack: floors dropped, the camera settled). Returns a
+    description of where play got to, or None if it did not get there."""
+    if name == "bricks":
+        n0 = snap(page)["count"]
+        x, y, scale, k = sea_point(page)
+        width = page.viewport_size["width"]
+        sens = snap(page)["sensitivity"]
+        cur = x
+        page.mouse.move(cur, y)
+        page.mouse.down()
+        end = time.time() + 25
+        while time.time() < end:
+            q = snap(page)
+            g = q["game"]
+            if q["count"] <= n0 - 3 and g["ball"] and (g["ball"]["vx"] or g["ball"]["vy"]):
+                break
+            if g["ball"]:
+                d = g["ball"]["x"] + 2.5 - (g["paddleX"] + 15)
+                nxt = max(30, min(width - 30, cur + max(-12, min(12, d / sens * scale * k))))
+                if abs(nxt - cur) > 0.01:
+                    page.mouse.move(nxt, y)
+                    cur = nxt
+            page.wait_for_timeout(15)
+        page.mouse.up()
+        page.wait_for_function("window.__bricks.snapshot().mode === 'paused' && !window.__bricks.snapshot().raf", timeout=5000)
+        q = snap(page)
+        g = q["game"]
+        ok = q["count"] <= n0 - 3 and g["ball"] and (g["ball"]["vx"] or g["ball"]["vy"])
+        return f"{n0 - q['count']} bricks popped, the ball in flight at ({g['ball']['x']:.1f}, {g['ball']['y']:.1f}), paused" if ok else None
+    if name == "catch":
+        x, y, scale, k = sea_point(page)
+        for _ in range(5):
+            catch_track(page, touch, 1500, x, y, scale * k, until=lambda g: sum(not o["low"] for o in g["items"]) >= 2, max_ms=15000)
+            page.wait_for_function("window.__catch.snapshot().mode === 'paused' && !window.__catch.snapshot().raf", timeout=5000)
+            g = csnap(page)["game"]
+            air = [o for o in g["items"] if not o["low"]]
+            if air:
+                return f"{len(air)} things in the air (y {[round(o['y'], 1) for o in air]}), paused"
+        return None
+    if name == "putt":
+        s0 = psnap(page)
+        putt_stroke(page, touch, 180, 420, 180, 470)
+        page.wait_for_timeout(40)
+        s = putt_until_rest(page)
+        b, b0 = s["ball"], s0["ball"]
+        ok = s["levelNo"] == s0["levelNo"] and not b["moving"] and not b["sunk"] and (b["x"], b["y"]) != (b0["x"], b0["y"]) and not s["aiming"]
+        return f"one shot, the ball at rest at ({b['x']:.1f}, {b['y']:.1f}) from ({b0['x']:.1f}, {b0['y']:.1f})" if ok else None
+    if name == "stack":
+        for _ in range(3):
+            stack_tap_at(page, touch, 0)
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            q = ssnap(page)
+            a = page.evaluate(THEME_FULL_JS["stack"])
+            page.wait_for_timeout(120)
+            if q["game"]["block"]["mode"] == "slide" and q["bits"] == 0 and page.evaluate(THEME_FULL_JS["stack"]) == a:
+                break
+        q = ssnap(page)
+        ok = q["top"] >= 3 and q["game"]["block"]["mode"] == "slide" and q["raf"]
+        return f"{q['top']} floors dropped, the block sliding on" if ok else None
+    return None
+
+
+def run_theme_play(browser, base):
+    """Row D1 review: a live switch, light to dark, in the middle of play in each game (Bricks with the ball
+    launched and bricks popped, Catch with things in the air, Putt after a shot, Stack with floors dropped).
+    The look turns dark within two frames; the game state is unchanged (the paused games' whole state, and
+    Stack's apart from its sliding block's x and direction, which time moves while it runs on)."""
+    ctx = new_context(browser, 360, 800, DPR, "light")
+    page = ctx.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(base)
+    hits(page)
+    tok = page.evaluate(THEME_TOKENS_JS)
+    touch = Touch(ctx, page)
+    for name in GAMES:
+        tag = f"theme mid-play {name}"
+        page.emulate_media(color_scheme="light")
+        page.evaluate(SET_CLOCK_JS, 0)  # each game played from sunset, so the sky compared is step 0's
+        g_ = open_tile(page, name)
+        g_.wait_for_timeout(200)
+        where = theme_play(g_, touch, name)
+        check(where is not None, f"[{tag}] played to mid-game in light: {where}")
+        before = (g_.evaluate(THEME_STATE_JS[name]), g_.evaluate(THEME_FULL_JS[name]))
+        g_.wait_for_timeout(300)
+        still = (g_.evaluate(THEME_STATE_JS[name]), g_.evaluate(THEME_FULL_JS[name]))
+        check(still == before, f"[{tag}] at rest before the switch: the state holds over 300 ms (so the comparison is exact)")
+        light = corner(page, f"d1-play-{name}-light.png")
+        page.emulate_media(color_scheme="dark")
+        g_.evaluate("() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
+        dark = corner(page, f"d1-play-{name}-dark.png")
+        g_.wait_for_timeout(200)
+        mid = (g_.evaluate(THEME_STATE_JS[name]), g_.evaluate(THEME_FULL_JS[name]))
+        exp = "sea" if name == "putt" else "sky"
+        check(light == tok["light"][exp] and dark == tok["dark"][exp],
+              f"[{tag}] switched light to dark mid-game: dark within two frames ({light} -> {dark}, want {tok['dark'][exp]})")
+        check(mid[0] == before[0], f"[{tag}] the switch moves nothing: the fields run_theme compares are unchanged")
+        check(mid[1] == before[1], f"[{tag}] and the whole game state is unchanged" + (" (but the sliding block's x and direction)" if name == "stack" else ""))
+        back_to_hub(page)
+    page.emulate_media(color_scheme="light")
+    check(not errors, f"[theme mid-play] no page errors {errors}")
+    ctx.close()
 
 
 ACTIVATION_PROBE = """
@@ -2582,9 +2997,12 @@ def main():
         if want("layout"):
             for w, h, dpr in LAYOUT_ONLY:
                 run_layout_only(browser, base, w, h, dpr)
-        for name, fn in (("resize", run_resize), ("hub-grid", run_hub_grid), ("bricks", run_bricks), ("scene", run_scene),
+        for name, fn in (("resize", run_resize), ("hub-grid", run_hub_grid), ("bricks", run_bricks), ("scene", run_scene), ("scene-dark", run_scene_dark),
                          ("catch", run_catch), ("putt", run_putt), ("stack", run_stack), ("contrast-hub", run_contrast_hub),
                          ("contrast-pages", run_contrast_pages), ("contrast-stack", run_contrast_stack),
+                         ("theme", run_theme), ("theme-play", run_theme_play), ("contrast-hub-dark", lambda b, u: run_contrast_hub(b, u, "dark")),
+                         ("contrast-pages-dark", lambda b, u: run_contrast_pages(b, u, "dark")),
+                         ("contrast-stack-dark", lambda b, u: run_contrast_stack(b, u, "dark")),
                          ("activation", run_activation)):
             if want(name):
                 fn(browser, base)

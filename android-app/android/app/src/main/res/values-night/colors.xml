@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Row D1 (PLAN §6g): sky-top of the dark set in shared/tokens.js, for the launch window, the splash
+         and the window behind the insets when the phone is in night mode. -->
+    <color name="rlx_sky">#141026</color>
+</resources>

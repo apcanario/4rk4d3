@@ -4,8 +4,8 @@
 // the parts list also serve the headless checks (tests/check.py), which
 // measure every piece against the window colours behind it.
 
-import { LOGICAL_WIDTH, COLORS, BRICK_ROWS, mix, shade, highlight, edge, scenePalette } from '../shared/tokens.js';
-import { pixelBody, steppedRect, ditherRow, SUN_RADIUS } from '../shared/pixel.js';
+import { LOGICAL_WIDTH, COLORS, BRICK_ROWS, mix, shade, highlight, edge, line, trapOn, scenePalette } from '../shared/tokens.js';
+import { pixelBody, steppedRect, ditherRow, sunRuns, SUN_RADIUS } from '../shared/pixel.js';
 import { SESSION } from '../shared/session.js';
 import { LOOK, spriteGrid, turnUp } from '../games/catch/sim.js';
 
@@ -117,11 +117,10 @@ export function windowOf(r) {
   return { x: r.x + f, y: r.y + f, w: r.w - f * 2, h: r.h - f * 2 - 1 };
 }
 
-const FRAME = COLORS.coral;
-const FRAME_EDGE = edge(COLORS.coral); // round the window
-// The card's outer 1 px edge: the cards sit on the sea, so, like the hull's rows below
-// the horizon in Catch (B4 review), the edge is the keel colour, which clears every sea step.
-const FRAME_RIM = COLORS.keel;
+// The frame's colours, from the active token set (row D1: read when drawn, so a theme switch redraws them).
+// FRAME_EDGE goes round the window. The card's outer 1 px edge: the cards sit on the sea, so, like the
+// hull's rows below the horizon in Catch (B4 review), the edge is the keel colour, which clears every sea step.
+const frameOf = () => ({ FRAME: COLORS.coral, FRAME_EDGE: edge(COLORS.coral), FRAME_RIM: COLORS.keel });
 
 /* ---------- the parts of each window ---------- */
 
@@ -238,12 +237,7 @@ function bricksParts(win, pal) {
 
 function sunPart(cx, horizon, r, t, top) {
   const sink = Math.round(t * r);
-  const rows = [];
-  for (let dy = 1 + sink; dy <= r; dy++) {
-    const half = Math.round(Math.sqrt(r * r - (dy - 0.5) * (dy - 0.5)));
-    const yy = horizon - (dy - sink);
-    if (half > 0 && yy >= top) rows.push([cx - half, yy, half * 2]);
-  }
+  const rows = sunRuns(cx, horizon, r, sink, top); // the sun, or the crescent moon in dark (shared/pixel.js)
   if (!rows.length) return null;
   const ys = rows.map((q) => q[1]);
   const y0 = Math.min(...ys);
@@ -313,8 +307,8 @@ function catchParts(win, pal, t) {
     },
   });
   parts.push({
-    what: 'boat mast', rule: 'cr', fill: edge(hull), edge: null, x: mx, y: deck - 11, w: 1, h: 11, colours: [edge(hull)],
-    draw(ctx) { ctx.fillStyle = edge(hull); ctx.fillRect(mx, deck - 11, 1, 11); },
+    what: 'boat mast', rule: 'cr', fill: line(hull), edge: null, x: mx, y: deck - 11, w: 1, h: 11, colours: [line(hull)],
+    draw(ctx) { ctx.fillStyle = line(hull); ctx.fillRect(mx, deck - 11, 1, 11); },
   });
   // The hull is measured against the sky it sits in (its rows above the horizon), the keel against the sea.
   parts.push({
@@ -343,7 +337,7 @@ function puttParts(win, pal) {
   const hx = x + w - 13;
   const hy = y + Math.max(13, Math.round(h * 0.17));
   const r = 3.5;
-  const rim = mix(COLORS.keel, COLORS.cloud, 0.35);
+  const rim = mix(COLORS.keel, COLORS.white, 0.35);
   const cells = [];
   for (let yy = Math.floor(hy - r); yy < hy + r; yy++) {
     for (let xx = Math.floor(hx - r); xx < hx + r; xx++) {
@@ -358,8 +352,8 @@ function puttParts(win, pal) {
   const px = Math.floor(hx + r);
   const top = Math.floor(hy) - 9;
   parts.push({
-    what: 'flag pole', rule: 'cr', fill: edge(COLORS.coral), edge: null, x: px, y: top, w: 1, h: 9, colours: [edge(COLORS.coral)],
-    draw(ctx) { ctx.fillStyle = edge(COLORS.coral); ctx.fillRect(px, top, 1, 9); },
+    what: 'flag pole', rule: 'cr', fill: line(COLORS.coral), edge: null, x: px, y: top, w: 1, h: 9, colours: [line(COLORS.coral)],
+    draw(ctx) { ctx.fillStyle = line(COLORS.coral); ctx.fillRect(px, top, 1, 9); },
   });
   parts.push({
     what: 'flag', rule: 'de', fill: COLORS.coral, edge: null, x: px + 1, y: top, w: 4, h: 3, colours: [COLORS.coral],
@@ -393,7 +387,7 @@ function puttParts(win, pal) {
       ctx.fillRect(x + 3 + ww - 9, midY + 8, 5, 1);
     },
   });
-  const trap = mix(sand, BRICK_ROWS[3], 0.55);
+  const trap = trapOn(sand); // as putt.js
   const dot = mix(trap, COLORS.shadeTarget, 0.15);
   const tw = 16;
   const tx = x + w - tw - 3;
@@ -465,12 +459,15 @@ export function cardParts(id, win, step) {
   return BUILD[id](win, scenePalette(t), t);
 }
 
-/** The colours a card's frame draws: coral body, its highlight and shade, the edge all round and round the window. */
-export const FRAME_COLOURS = Object.freeze([FRAME, highlight(FRAME), shade(FRAME), FRAME_EDGE, FRAME_RIM]);
-export { FRAME, FRAME_EDGE, FRAME_RIM };
+/** The colours a card's frame draws in the active theme: coral body, its highlight and shade, the edge all round and round the window. */
+export function frameColours() {
+  const { FRAME, FRAME_EDGE, FRAME_RIM } = frameOf();
+  return [FRAME, highlight(FRAME), shade(FRAME), FRAME_EDGE, FRAME_RIM];
+}
 
 /** Draw one card: the coral frame with its 1 px keel edge all round, stepped corners, and the window in its coral edge. */
 export function drawCard(ctx, id, r, step, pressed = false) {
+  const { FRAME, FRAME_EDGE, FRAME_RIM } = frameOf();
   const card = { ...r, y: r.y + (pressed ? 1 : 0) };
   pixelBody(ctx, card.x, card.y, card.w, card.h, FRAME, 3, FRAME_RIM);
   const win = windowOf(card);

@@ -2,7 +2,7 @@
 // shapes, dither, the sunset scene, the shared input values, and page
 // hygiene shared by every page.
 
-import { LOGICAL_WIDTH, COLORS, SKY_BANDS, mix, shade, highlight, scenePalette } from './tokens.js';
+import { LOGICAL_WIDTH, COLORS, SKY_BANDS, mix, shade, highlight, scenePalette, tokens } from './tokens.js';
 import { SESSION, sceneStep } from './session.js';
 import { inApp } from './native.js';
 
@@ -270,8 +270,9 @@ function drawCloud(ctx, x, y, kind) {
   });
 }
 
-// Glints: [x, row within sea, length]. Longer ones sit under the sun.
-const GLINTS = [
+// Glints: [x, row within sea, length]. Longer ones sit under the sun (in dark, the moon path).
+// Exported for the checks (tests/catch-sim.mjs: no glint row is behind Catch's keel).
+export const GLINTS = [
   [12, 6, 7], [86, 4, 22], [90, 9, 15], [84, 14, 10], [100, 14, 6],
   [30, 18, 5], [95, 20, 9], [118, 23, 6], [93, 27, 5], [8, 30, 6],
   [60, 34, 4], [110, 37, 5],
@@ -289,9 +290,50 @@ function drawStar(ctx, x, y) {
   ctx.fillRect(x, y - 1, 1, 3);
 }
 
-/** Stars shown at a scene step. */
+// Row D1: at night the stars are out from the first step: this many, and the
+// last steps add theirs on top, up to all of them.
+const NIGHT_STARS = 4;
+
+/** Stars shown at a scene step (in the dark theme, from the first step on). */
 export function starsAt(step) {
-  return Math.max(0, Math.min(STARS.length, (step - SESSION.starsFromStep + 1) * 2));
+  const dusk = Math.max(0, Math.min(STARS.length, (step - SESSION.starsFromStep + 1) * 2));
+  return isNight() ? Math.min(STARS.length, NIGHT_STARS + dusk) : dusk;
+}
+
+/** True while the dark theme is active (row D1). */
+export function isNight() {
+  return tokens().name === 'dark';
+}
+
+/**
+ * The rows of the sun (light) or the crescent moon (dark) on a horizon: a
+ * disc of radius r centred on the horizon at x cx, sunk by sink px, drawn
+ * only above the horizon and not above top. Returns [x, y, w] runs. The
+ * crescent is the disc less a disc of 0.95 r set 0.45 r left and 0.3 r up,
+ * so its lit edge is on the right (row D1: a crescent moon where the sun is).
+ */
+export function sunRuns(cx, horizon, r, sink, top = -Infinity, night = isNight()) {
+  const out = [];
+  const bx = cx - Math.round(r * 0.45);
+  const by = horizon + sink - Math.round(r * 0.3);
+  const br = r * 0.95;
+  for (let dy = 1 + sink; dy <= r; dy++) {
+    const half = Math.round(Math.sqrt(r * r - (dy - 0.5) * (dy - 0.5)));
+    const y = horizon - (dy - sink);
+    if (half <= 0 || y < top) continue;
+    if (!night) {
+      out.push([cx - half, y, half * 2]);
+      continue;
+    }
+    let run = null;
+    for (let x = cx - half; x < cx + half; x++) {
+      const lit = Math.hypot(x + 0.5 - bx, y + 0.5 - by) > br;
+      if (lit && run) run[2]++;
+      else if (lit) out.push((run = [x, y, 1]));
+      else run = null;
+    }
+  }
+  return out;
 }
 
 /**
@@ -331,13 +373,11 @@ export function drawScene(ctx, W, H, {
   for (let i = 0; i < clouds.length; i++) drawCloud(ctx, clouds[i][0], clouds[i][1], i);
 
   // Sun: pale half-disc of radius 24 on the horizon, right of centre; it
-  // sinks with the steps and is below the horizon at the last one.
+  // sinks with the steps and is below the horizon at the last one. In the
+  // dark theme it is a crescent moon in the same place, sinking the same way.
   const sink = Math.round(t * sunRadius);
   ctx.fillStyle = COLORS.sun;
-  for (let dy = 1 + sink; dy <= sunRadius; dy++) {
-    const half = Math.round(Math.sqrt(sunRadius * sunRadius - (dy - 0.5) * (dy - 0.5)));
-    if (half > 0) ctx.fillRect(sunX - half, horizon - (dy - sink), half * 2, 1);
-  }
+  for (const [x, y, w] of sunRuns(sunX, horizon, sunRadius, sink)) ctx.fillRect(x, y, w, 1);
 
   // Sea: three bands with dither seams and pale glint dashes.
   const seaH = seaSplit(seaHeight); // 13, 14, 15 for the games' 42 rows

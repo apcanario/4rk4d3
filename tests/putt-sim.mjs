@@ -18,7 +18,9 @@ const ROOT = new URL('../', import.meta.url);
 const read = (p) => readFileSync(fileURLToPath(new URL(p, ROOT)), 'utf8');
 let passed = 0;
 const fails = [];
+let THEME_TAG = ''; // row D1: '[dark] ' while a check runs in the dark theme
 function check(cond, msg) {
+  msg = THEME_TAG + msg;
   console.log((cond ? 'PASS ' : 'FAIL ') + msg);
   if (cond) passed++;
   else fails.push(msg);
@@ -571,18 +573,22 @@ function run(w, b, maxS = 30) {
 
 /* ---------- readability (the B4 standard, sunset and all 10 steps) ---------- */
 
-{
-  check(/const TRAP_AMOUNT = 0\.55;/.test(puttSrc) && /const DROP_AMOUNT = 0\.2;/.test(puttSrc)
+for (const THEME of [T.LIGHT, T.DARK]) {
+  // Row D1: every readability check runs in both themes (the Node checks have no colour scheme: forced).
+  T.forceTheme(THEME);
+  THEME_TAG = THEME === T.DARK ? '[dark] ' : '';
+
+  check(/const trap = trapOn\(sand\);/.test(puttSrc) && T.TRAP_AMOUNT === 0.55 && /const DROP_AMOUNT = 0\.2;/.test(puttSrc)
     && /const sand = pal\.sky\[0\];/.test(puttSrc) && /const water = pal\.sea\[1\];/.test(puttSrc)
-    && /const WALL = COLORS\.coral;/.test(puttSrc) && /const BLOCKS = \[BRICK_ROWS\[2\], BRICK_ROWS\[4\]\];/.test(puttSrc)
-    && /const PEG = BRICK_ROWS\[5\];/.test(puttSrc) && /powerOff: mix\(COLORS\.coral, sand, 0\.6\)/.test(puttSrc)
-    && /guideAfter: mix\(BALL, sand, 0\.45\)/.test(puttSrc) && /const HOLE = COLORS\.keel;/.test(puttSrc) && /const BALL = COLORS\.blue;/.test(puttSrc),
+    && /\bWALL = COLORS\.coral;/.test(puttSrc) && /\bBLOCKS = \[BRICK_ROWS\[2\], BRICK_ROWS\[4\]\];/.test(puttSrc)
+    && /\bPEG = BRICK_ROWS\[5\];/.test(puttSrc) && /powerOff: mix\(COLORS\.coral, sand, 0\.6\)/.test(puttSrc)
+    && /guideAfter: mix\(BALL, sand, 0\.45\)/.test(puttSrc) && /\bHOLE = COLORS\.keel;/.test(puttSrc) && /\bBALL = COLORS\.blue;/.test(puttSrc),
     'putt.js draws with the colours measured here');
   const P = CT.pairs();
   for (let k = 0; k <= SE.SESSION.sceneSteps; k++) {
     const pal = T.scenePalette(k / SE.SESSION.sceneSteps);
     const sand = pal.sky[0];
-    const trap = T.mix(sand, T.BRICK_ROWS[3], 0.55);
+    const trap = T.trapOn(sand);
     const water = pal.sea[1];
     const where = { k, tag: 'putt' };
     for (const [on, bg] of [['sand', sand], ['sand trap', trap]]) {
@@ -601,16 +607,18 @@ function run(w, b, maxS = 30) {
     P.add('power bar (unlit)', 'de', powerOff, null, 'sand', sand, where);
     P.add('power bar (lit)', 'de', T.COLORS.coral, null, 'unlit bar', powerOff, where);
     P.add('aim guide (rebound)', 'de', T.mix(T.COLORS.blue, sand, 0.45), null, 'sand', sand, where);
-    P.add('pull ring', 'cr', T.COLORS.cloud, T.COLORS.ink, 'sand', sand, where);
+    P.add('pull ring', 'cr', T.COLORS.white, T.COLORS.ink, 'sand', sand, where);
     for (let i = 0; i < 3; i++) {
       P.add('course wall', 'de', T.COLORS.coral, null, `sea band ${i + 1}`, pal.sea[i], where);
-      P.add('pull ring', 'cr', T.COLORS.cloud, T.COLORS.ink, `sea band ${i + 1}`, pal.sea[i], where);
+      P.add('pull ring', 'cr', T.COLORS.white, T.COLORS.ink, `sea band ${i + 1}`, pal.sea[i], where);
     }
   }
   const under = P.rows.filter((x) => !x.ok);
   const w = CT.worst(P.rows);
   check(!under.length, `ball, hole, walls, blocks, pegs, water, traps, guide and pull ring meet the B4 standard at sunset and every step `
     + `(weakest ${CT.fmt(w)}) ${under.slice(0, 3).map(CT.fmt)}`);
+  T.forceTheme(null);
+  THEME_TAG = '';
 }
 
 console.log(`\n${passed + fails.length} checks, ${fails.length} failure(s)`);

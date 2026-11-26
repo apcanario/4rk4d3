@@ -42,7 +42,9 @@ export const CONFIG = Object.freeze({
   hapticBiteMs: 16,
 });
 
-import { COLORS, BRICK_ROWS, SEA_BANDS, mix, shade, highlight, edge, scenePalette, INK_CLOUD_AMOUNT } from '../../shared/tokens.js';
+import {
+  COLORS, BRICK_ROWS, SEA_BANDS, mix, shade, highlight, edge, line, scenePalette, INK_CLOUD_AMOUNT, onThemeChange,
+} from '../../shared/tokens.js';
 import {
   createScreen, drawScene, initPage, pixelBody, steppedRect, SEA_HEIGHT, SUN_RADIUS, reducedMotion,
   atSideEdge, thumbSensitivity,
@@ -105,32 +107,38 @@ function paint(grid, body) {
 }
 
 const flip = (grid) => grid.map((row) => [...row].reverse().join(''));
-const ITEM_SPRITES = S.LOOK.items.map((it) => paint(S.spriteGrid(it.mask, true), colourOf(it.colour)));
-const NASTY_SPRITES = S.LOOK.nasties.map((n) => paint(S.spriteGrid(n.mask, false), colourOf(n.colour)));
 const FISH_GRID = S.spriteGrid(S.LOOK.fish.mask, true);
-const FISH_SPRITES = S.LOOK.fish.colours.map((name) => {
-  const c = colourOf(name);
-  return { right: paint(FISH_GRID, c), left: paint(flip(FISH_GRID), c), up: paint(S.turnUp(FISH_GRID), c) };
-});
-// B4 contrast pass: the hull and the outlines carry a deep 1 px edge; the
-// sail is its own pale token (it was the sun's cream), the jib the deeper pink.
-const HULL = COLORS.coral;
-const HULL_EDGE = edge(COLORS.coral);
-const KEEL = COLORS.keel; // B4 review: the hull's rows below the horizon, so they clear every sea band
-const MAST = edge(COLORS.coral);
-const SAIL = COLORS.sail;
-const SAIL_EDGE = edge(COLORS.sail);
-const JIB = BRICK_ROWS[5];
-const JIB_EDGE = edge(BRICK_ROWS[5]);
-const CANOPY = colourOf(S.LOOK.treatCanopy);
-const CANOPY_HI = highlight(CANOPY);
-const STRING = shade(CANOPY);
-const INK = COLORS.inkCloud;
-const GLINT = COLORS.glint; // B4 review: the glint and the spray, pink so they read on the sun and the sea
-const GULL = shade(COLORS.blue);
-const DOLPHIN = COLORS.blue;
-const SPLASH_TOP = COLORS.cloud;
-const SPLASH_BODY = highlight(SEA_BANDS[0]);
+// Colours and sprites kept between frames, from the active token set; retheme()
+// makes them again when the phone switches between light and dark (row D1).
+let ITEM_SPRITES, NASTY_SPRITES, FISH_SPRITES, HULL, HULL_EDGE, KEEL, MAST, SAIL, SAIL_EDGE, JIB, JIB_EDGE, CANOPY, CANOPY_HI, STRING, INK, GLINT, GULL, DOLPHIN, SPLASH_TOP, SPLASH_BODY;
+function retheme() {
+  ITEM_SPRITES = S.LOOK.items.map((it) => paint(S.spriteGrid(it.mask, true), colourOf(it.colour)));
+  NASTY_SPRITES = S.LOOK.nasties.map((n) => paint(S.spriteGrid(n.mask, false), colourOf(n.colour)));
+  FISH_SPRITES = S.LOOK.fish.colours.map((name) => {
+    const c = colourOf(name);
+    return { right: paint(FISH_GRID, c), left: paint(flip(FISH_GRID), c), up: paint(S.turnUp(FISH_GRID), c) };
+  });
+  // B4 contrast pass: the hull and the outlines carry a deep 1 px edge; the
+  // sail is its own pale token (it was the sun's cream), the jib the deeper pink.
+  HULL = COLORS.coral;
+  HULL_EDGE = edge(COLORS.coral);
+  KEEL = COLORS.keel; // B4 review: the hull's rows below the horizon, so they clear every sea band
+  MAST = line(COLORS.coral); // the edge colour in light, a lighter line in dark (row D1)
+  SAIL = COLORS.sail;
+  SAIL_EDGE = edge(COLORS.sail);
+  JIB = BRICK_ROWS[5];
+  JIB_EDGE = edge(BRICK_ROWS[5]);
+  CANOPY = colourOf(S.LOOK.treatCanopy);
+  CANOPY_HI = highlight(CANOPY);
+  STRING = shade(CANOPY);
+  INK = COLORS.inkCloud;
+  GLINT = COLORS.glint; // B4 review: the glint and the spray, pink so they read on the sun and the sea
+  GULL = shade(COLORS.blue);
+  DOLPHIN = COLORS.blue;
+  SPLASH_TOP = COLORS.white;
+  SPLASH_BODY = highlight(SEA_BANDS[0]);
+}
+retheme();
 
 function newSeed() {
   return ((Date.now() ^ Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0) || 1;
@@ -308,7 +316,7 @@ function draw(ctx, s) {
     bgStep = -1;
   }
   const step = sceneStep(phase);
-  if (step !== bgStep) {
+  if (step !== bgStep || !bg) {
     bg = paintBackground(s, phase);
     bgStep = step;
     canvas.dataset.scene = String(bgStep);
@@ -335,7 +343,7 @@ function draw(ctx, s) {
 function burst(x, y) {
   for (let i = 0; i < BITS; i++) {
     const a = ((i + 0.5) / BITS) * Math.PI * 2;
-    fx.bits.push({ x, y, vx: Math.cos(a) * 26, vy: Math.sin(a) * 26, t: 0, color: i % 2 ? COLORS.blue : COLORS.cloud });
+    fx.bits.push({ x, y, vx: Math.cos(a) * 26, vy: Math.sin(a) * 26, t: 0, color: i % 2 ? COLORS.blue : COLORS.white });
   }
 }
 
@@ -447,6 +455,14 @@ function sleep() {
   if (raf) cancelAnimationFrame(raf);
   raf = 0;
 }
+
+// Row D1: the phone switched between light and dark. Only the colours change:
+// the next frame paints the same boat, things and fish in the other set.
+onThemeChange(() => {
+  retheme();
+  bg = null;
+  redraw();
+});
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') sleep();
