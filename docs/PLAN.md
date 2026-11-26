@@ -63,7 +63,7 @@ Choices made in the build (in force)
 
 ## 3. Look
 
-The hard rules of update 2 removed every HUD, score and count, so the HUD and score parts below are void; since row H2 the hub draws no text either, so the lettering applies to the app icons only (tools/make-icons.py). The B4 contrast pass changed some values (list at the end of this section).
+The hard rules of update 2 removed every HUD, score and count, so the HUD and score parts below are void; since row H2 the hub draws no text either, so the lettering applied to the app icons only (tools/make-icons.py), and since P3 the icons have none. The B4 contrast pass changed some values (list at the end of this section).
 
 Light summer sunset, rounded 8-bit. docs/style-reference.jpg is the approved reference; match it.
 
@@ -91,7 +91,7 @@ Scene (static in v1)
 - Two or three small white pixel clouds in the open sky.
 
 Lettering
-- One hand-drawn rounded pixel font in shared/font.js: capitals and digits, with rounded outer corners. No web fonts anywhere. Since row H2 no page loads it; tools/make-icons.py reads it to draw the app icons.
+- One hand-drawn rounded pixel font in shared/font.js: capitals and digits, with rounded outer corners. No web fonts anywhere. Since row H2 no page loads it, and since row P3 the icons are drawn from tools/rlx_art.py with no lettering (X35 proposes removing the font).
 
 Motion
 - Only where it helps: brick pop particles (about 8 bits, 300 ms) and a ball trail of 3 fading squares.
@@ -110,7 +110,7 @@ Brought in line with the hard rules of update 2 by row X1.
 
 - /index.html: the hub. It opens each game in a frame over itself and closes it on the back gesture.
 - /hub/cards.js: the hub's card grid (row H2): the layout, and each card's frame and window. No DOM; it reuses the Catch sprite masks from games/catch/sim.js.
-- /shared/: tokens.js, theme.css, font.js (no page loads it since H2; tools/make-icons.py reads it for the icons), pixel.js (canvas setup, scaling, stepped-corner rect, dither, scene, the shared input values, clearing old stored keys), haptics.js, session.js (the session clock and scene phase, in memory)
+- /shared/: tokens.js, theme.css, font.js (no page loads it since H2 and, since P3, the icons do not use it either; X35), native.js (row P3: inside the Android app, inApp() and the native haptics plugin), pixel.js (canvas setup, scaling, stepped-corner rect, dither, scene, the shared input values, clearing old stored keys), haptics.js, session.js (the session clock and scene phase, in memory)
 - /games/bricks/: index.html, bricks.js, physics.js
 - /games/catch/: index.html, catch.js, sim.js
 - /games/putt/: index.html, putt.js, sim.js, gen.js
@@ -167,7 +167,7 @@ Layout rule (code: hub/cards.js GRID, gridLayout, hubScene)
 - Integer logical pixels throughout, one integer scale.
 - Bricks card: its bricks are 13 px wide at these card widths (14 at 58 px), three columns in the window, a departure from the game's 15; the card is a picture, not the game.
 - Stack card: floor 0's bottom sits on the window's horizon, as in the game (games/stack/sim.js floorTop).
-- Note: sw.js still precaches shared/font.js, which no page loads since H2 (tools/make-icons.py reads it); harmless, left as is.
+- Note: sw.js still precaches shared/font.js, which no page loads since H2 and nothing reads since P3 (the icons are drawn from tools/rlx_art.py); harmless, its removal is the Proposed row X35.
 
 Accept
 - Four equal cards in a 2x2 grid in the order above, 5 px gaps across and down, centred, each at least 40 logical px each way, inside the safe area and clear of the side band, at logical heights 240, 300 and 400, widths 360 and 412 CSS px, device scale 2.625 and 3, with and without safe-area insets.

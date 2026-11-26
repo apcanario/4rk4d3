@@ -83,9 +83,9 @@ jobs:
           "$AAPT2" dump permissions "$APK" > /tmp/perms.txt
           cat /tmp/perms.txt
           grep -E "^package: name='io.github.apcanario.rlx'" /tmp/badging.txt
-          grep -E "^(sdkVersion|targetSdkVersion|compileSdkVersion)|^application-label|launchable-activity" /tmp/badging.txt || true
+          grep -E "^(minSdkVersion|sdkVersion|targetSdkVersion)|^application-label|launchable-activity" /tmp/badging.txt || true
           grep -q "targetSdkVersion:'36'" /tmp/badging.txt
-          grep -q "sdkVersion:'24'" /tmp/badging.txt
+          grep -Eq "^(minSdkVersion|sdkVersion):'24'" /tmp/badging.txt
           grep -q "application-label:'rlx'" /tmp/badging.txt
           # Only VIBRATE (Android adds a signature-level DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION of the app's own; it is not a user permission).
           others=$(grep "^uses-permission:" /tmp/perms.txt | grep -v "name='android.permission.VIBRATE'" | grep -v "name='io.github.apcanario.rlx.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'" || true)
