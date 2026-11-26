@@ -123,7 +123,8 @@ jobs:
 
       - name: No upload key
         if: env.HAS_UPLOAD_KEY != 'true'
-        run: echo "No release bundle: the four RLX_* signing secrets are not all set (docs/PLAY.md). Debug APK only." >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          echo "No release bundle: the four RLX_* signing secrets are not all set (docs/PLAY.md). Debug APK only." >> "$GITHUB_STEP_SUMMARY"
 
   smoke:
     needs: build
