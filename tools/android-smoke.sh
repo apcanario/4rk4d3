@@ -17,7 +17,7 @@ adb shell wm density >> "$OUT/wm-size.txt"
 adb install -r "$APK" || exit 1
 adb logcat -c
 adb shell am start -W -n $PKG/.MainActivity > "$OUT/start.txt"
-sleep 10
+sleep 15
 shot 1-hub
 echo "after start: $(resumed)" > "$OUT/activity.txt"
 

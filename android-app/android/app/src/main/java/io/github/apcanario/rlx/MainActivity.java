@@ -1,6 +1,9 @@
 package io.github.apcanario.rlx;
 
+import android.content.pm.ApplicationInfo;
 import android.os.Bundle;
+import android.util.Log;
+import android.webkit.WebBackForwardList;
 import android.webkit.WebView;
 import androidx.activity.OnBackPressedCallback;
 import androidx.core.splashscreen.SplashScreen;
@@ -28,6 +31,10 @@ public class MainActivity extends BridgeActivity {
             @Override
             public void handleOnBackPressed() {
                 WebView web = bridge == null ? null : bridge.getWebView();
+                if (debuggable() && web != null) {
+                    WebBackForwardList list = web.copyBackForwardList();
+                    Log.d("RLX", "back: canGoBack=" + web.canGoBack() + " index=" + list.getCurrentIndex() + " size=" + list.getSize() + " url=" + web.getUrl());
+                }
                 if (web != null && web.canGoBack()) {
                     web.goBack(); // a game is open: back to the hub
                     return;
@@ -50,6 +57,11 @@ public class MainActivity extends BridgeActivity {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) immersive();
+    }
+
+    /** Debug builds only: the back decisions go to logcat (tag RLX) for the CI smoke test. */
+    private boolean debuggable() {
+        return (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
     }
 
     /** Edge to edge, status and navigation bars hidden; a swipe from an edge shows them for a moment. */

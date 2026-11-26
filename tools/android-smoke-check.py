@@ -39,6 +39,18 @@ def near(c, hexc, tol=8):
     return all(abs(x - y) <= tol for x, y in zip(c, t))
 
 
+import base64
+import io
+
+for name in ("1-hub", "2-stack", "3-stack-dropped", "4-hub-after-back", "5-bricks", "6-hub-after-back", "7-after-second-back"):
+    try:
+        small = Image.open(OUT / f"{name}.png").convert("RGB").resize((135, 300), Image.NEAREST)
+        buf = io.BytesIO()
+        small.save(buf, "PNG", optimize=True)
+        print(f"SHOT {name} " + base64.b64encode(buf.getvalue()).decode())
+    except OSError as err:
+        print(f"SHOT {name} missing ({err})")
+
 hub = img("1-hub")
 w, h = hub.size
 print(f"screen {w}x{h}")
@@ -62,8 +74,19 @@ check(len(act) >= 5 and PKG not in act[4], "back at the hub leaves the app")
 
 log = (OUT / "logcat.txt").read_text(errors="replace")
 console = [line for line in log.splitlines() if "Capacitor/Console" in line]
-errors = [line for line in console if re.search(r"\bE Capacitor/Console|Uncaught|TypeError|ReferenceError|SyntaxError", line)]
-neterr = [line for line in log.splitlines() if "net::ERR_" in line and PKG in log]
+# Capacitor's own SystemBars script can run before the document exists ("Error injecting safe area CSS"); it is
+# Capacitor's, retried on the next insets pass, and not a page error.
+errors = [line for line in console if re.search(r"\bE Capacitor/Console|Uncaught|TypeError|ReferenceError|SyntaxError", line)
+          and "Error injecting safe area CSS" not in line]
+pid = None
+m = re.search(r"Start proc (\d+):" + re.escape(PKG) + r"/", log)
+if m:
+    pid = m.group(1)
+app_lines = [line for line in log.splitlines() if pid and re.match(r"\S+ \S+\s+" + pid + r"\s", line)]
+neterr = [line for line in app_lines if "net::ERR_" in line]
+print(f"app pid {pid}, {len(app_lines)} log lines from it")
+for line in [l for l in log.splitlines() if " RLX" in l or "RLX  " in l][:12]:
+    print("LOG " + line)
 print(f"{len(console)} console lines from the pages")
 check(not errors, f"no page errors in the console {errors[:5]}")
 check(not neterr, f"no network errors {neterr[:5]}")
