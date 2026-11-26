@@ -16,6 +16,10 @@ A one-thumb arcade for Pedro's Android phone: a hub of small endless games to pi
 - No sound at all. Haptics are always on. There are no settings and no options anywhere: the hub is the four game cards and nothing else.
 - Vanilla HTML, CSS and JS, ES modules, no build step, no dependencies, no CDN. Static files on GitHub Pages. The Android app (§6f) copies these same files unchanged into a Capacitor shell; the shell's npm packages and Gradle build are the app's packaging, and no page loads anything from them.
 - No text anywhere: no page draws a letter or a digit, the hub included (row H2). The app's name lives only in the manifest and the icons.
+- Theme follows the phone (update 3, row D1): dark mode on the phone means the dark theme in RLX, on the hub and in every game. No toggle, no stored preference.
+- Every colour is a token with a light and a dark value. No colour literal in a game or in the hub.
+- Contrast holds in both themes: anything the player has to track (ball, puck, paddle, mallets, bricks, things to catch, boat, hole, blocks, obstacles) meets the §3 B4 standard against what is behind it, in light and in dark, at every step of the exit ramp.
+- Row A1 adds a fifth game card to the hub; "the four game cards" above then reads five.
 
 ## 2a. Evidence
 
@@ -104,6 +108,23 @@ B4 contrast pass (in force; replaces the value above where they differ)
 - Standard in place of "readable": every game piece against every scene step meets CIE76 delta E 20 or better (tests/contrast.mjs), WCAG contrast 3 for edges and fills seen as one shape, and WCAG 4.5 for small lettering.
 - Outside the standard (accepted, 2026-11-26, X16): the ball trail (delta E 16.42 from the sky), a pop particle's highlight bit and the splash's white top (their other bits carry them).
 
+Dark theme (update 3; row D1 builds it): the same beach at night
+- Sky: deep plum to violet, a crescent moon where the sun is, stars from the first step.
+- Sea: navy bands with a pale moon path where the sun glints are.
+- Sand: dark violet.
+- Pinks, corals and blues stay the object colours, lightened only where the contrast check needs it.
+- The exit ramp (§2b) still runs. In dark it starts at night and deepens: the same steps, the same slowing of the games, darker end values. Play behaviour is identical in both themes.
+- Starting values. The contrast check decides: a value may move by the smallest step that passes, and every moved value is listed in the changelog.
+  - skyTop #141026, skyBottom #3A2152; dark DUSK skyTop #0C0918, skyBottom #241436
+  - sun (the moon in dark) #FFE9C9; cloud #4C3A6E; star #FFFFFF
+  - sea bands #24406B #1F3760 #1C2F55; dark DUSK sea bands #1A2F52 #162849 #132140
+  - coral #FF7385; blue (ball, nasty ones) #8FB8E8; ink #CDD6FF; keel #0A0714; glint #FFA2CE
+  - brick rows: unchanged unless the check fails
+  - sand #2B2142 and wet sand #3B2C58 (light: #FFE6D2 and #FFCFBA; new tokens, used by U2 and A1); foam and lines #CDD6FF (light #FFFAF3)
+  - shade and edge mix target #0A0714 where the piece sits on a light ground, toward white where it sits on the dark ground: the builder picks per piece what meets the standard and writes it here
+  - highlight: toward white at about half the light amount
+- Values the design chat did not set (sail, card, inkCloud, any token added since): the builder derives them by the same rule and lists them in the changelog.
+
 ## 4. Repo layout
 
 Brought in line with the hard rules of update 2 by row X1.
@@ -147,6 +168,8 @@ Accept
 Choice made in the build (X1): the hub creates each game's fullscreen frame on the card's pointerdown and shows it on pointerup, with one history.pushState entry. The back gesture removes the frame, so the page never leaves the hub and its clock lives on. A reload on a game's history entry opens the hub. Safe-area insets inside the frame come from the hub's probe.
 
 ## 5a. Row H2: the card grid hub
+
+Superseded in part by update 3; row A1 (§6i) brings the build in line: five cards in a 2 by 3 grid.
 
 Pedro chose option 1 of four hub mockups (2026-11-26): the grid. After the build he asked (2026-11-26) for the cards in the thumb's reach, low on the screen, with the sky above them as the picture; the layout below is that second version.
 
@@ -387,6 +410,8 @@ Choices made in the build (in force)
 - No pause marker (X33, 2026-11-26): the ring with a square, as in style-reference-catch.jpg, was removed; the reference's ring does not apply.
 
 ## 6c. Row U1: Putt
+
+Superseded in part by update 3; row U2 (§6h) brings the build in line: no drawn frame, the screen edges are the walls, sand and sea levels.
 
 docs/style-reference-putt.jpg is the approved look. Its lettering does not apply: nothing is written on screen.
 
@@ -652,6 +677,128 @@ Only Pedro can do
 - Make the upload key and add the four secrets to the repo (docs/PLAY.md); never paste a secret into a chat.
 - Install the debug APK on his phone and play it (P3's device check, with X34).
 - In the Play Console: create the app (rlx, game, free), fill the listing from docs/play/listing.md, the Data safety form from data-safety.md, the content rating questionnaire from content-rating.md, the privacy policy URL, the contact email; upload the .aab to a closed test with the testers Play asks for, run it as long as Play asks, then apply for production.
+
+## 6g. Row D1: dark theme, hub and all four games
+
+Pedro (2026-11-26): an automatic dark theme if the phone is set to dark mode, on the homepage and in every game. The rules are in §2, the look and starting values in §3.
+
+Build
+- shared/tokens.js (and its mirror in shared/theme.css): COLORS, DUSK, BRICK_ROWS and SEA_BANDS each get a dark set, and the mix targets (shade, edge, highlight amounts) a dark value where §3 gives one. One function returns the active set; scenePalette() mixes inside it.
+- Any colour literal still in the hub, Bricks, Catch, Putt or Stack moves into tokens first.
+- The theme is read from `prefers-color-scheme` and from its change event. A switch while the app is open redraws on the next frame and changes no game state.
+- shared scene (sky, sun or moon, clouds, stars, sea): dark variant as in part B, on the session clock as today.
+- Hub: night sky as the illustration above the cards, cards and their pieces from the dark tokens.
+- Bricks, Catch, Putt, Stack: dark by tokens only. No layout, physics, haptics or timing change.
+- Page chrome: `theme-color` and the page background follow the theme. The web manifest's colours stay the light ones (a manifest cannot switch).
+- Android app (§6f): the pages inside the Capacitor shell must see the phone's dark mode through `prefers-color-scheme`. Check it; if the WebView reports light regardless, fix the shell (an app theme that follows the system night mode, no algorithmic darkening of the page by the WebView). The launch window and splash colour get a night value, the dark sky-top; the window colour behind the insets follows.
+- App icon: unchanged.
+
+Accept
+- With the phone in dark mode, the hub and each of the four games open dark; in light mode nothing differs from the build before this row (pixel-identical screenshots at step 1).
+- Switching the phone's mode with a game open changes the look within a frame; the ball, bricks, course or tower are where they were.
+- tests/contrast.mjs and the contrast checks of tests/check.py run every existing check in both themes at every scene step, to the §3 B4 standard, and pass. What X16 accepted outside the standard in light may stay outside it in dark; nothing else may.
+- A check fails if any colour literal is drawn outside tokens.
+- Nothing is stored. No setting exists.
+- Screenshots of the hub and each game, dark, at 360x800, checked by eye. The Play listing screenshots (docs/play/) stay the light ones.
+- All existing suites pass.
+
+Only on the phone: how dark reads in a dark room and outdoors, and the switch inside the installed APK.
+
+## 6h. Row U2: Putt, open course and two themes
+
+docs/style-reference-putt-open.jpg is the reference. Pedro on the built Putt: the rectangular frame "looks very locked, like a prison".
+
+Course
+- The drawn frame goes. The course is the whole screen and the screen edges are the walls. Nothing is drawn along a plain edge.
+- Obstacles can grow out of the edges:
+  - perpendicular stubs: a bar from any edge, 20 to 60 px long, 8 to 12 px thick;
+  - diagonals, true 45 degree lines drawn as stair-steps as built: a corner cut (a triangle across a corner, equal legs of 20 to 45 px) or a wedge from a side edge (two 45 degree sides meeting at a tip 15 to 30 px in, its base on the edge twice that).
+- Free-standing blocks, pegs, sand traps and water stay as built.
+- Per level: difficulty 1 draws 1 or 2 edge pieces, difficulty 2 draws 2 to 4, difficulty 3 draws 3 to 5, on top of what the generator places today. Difficulty stays equal-odds and unseen.
+- The generator keeps its rules (§6c): the tee at the bottom within 20 px of centre, the hole in the top fifth, every level solved by the solver on the same sim.js, the seeded fallback after 30 rejects, levels built ahead of play. The course is no longer inset 6 px or cut 26 px short of the bottom: it is the screen less the safe-area insets.
+- A gap between any two solid pieces, or between a piece and an edge, is either closed or at least 14 px, so the ball cannot wedge.
+- Touches that start in the 24 CSS px side band are still ignored. The ball uses the full width.
+- The safe area: the top wall sits below a display cutout; the tee zone sits above the bottom inset.
+
+Two themes, alternating every level: sand, sea, sand, sea. The first level of every opening is sand (nothing is stored).
+- Sand level: sand ground. Solid pieces are rocks in coral, salmon and pink. Water is a pool in the sea blues; the sand trap is the deeper peach, as built. The hole is the plum disc with its flag. Ball in the ball blue.
+- Sea level: shallow sea ground with glint dashes. Solid pieces are sandbanks with a pale edge. Water becomes a patch of deep water (same rule: back to the shot's origin). The sand trap becomes a pink reef (same slowing). The hole is a ring float. Ball pale with a coral edge.
+- The theme is drawing only. sim.js sees the same shapes and the same numbers in both.
+- Both themes have dark values and obey part A.
+- Between levels: the transition built today, in the next level's colours.
+
+Unchanged: the shot gesture and its 48 px pull, the speeds, the haptics, no text, no counts, nothing stored, the dusk ramp.
+
+Accept
+- No frame is drawn. On the phone the ball visibly bounces off the glass edge on all four sides.
+- 200 generated levels per difficulty at the five tested heights: all solved, every piece inside the rules above, no gap between 0 and 14 px.
+- 3000 random shots: no tunnelling through an edge, a stub or a diagonal, and the ball never leaves the screen.
+- Levels alternate sand and sea from a sand start; the same seed and height give the same level.
+- Contrast passes for both level themes in light and in dark.
+- Screenshots: one sand and one sea level, light and dark, at 360x800, checked by eye against the reference.
+- Bricks, Catch, Stack and shared/ behave exactly as before this row.
+
+## 6i. Row A1: Glide, air hockey against a crab
+
+Pedro (2026-11-26): a beach themed air hockey game against a bot; on the first mockup, "No need for so much empty space on the top, maximize playing space".
+
+docs/style-reference-glide.jpg is the reference (light and dark). "Glide" is the working name; the app draws no text, so the name lives only in the folder and the docs.
+
+Scene
+- The table is the whole screen. A strip of sea across the top, about 5 percent of the height and never more than 16 px, then sand to the bottom edge. No sky. The sun or moon shows only as its reflection on the strip.
+- Side and bottom walls are the screen edges, marked by a thin darker sand band.
+- Opponent goal: an inlet in the tide line between two buoys, 45 px wide, centred. A goal for the player is the puck going out to sea.
+- Player goal: a gap between two small sandcastles on the bottom edge, 45 px wide, centred, above the bottom inset.
+- A dashed centre line and circle. Small shells and starfish as decor, never in the tracked colours.
+- Puck: a shell disc, radius 5. Player mallet: a life ring, radius 9. Bot: a crab, body about 18 px wide, same collision radius as the ring.
+
+Control
+- Relative drag anywhere on screen; the ring is never under the thumb.
+- Horizontal: the shared thumb-travel value of Bricks and Catch (28 percent of the screen width moves the ring across the table). Vertical: the same gain.
+- The ring stays in the player half, the crab in its half. Neither enters a goal mouth.
+- Pause (this game's own, as Bricks): no finger on the screen means paused. Puck, crab and timers freeze within one frame and the frozen scene shows with no marker. Finger down resumes after 250 ms. The first opening starts paused with the puck on the centre spot.
+
+Physics (games/glide/sim.js, no DOM, 120 Hz fixed step, swept collisions)
+- Puck top speed 220 px/s. Drag small enough that a full-speed puck crosses the table twice before it would stop.
+- A mallet hit adds the mallet's velocity along the contact normal, clamped to the top speed. 90 percent bounce off walls.
+- Stall rule: a puck under 15 px/s for 2 s gets a gentle push toward the half it is not in.
+- Pin rule: a puck held against a wall or corner by a mallet is pushed out along the wall; the mallet gives way.
+- Serve: from the centre at 60 px/s toward whoever conceded. The first serve of a session goes to the player.
+
+Bot (games/glide/bot.js, no DOM)
+- Follows the puck's x with a reaction delay of 150 to 300 ms and a speed cap. Steps forward to hit only when the puck is slow and in its half; otherwise holds a line in front of its goal.
+- Every hit carries an aim error.
+- Silent rubber band, three steps each way from the middle: after the crab scores, one step slower and less accurate; after the player scores, one step sharper. No setting, nothing shown, nothing stored.
+- The wind-down rules (§2b) apply: the exit ramp slows the puck's top speed and the crab together, on the shared session clock.
+
+No points, no states
+- A goal is not counted, shown or stored. A soft pulse, a small wave over the goal mouth, then the serve.
+- No win, no loss, no end, no restart, no pause marker, no HUD, no text, no saved state. The edge swipe goes home.
+
+Haptics (always on, no sound, at most one call per 40 ms)
+- Mallet hit: 8 to 14 ms by hit speed. Wall: 6 ms. Goal, either end: 24 ms.
+
+Files
+- games/glide/: index.html, glide.js, sim.js, bot.js. sw.js FILES lists them, so the Android app ships them (tools/build-www.mjs).
+
+Hub
+- A fifth card, drawn like the others from the game's own pieces (ring, shell, crab).
+- hub/cards.js: the grid becomes 2 columns by 3 rows in the thumb-reach zone, by the §5a layout rule, order Bricks, Catch, Putt, Stack, Glide; the sixth cell stays open sand or sky, not a blank card. Every card stays a tap target of at least 40 logical px. If three rows do not fit at the smallest tested height, the sky above gives way first.
+
+Tests
+- tests/glide-sim.mjs: ten simulated minutes with a scripted player that tracks the puck: no NaN, the puck never leaves the table except through a goal mouth, no tunnelling through a mallet or wall, no stall longer than 2 s, goals at both ends, median rally of 6 hits or more, the rubber band stays inside its three steps.
+- The browser suite: layout at the tested sizes, the sea strip height, both goals inside the safe area, contrast in light and dark, the hub with five cards.
+
+Accept
+- Ten minutes of play on the phone: no stuck puck, no pinned puck, the crab can be beaten and can score.
+- The table reaches all four screen edges; the sea strip is the only non-table area.
+- Ring, shell and crab are easy to follow in light and in dark.
+- Mallet, wall and goal haptics can be told apart.
+- Nothing is counted or stored. No text on screen.
+- sw.js lists the new files and its version is bumped.
+- Every other game behaves exactly as before this row.
+
+Only on the phone: thumb travel in two directions, puck speed, how hard the crab feels.
 
 ## 7. Process
 

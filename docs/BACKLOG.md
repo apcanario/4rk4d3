@@ -4,6 +4,10 @@ Rows are defined in docs/PLAN.md. Nothing is built that is not a row here. A don
 
 ## Queue
 
+- D1 Dark theme: the hub and all four games follow the phone's dark mode, live, no toggle; dark token sets, contrast in both themes, the Android shell passes the mode through (PLAN §6g)
+- U2 Putt, open course: no drawn frame, the screen edges are the walls, stubs and diagonals grow out of them; levels alternate sand and sea (PLAN §6h)
+- A1 Glide: beach air hockey against a crab, the table edge to edge, nothing counted; fifth hub card, grid 2 by 3 (PLAN §6i)
+
 ## Done
 
 - X38 Web app updates itself: a page an old service worker controlled loads again, once, when the new worker takes over, so a deploy shows on the first open, not the one after (Pedro: Pages showed an older version than the app); sw.js rlx-v21 (2026-11-26)

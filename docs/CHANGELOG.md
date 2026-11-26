@@ -410,3 +410,15 @@ Pedro: the Pages version was older than the app. The live site was current (sw.j
 Tests: Node sims 219, 181, 71, 109 and 19 checks, 0 failures; the full browser suite passed, apart from one Stack check once (X39, proposed): "a landed drop ... as N bits" failed in the full run and in 1 of 3 isolated Stack runs with the change, in 0 of 13 without it. 8 more runs with the change: 0 failures. Not shown to be unrelated; the change touches only service worker registration. One effect to know: when a new version deploys, a game open at that moment restarts once (no state is saved).
 
 Not checked: the real phone. If an installed copy on a phone still shows the old build after this deploys, it has to be opened twice once (the old worker does not have this code); after that it updates by itself. Models: main chat Sonnet 5.5, no agents.
+
+## 2026-11-26: plan update 3 (docs only)
+
+Models that ran: design chat and upload, both Fable 5.2 (claude-fable-5-2), in one chat on Pedro's instruction ("do that upload from here"). No builder, no reviewer, no code changed.
+
+Added to PLAN: theme hard rules in §2 (theme follows the phone, every colour a token with a light and a dark value, contrast in both themes); the dark look and starting values in §3; rows D1 dark theme (§6g), U2 open Putt with sand and sea levels (§6h), A1 Glide (§6i). Superseded-in-part lines under §5a (the 2x2 grid) and §6c (Putt's frame). Style references: docs/style-reference-glide.jpg (light and dark), docs/style-reference-putt-open.jpg (sand and sea).
+
+Adapted from the design chat's draft to the repo: the contrast rule points at the §3 B4 standard; dark values are given for the tokens as they are in shared/tokens.js after B4 (blue #436495, brick row 7 #FFA2CE), with dark DUSK ends added; the shell paragraph of D1 names the Capacitor app; Putt keeps the built tee, top-fifth hole, 45 degree diagonals and the 30-reject fallback; Glide pauses on thumb lift as Bricks does (the draft let play go on, which would hand the crab free goals).
+
+Not verified: nothing here was built or tested. The dark hex values are starting points and have not been through tests/contrast.mjs. The mockups are design pictures, not on the 135 px grid.
+
+Queue after this update: D1, U2, A1. The Proposed rows (X39, X34, X35, X36) are untouched.
