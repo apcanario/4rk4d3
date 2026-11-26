@@ -36,7 +36,7 @@ export const CONFIG = Object.freeze({
 
 import { LOGICAL_WIDTH, COLORS, BRICK_ROWS, mix, shade, highlight, edge, scenePalette } from '../../shared/tokens.js';
 import { createScreen, initPage, atSideEdge, pixelBody, ditherRow, reducedMotion, MIN_HEIGHT } from '../../shared/pixel.js';
-import { MIN_GAP_MS } from '../../shared/haptics.js';
+import { MIN_GAP_MS, canVibrate, send } from '../../shared/haptics.js';
 import { sessionClock, addPlay, phaseOf, sceneStep, SESSION } from '../../shared/session.js';
 import * as S from './sim.js';
 import * as G from './gen.js';
@@ -291,7 +291,7 @@ function currentStep() {
 
 const dusk = () => clock.active >= SESSION.rampMin * 60;
 
-/* ---------- haptics: Putt vibrates whenever navigator.vibrate exists ---------- */
+/* ---------- haptics: Putt vibrates whenever the device can (native in the app, navigator.vibrate on the web) ---------- */
 
 // The sink tick always goes out. stepTicks (sim.js) already drops a bounce
 // tick when the ball drops within SINK_LOOK_STEPS steps after it: the 40 ms
@@ -302,7 +302,7 @@ const SINK_LOOK_STEPS = Math.ceil(((MIN_GAP_MS + 25) / 1000) * S.STEP_HZ);
 let mustTimer = 0;
 
 function buzz(ms, must = false) {
-  if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return false;
+  if (!canVibrate()) return false;
   const now = performance.now();
   const wait = MIN_GAP_MS - (now - lastBuzz);
   if (wait > 0) { // at most one call per 40 ms (shared limit)
@@ -310,11 +310,7 @@ function buzz(ms, must = false) {
     return false;
   }
   lastBuzz = now;
-  try {
-    return navigator.vibrate(ms);
-  } catch (err) {
-    return false;
-  }
+  return send(ms); // the app's native plugin, or navigator.vibrate (shared/haptics.js)
 }
 
 /* ---------- the level queue: built in the background ---------- */

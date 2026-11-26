@@ -1,2 +1,9 @@
 tests/out/
 __pycache__/
+# The Android app (PLAN §6f): packages, the web copy and build output are not kept.
+android-app/node_modules/
+android-app/www/
+# Never commit a signing key.
+*.jks
+*.keystore
+*.p12

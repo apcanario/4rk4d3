@@ -64,9 +64,9 @@ check(!/\b(localStorage|sessionStorage|indexedDB|document\.cookie|saveClock|cach
 check(!/font\.js|drawFitted|drawText|fillText|drawBackControl/.test(puttCode), 'putt.js draws no text, number or back control');
 check(/const clock = sessionClock\(\)/.test(puttCode) && /addPlay\(clock/.test(puttCode) && !/readClock|beginPlay|isStale/.test(puttCode),
   'putt.js advances the one shared session clock in memory (row X1)');
-check(!/\btick\(|hapticsOn/.test(puttCode) && (puttCode.match(/navigator\.vibrate\(/g) || []).length === 1
+check(!/\btick\(|hapticsOn|navigator\.vibrate/.test(puttCode) && (puttCode.match(/\bsend\(/g) || []).length === 1 && /canVibrate\(\)/.test(puttCode)
   && /MIN_GAP_MS/.test(puttCode) && (puttCode.match(/\bbuzz\(CONFIG\.haptic/g) || []).length === 3,
-  'putt.js vibrates in one place (buzz: whenever navigator.vibrate exists, the shared 40 ms limit, no setting read), for release, bounce and sink');
+  'putt.js vibrates in one place (buzz: whenever the device can, through shared/haptics.js send, native in the app or navigator.vibrate; the shared 40 ms limit, no setting read), for release, bounce and sink');
 check(!/Audio|AudioContext|\.play\(/.test(puttCode), 'putt.js makes no sound');
 const hexIn = (src) => (src.match(/#[0-9A-Fa-f]{6}\b/g) || []);
 check(hexIn(puttCode).length === 0 && hexIn(simSrc).length === 0 && hexIn(genCode).length === 0, 'no colour literals in the game: tokens only');

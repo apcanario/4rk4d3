@@ -9,12 +9,14 @@ import { pixelBody, steppedRect, ditherRow, SUN_RADIUS } from '../shared/pixel.j
 import { SESSION } from '../shared/session.js';
 import { LOOK, spriteGrid, turnUp } from '../games/catch/sim.js';
 
-/** The cards, in grid order: top left, top right, bottom left, bottom right. */
+/** The cards, in grid order: top left, top right, bottom left, bottom right. Each opens its
+ * game's index.html by name: the Android app's local server answers a folder URL with the
+ * hub itself (PLAN §6f). */
 export const CARDS = Object.freeze([
-  Object.freeze({ id: 'bricks', name: 'Bricks', href: 'games/bricks/' }),
-  Object.freeze({ id: 'catch', name: 'Catch', href: 'games/catch/' }),
-  Object.freeze({ id: 'putt', name: 'Putt', href: 'games/putt/' }),
-  Object.freeze({ id: 'stack', name: 'Stack', href: 'games/stack/' }),
+  Object.freeze({ id: 'bricks', name: 'Bricks', href: 'games/bricks/index.html' }),
+  Object.freeze({ id: 'catch', name: 'Catch', href: 'games/catch/index.html' }),
+  Object.freeze({ id: 'putt', name: 'Putt', href: 'games/putt/index.html' }),
+  Object.freeze({ id: 'stack', name: 'Stack', href: 'games/stack/index.html' }),
 ]);
 
 // Layout values (PLAN §5a).

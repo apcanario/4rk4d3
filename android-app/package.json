@@ -1,0 +1,14 @@
+{
+  "name": "rlx-android",
+  "private": true,
+  "description": "RLX as an Android app: Capacitor shell around the web files, bundled (PLAN §6f).",
+  "scripts": {
+    "www": "node ../tools/build-www.mjs",
+    "sync": "node ../tools/build-www.mjs && cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.6.3",
+    "@capacitor/cli": "8.6.3",
+    "@capacitor/core": "8.6.3"
+  }
+}

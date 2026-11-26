@@ -57,7 +57,8 @@ FULL = [(360, 800, DPR), (412, 915, DPR)]
 LAYOUT_ONLY = [(360, 640, DPR), (360, 560, 3), (800, 360, DPR)]
 MAX_AGE = None  # set by --max-age N: serve with Cache-Control: max-age=N (GitHub Pages uses 600)
 SW_VERSION = __import__("re").search(r"const VERSION = '(rlx-v\d+)';", (ROOT / "sw.js").read_text()).group(1)
-SHIPPED_EXCLUDE = {"docs", "tools", "tests", ".git", "README.md", ".gitignore", ".nojekyll"}
+SHIPPED_EXCLUDE = {"docs", "tools", "tests", ".git", "README.md", ".gitignore", ".nojekyll",
+                   "android-app", ".github", "privacy-policy.html"}  # row P3: the app, its CI and the Pages-only policy page
 FAILS = []
 
 
@@ -310,7 +311,7 @@ def run_viewport(browser, base, w, h):
         shown = page.evaluate("(() => { const f = document.querySelector('iframe.game'); const r = f.getBoundingClientRect(); "
                               "return { shown: f.classList.contains('shown'), w: r.width, h: r.height, n: document.querySelectorAll('iframe').length }; })()")
         src = page.evaluate("document.querySelector('iframe.game').getAttribute('src')")
-        check(page.url == base and shown == {"shown": True, "w": w, "h": h, "n": 1} and src == f"games/{game}/",
+        check(page.url == base and shown == {"shown": True, "w": w, "h": h, "n": 1} and src == f"games/{game}/index.html",
               f"[{tag}] tap the {game} card opens {game} ({src}) full screen over the hub (the page stays the hub) {shown}")
         no_hud(g, tag, game)
         back_to_hub(page)
@@ -576,8 +577,14 @@ def static_checks():
                 if ink(r, c) and ink(r, c - 1) + ink(r, c + 1) == 1 and ink(r - 1, c) + ink(r + 1, c) == 1:
                     bad.append((key, r, c))
     check(not bad, f"font: every outer corner is cut {bad}")
-    needed = set("RLX")
-    check(needed <= set(re.findall(r"'(.)':", body)), "font has every character the app icons use (tools/make-icons.py draws RLX)")
+    # Row P3: the web icons are the approved beach-sunset art, no lettering; icon-512 is the Play icon pixel for pixel.
+    from PIL import Image, ImageChops
+    a = Image.open(ROOT / "icons" / "icon-512.png").convert("RGBA")
+    b = Image.open(ROOT / "docs" / "play" / "ic-play-512.png").convert("RGBA")
+    check(a.size == b.size == (512, 512) and ImageChops.difference(a, b).getbbox() is None,
+          "icons/icon-512.png equals docs/play/ic-play-512.png (the approved icon, tools/make-icons.py)")
+    mk = (ROOT / "tools" / "make-icons.py").read_text()
+    check("rlx_art" in mk and "font" not in mk, "tools/make-icons.py draws from tools/rlx_art.py and no font (no lettering)")
 
     # Row X1: no settings, no storage module, fullscreen. Row H2: no page draws text, the hub included.
     check(not (ROOT / "shared" / "settings.js").exists() and not (ROOT / "shared" / "store.js").exists(),
@@ -1920,6 +1927,119 @@ def run_putt(browser, base):
     ctx.close()
 
 
+def run_haptics_native():
+    """tests/haptics-native.mjs: shared/haptics.js with a fake native plugin (row P3)."""
+    res = subprocess.run(["node", str(ROOT / "tests" / "haptics-native.mjs")], capture_output=True, text=True)
+    out = res.stdout.strip().splitlines()
+    for line in out:
+        if line.startswith("FAIL"):
+            print("  " + line)
+    summary = out[-1] if out else res.stderr.strip()
+    check(res.returncode == 0, f"node tests/haptics-native.mjs: {summary}")
+
+
+def android_checks():
+    """Row P3 (PLAN §6f), static: the Android project, the web copy, no secrets in git, the store docs."""
+    import re
+    from PIL import Image
+    app = ROOT / "android-app"
+    cfg = json.loads((app / "capacitor.config.json").read_text())
+    check(cfg["appId"] == "io.github.apcanario.rlx" and cfg["appName"] == "rlx" and cfg["webDir"] == "www",
+          f"capacitor.config.json: package io.github.apcanario.rlx, name rlx, webDir www ({cfg['appId']}, {cfg['appName']})")
+    srv = cfg.get("server", {})
+    check(srv.get("androidScheme") == "https" and srv.get("html5mode") is False and "url" not in srv and not srv.get("cleartext"),
+          f"the app serves its bundled files over https://localhost, html5mode off, no live server URL, no cleartext {srv}")
+    check(cfg.get("android", {}).get("allowMixedContent") is False and cfg.get("android", {}).get("webContentsDebuggingEnabled") is False,
+          "no mixed content, no WebView debugging in the app")
+    pkg = json.loads((app / "package.json").read_text())
+    vers = {k: v for k, v in pkg["dependencies"].items() if k.startswith("@capacitor/")}
+    check(set(vers) == {"@capacitor/core", "@capacitor/cli", "@capacitor/android"} and len(set(vers.values())) == 1
+          and re.fullmatch(r"\d+\.\d+\.\d+", next(iter(vers.values()))) is not None,
+          f"Capacitor packages pinned to one exact version {vers}")
+    check((app / "package-lock.json").is_file(), "android-app/package-lock.json is kept (npm ci in CI)")
+    var = (app / "android" / "variables.gradle").read_text()
+    sdk = {k: int(v) for k, v in re.findall(r"(minSdkVersion|compileSdkVersion|targetSdkVersion) = (\d+)", var)}
+    check(sdk == {"minSdkVersion": 24, "compileSdkVersion": 36, "targetSdkVersion": 36}, f"targetSdk 36, compileSdk 36, minSdk 24 {sdk}")
+    gradle = (app / "android" / "app" / "build.gradle").read_text()
+    check('applicationId "io.github.apcanario.rlx"' in gradle and 'namespace = "io.github.apcanario.rlx"' in gradle
+          and "rootProject.ext.targetSdkVersion" in gradle, "app/build.gradle: application id and namespace io.github.apcanario.rlx")
+    check(not re.search(r"storePassword\s+['\"]|keyPassword\s+['\"]", gradle) and 'System.getenv("RLX_KEYSTORE_PATH")' in gradle,
+          "release signing reads the environment only; no password in build.gradle")
+    man = (app / "android" / "app" / "src" / "main" / "AndroidManifest.xml").read_text()
+    perms = re.findall(r"<uses-permission\s+android:name=\"([^\"]+)\"([^>]*)/>", man)
+    kept = [n for n, rest in perms if 'tools:node="remove"' not in rest]
+    removed = [n for n, rest in perms if 'tools:node="remove"' in rest]
+    check(kept == ["android.permission.VIBRATE"] and "android.permission.INTERNET" in removed,
+          f"the manifest asks for VIBRATE only and removes INTERNET (kept {kept}, removed {removed})")
+    check('android:usesCleartextTraffic="false"' in man and "networkSecurityConfig" not in man, "no cleartext traffic")
+    check('android:screenOrientation="portrait"' in man and man.count("<activity") == 1, "one activity, portrait")
+    check('android:allowBackup="false"' in man and "<provider" not in man, "no backup, no FileProvider")
+    styles = (app / "android" / "app" / "src" / "main" / "res" / "values" / "styles.xml").read_text()
+    check("shortEdges" in styles and "rlx_blank" in styles and "@color/rlx_sky" in styles,
+          "theme: content into the cutout (shortEdges), splash with no icon on the sky colour")
+    colors = (app / "android" / "app" / "src" / "main" / "res" / "values" / "colors.xml").read_text()
+    check("#FFF7EC" in colors, "the launch colour is sky-top #FFF7EC")
+    java = app / "android" / "app" / "src" / "main" / "java" / "io" / "github" / "apcanario" / "rlx"
+    plug = (java / "RlxHapticsPlugin.java").read_text()
+    main_ = (java / "MainActivity.java").read_text()
+    check('@CapacitorPlugin(name = "RlxHaptics")' in plug and "VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE)" in plug
+          and "public void vibrate(PluginCall call)" in plug, "native plugin RlxHaptics.vibrate({ ms }): a one-shot at the default amplitude")
+    check("registerPlugin(RlxHapticsPlugin.class)" in main_ and main_.index("registerPlugin") < main_.index("super.onCreate")
+          and "canGoBack()" in main_ and "goBack()" in main_ and "BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE" in main_
+          and "hide(WindowInsetsCompat.Type.systemBars())" in main_,
+          "MainActivity: the plugin registered, back goes back in the WebView or leaves at the hub, immersive with transient bars")
+    res = app / "android" / "app" / "src" / "main" / "res"
+    adaptive = (res / "mipmap-anydpi-v26" / "ic_launcher.xml").read_text()
+    pngs = sorted(p.relative_to(res).as_posix() for p in res.rglob("*.png"))
+    check("ic_launcher_monochrome" in adaptive and all((res / d / "ic_launcher.png").is_file() for d in
+          ("mipmap-mdpi", "mipmap-hdpi", "mipmap-xhdpi", "mipmap-xxhdpi", "mipmap-xxxhdpi"))
+          and not any("splash" in p or "drawable" in p for p in pngs),
+          f"the approved launcher icons (legacy, round, adaptive with monochrome); none of the template's splash or icon images")
+    # One source of truth: the app's web copy is exactly sw.js FILES (folders skipped), and sw.js is not in it.
+    with tempfile.TemporaryDirectory() as tmp:
+        res_ = subprocess.run(["node", str(ROOT / "tools" / "build-www.mjs"), tmp], capture_output=True, text=True)
+        copied = {p.relative_to(tmp).as_posix() for p in pathlib.Path(tmp).rglob("*") if p.is_file()}
+        same = all((pathlib.Path(tmp) / f).read_bytes() == (ROOT / f).read_bytes() for f in copied)
+    sw = (ROOT / "sw.js").read_text()
+    listed = set(re.findall(r"'\./([^']*)'", sw[sw.index("const FILES"):sw.index("];")]))
+    files = {f for f in listed if f and not f.endswith("/")}
+    check(res_.returncode == 0 and copied == files and same and "sw.js" not in copied and "privacy-policy.html" not in copied,
+          f"tools/build-www.mjs copies exactly sw.js FILES, byte for byte, without sw.js ({len(copied)} files)")
+    www = app / "www"
+    if www.is_dir():
+        have = {p.relative_to(www).as_posix() for p in www.rglob("*") if p.is_file()}
+        check(have == files, "android-app/www (if built) holds exactly sw.js FILES")
+    # Nothing secret in git.
+    tracked = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True).stdout.split()
+    keyish = [f for f in tracked if re.search(r"\.(jks|keystore|p12|pem|pk8)$|key\.properties$|google-services\.json$|\.b64$", f)]
+    check(not keyish, f"no keystore, key or secret file in git {keyish}")
+    leaks = [f for f in tracked if f.endswith((".gradle", ".json", ".yml", ".java", ".xml", ".properties", ".js", ".mjs", ".md"))
+             and re.search(r"BEGIN (RSA |EC )?PRIVATE KEY|storePassword\s*=\s*['\"]", (ROOT / f).read_text(errors="ignore"))]
+    check(not leaks, f"no private key or password in a tracked file {leaks}")
+    gi = (ROOT / ".gitignore").read_text()
+    check("*.jks" in gi and "*.keystore" in gi and "android-app/www/" in gi and "android-app/node_modules/" in gi,
+          ".gitignore refuses keystores, the web copy and node_modules")
+    wf = (ROOT / ".github" / "workflows" / "android.yml").read_text()
+    check(all(k in wf for k in ("RLX_KEYSTORE_B64", "RLX_KEYSTORE_PASSWORD", "RLX_KEY_ALIAS", "RLX_KEY_PASSWORD", "assembleDebug", "bundleRelease"))
+          and "java-version: 21" in wf, "the workflow builds the debug APK and, with the four secrets, the release bundle (JDK 21)")
+    # Store docs.
+    play = ROOT / "docs" / "play"
+    listing = (play / "listing.md").read_text()
+    short = re.search(r"## Short description[^\n]*\n\n    (.+)\n", listing).group(1)
+    check(len(short) <= 80, f"short description {len(short)} characters (at most 80): {short!r}")
+    check((ROOT / "privacy-policy.html").read_bytes() == (play / "privacy-policy.html").read_bytes(),
+          "privacy-policy.html (served by Pages) and docs/play/privacy-policy.html are the same")
+    pp = (ROOT / "privacy-policy.html").read_text()
+    check("<script" not in pp and "http" not in pp.replace("http-equiv", ""), "the privacy policy page loads nothing and has no script")
+    icon = Image.open(play / "ic-play-512.png")
+    fg = Image.open(play / "feature-graphic-1024x500.jpg")
+    check(icon.size == (512, 512) and icon.mode in ("RGBA", "RGB") and fg.size == (1024, 500) and fg.format == "JPEG",
+          f"Play icon 512x512 PNG ({icon.mode}), feature graphic 1024x500 JPEG")
+    shots = sorted((play / "screenshots").glob("*.png"))
+    ok = [p.name for p in shots if Image.open(p).size == (1080, 2400) and (Image.open(p).mode == "RGB")]
+    check(4 <= len(shots) <= 6 and len(ok) == len(shots), f"4 to 6 phone screenshots, 1080x2400 RGB PNG, no alpha {ok}")
+
+
 def run_stack_sim():
     """tests/stack-sim.mjs: sim.js in Node (the 15-minute run and more)."""
     res = subprocess.run(["node", str(ROOT / "tests" / "stack-sim.mjs")], capture_output=True, text=True)
@@ -2349,7 +2469,7 @@ class Hosted:
 
 def game_frame(page, name):
     for f in page.frames:
-        if f.url.split("?")[0].endswith(f"/games/{name}/"):
+        if f.url.split("?")[0].endswith((f"/games/{name}/", f"/games/{name}/index.html")):
             return f
     return None
 
@@ -2430,8 +2550,8 @@ def main():
     # --only a,b runs just the named parts (for a quick look while working; the full run is the check).
     only = set(sys.argv[sys.argv.index("--only") + 1].split(",")) if "--only" in sys.argv else None
     want = lambda name: only is None or name in only
-    for name, fn in (("static", static_checks), ("bricks-sim", run_node_sim), ("catch-sim", run_catch_sim),
-                     ("putt-sim", run_putt_sim), ("stack-sim", run_stack_sim)):
+    for name, fn in (("static", static_checks), ("android", android_checks), ("bricks-sim", run_node_sim), ("catch-sim", run_catch_sim),
+                     ("putt-sim", run_putt_sim), ("stack-sim", run_stack_sim), ("haptics-native", run_haptics_native)):
         if want(name):
             fn()
     httpd, base = serve(ROOT)

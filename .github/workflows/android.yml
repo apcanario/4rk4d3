@@ -1,0 +1,163 @@
+# rlx Android app (PLAN §6f, docs/PLAY.md): a debug APK on every push to main
+# that touches the app or its shipped files, and on demand; a signed release
+# bundle (.aab) too when the four signing secrets exist. A smoke job installs
+# the debug APK on an emulator and walks hub, game and back.
+name: android
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android-app/**'
+      - 'index.html'
+      - 'manifest.webmanifest'
+      - 'sw.js'
+      - 'shared/**'
+      - 'hub/**'
+      - 'games/**'
+      - 'icons/**'
+      - 'tools/build-www.mjs'
+      - 'tools/android-smoke.sh'
+      - 'tools/android-smoke-check.py'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RLX_VERSION_CODE: ${{ github.run_number }}
+      HAS_UPLOAD_KEY: ${{ secrets.RLX_KEYSTORE_B64 != '' && secrets.RLX_KEYSTORE_PASSWORD != '' && secrets.RLX_KEY_ALIAS != '' && secrets.RLX_KEY_PASSWORD != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: android-app/package-lock.json
+
+      - name: Web tests (Node)
+        run: |
+          for t in bricks-sim catch-sim putt-sim stack-sim haptics-native; do node tests/$t.mjs > /tmp/$t.log || { tail -40 /tmp/$t.log; exit 1; }; tail -1 /tmp/$t.log; done
+
+      - name: Copy the shipped web files (sw.js FILES) into the app
+        run: node tools/build-www.mjs
+
+      - name: Capacitor sync
+        working-directory: android-app
+        run: |
+          npm ci --no-audit --no-fund
+          npx cap sync android
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Build the debug APK
+        working-directory: android-app/android
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Check the built app (package, SDK levels, permissions, files)
+        run: |
+          APK=android-app/android/app/build/outputs/apk/debug/app-debug.apk
+          AAPT2=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)aapt2
+          "$AAPT2" dump badging "$APK" > /tmp/badging.txt
+          "$AAPT2" dump permissions "$APK" > /tmp/perms.txt
+          cat /tmp/perms.txt
+          grep -E "^package: name='io.github.apcanario.rlx'" /tmp/badging.txt
+          grep -E "^(sdkVersion|targetSdkVersion|compileSdkVersion)|^application-label|launchable-activity" /tmp/badging.txt || true
+          grep -q "targetSdkVersion:'36'" /tmp/badging.txt
+          grep -q "sdkVersion:'24'" /tmp/badging.txt
+          grep -q "application-label:'rlx'" /tmp/badging.txt
+          # Only VIBRATE (Android adds a signature-level DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION of the app's own; it is not a user permission).
+          others=$(grep "^uses-permission:" /tmp/perms.txt | grep -v "name='android.permission.VIBRATE'" | grep -v "name='io.github.apcanario.rlx.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'" || true)
+          if [ -n "$others" ]; then echo "unexpected permissions: $others"; exit 1; fi
+          grep -q "name='android.permission.VIBRATE'" /tmp/perms.txt
+          # The web files in the APK are exactly sw.js FILES, and sw.js is not among them.
+          unzip -Z1 "$APK" | grep '^assets/public/' | grep -v '/$' | sed 's|^assets/public/||' | sort > /tmp/apk-files.txt
+          node -e "import('./tools/build-www.mjs').then(m => console.log(m.shippedFiles().sort().join('\n')))" | sort > /tmp/sw-files.txt
+          diff /tmp/sw-files.txt /tmp/apk-files.txt
+          echo "APK checks passed: $(wc -l < /tmp/apk-files.txt) web files, VIBRATE only, targetSdk 36" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rlx-debug-apk
+          path: android-app/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Build the signed release bundle
+        if: env.HAS_UPLOAD_KEY == 'true'
+        working-directory: android-app/android
+        env:
+          RLX_KEYSTORE_B64: ${{ secrets.RLX_KEYSTORE_B64 }}
+          RLX_KEYSTORE_PASSWORD: ${{ secrets.RLX_KEYSTORE_PASSWORD }}
+          RLX_KEY_ALIAS: ${{ secrets.RLX_KEY_ALIAS }}
+          RLX_KEY_PASSWORD: ${{ secrets.RLX_KEY_PASSWORD }}
+        run: |
+          export RLX_KEYSTORE_PATH="$RUNNER_TEMP/rlx-upload.jks"
+          printf '%s' "$RLX_KEYSTORE_B64" | base64 -d > "$RLX_KEYSTORE_PATH"
+          trap 'rm -f "$RLX_KEYSTORE_PATH"' EXIT
+          ./gradlew --no-daemon bundleRelease
+          jarsigner -verify app/build/outputs/bundle/release/app-release.aab > /dev/null
+          echo "Signed release bundle built (versionCode $RLX_VERSION_CODE)." >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: env.HAS_UPLOAD_KEY == 'true'
+        with:
+          name: rlx-release-aab
+          path: android-app/android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+
+      - name: No upload key
+        if: env.HAS_UPLOAD_KEY != 'true'
+        run: echo "No release bundle: the four RLX_* signing secrets are not all set (docs/PLAY.md). Debug APK only." >> "$GITHUB_STEP_SUMMARY"
+
+  smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: rlx-debug-apk
+          path: apk
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - run: python3 -m pip install --quiet pillow
+
+      - name: Install, open the hub, a game, back, back
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: bash tools/android-smoke.sh apk/app-debug.apk smoke-out
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rlx-smoke
+          path: smoke-out

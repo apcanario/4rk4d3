@@ -37,7 +37,7 @@ export const CONFIG = Object.freeze({
 
 import { COLORS, BRICK_ROWS, edge } from '../../shared/tokens.js';
 import { createScreen, initPage, atSideEdge, drawScene, pixelBody, steppedRect, reducedMotion, SEA_HEIGHT } from '../../shared/pixel.js';
-import { MIN_GAP_MS } from '../../shared/haptics.js';
+import { MIN_GAP_MS, canVibrate, send } from '../../shared/haptics.js';
 import { sessionClock, watchReset, addPlay, phaseOf, sceneStep, slowdownOf, SESSION } from '../../shared/session.js';
 import * as S from './sim.js';
 
@@ -71,18 +71,14 @@ const clockWasReset = watchReset(clock); // true once after each reset: the pace
 const slow = () => slowdownOf(clock.active);
 const currentStep = () => sceneStep(phaseOf(clock.active));
 
-/* ---------- haptics: Stack vibrates whenever navigator.vibrate exists ---------- */
+/* ---------- haptics: Stack vibrates whenever the device can (native in the app, navigator.vibrate on the web) ---------- */
 
 function buzz(ms) {
-  if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return false;
+  if (!canVibrate()) return false;
   const now = performance.now();
   if (now - lastBuzz < MIN_GAP_MS) return false; // at most one call per 40 ms (shared limit)
   lastBuzz = now;
-  try {
-    return navigator.vibrate(ms);
-  } catch (err) {
-    return false;
-  }
+  return send(ms); // the app's native plugin, or navigator.vibrate (shared/haptics.js)
 }
 
 /* ---------- drawing ---------- */

@@ -4,6 +4,7 @@
 
 import { LOGICAL_WIDTH, COLORS, SKY_BANDS, mix, shade, highlight, scenePalette } from './tokens.js';
 import { SESSION, sceneStep } from './session.js';
+import { inApp } from './native.js';
 
 export const SEA_HEIGHT = 42;
 export const SUN_RADIUS = 24;
@@ -420,7 +421,8 @@ export function initPage() {
   addEventListener('touchstart', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
   addEventListener('wheel', (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
 
-  if ('serviceWorker' in navigator && isSecureContext) {
+  // Not in the Android app (PLAN §6f): its files are in the APK and sw.js is not shipped there.
+  if ('serviceWorker' in navigator && isSecureContext && !inApp()) {
     const swUrl = new URL('../sw.js', import.meta.url);
     const scope = new URL('../', import.meta.url);
     navigator.serviceWorker

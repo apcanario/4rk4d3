@@ -46,9 +46,9 @@ check(!/\b(localStorage|sessionStorage|indexedDB|document\.cookie|saveClock|cach
   && !/store\.js|settings\.js/.test(code), 'stack.js writes nothing: no storage, no saveClock, no store.js or settings.js');
 check(!/font\.js|drawFitted|drawText|fillText|drawBackControl|publishHits|dataset\.(hits|hud|layout)/.test(code),
   'stack.js draws no text, number, button or back control');
-check(!/\btick\(|hapticsOn/.test(code) && (code.match(/navigator\.vibrate\(/g) || []).length === 1 && /MIN_GAP_MS/.test(code)
+check(!/\btick\(|hapticsOn|navigator\.vibrate/.test(code) && (code.match(/\bsend\(/g) || []).length === 1 && /canVibrate\(\)/.test(code) && /MIN_GAP_MS/.test(code)
   && /buzz\(CONFIG\.hapticSnapMs\)/.test(code) && /buzz\(CONFIG\.hapticLandMs\)/.test(code) && (code.match(/\bbuzz\(/g) || []).length === 3,
-  'stack.js vibrates in one place (buzz: whenever navigator.vibrate exists, the shared 40 ms limit, no setting read), for a landed and a near-perfect drop only');
+  'stack.js vibrates in one place (buzz: whenever the device can, through shared/haptics.js send, native in the app or navigator.vibrate; the shared 40 ms limit, no setting read), for a landed and a near-perfect drop only');
 check(!/Audio|AudioContext|\.play\(/.test(code), 'stack.js makes no sound');
 check(/if \(!e\.isPrimary \|\| /.test(code), 'only the primary pointer drops the block (a second finger does nothing)');
 check(/horizon: s\.H - SEA_HEIGHT/.test(code) && /SEA_HEIGHT \} from '\.\.\/\.\.\/shared\/pixel\.js'/.test(code), 'the horizon comes from the shared SEA_HEIGHT');

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- sky-top in shared/tokens.js, the manifest's background_color: the launch and window colour. -->
+    <color name="rlx_sky">#FFF7EC</color>
+</resources>
