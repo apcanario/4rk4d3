@@ -4,10 +4,9 @@ Rows are defined in docs/PLAN.md. Nothing is built that is not a row here. A don
 
 ## Queue
 
-- P3 Android app for Google Play: Capacitor shell with the game files bundled, native haptics, immersive portrait, back to the hub and out, targetSdk 36, only VIBRATE; CI debug APK and signed .aab; store docs and screenshots (PLAN §6f; Pedro's decision 2026-11-26)
-
 ## Done
 
+- P3 Android app for Google Play, built and reviewed (2026-11-26): Capacitor shell, bundled game files, native haptics, immersive portrait, back to hub and out, targetSdk 36, VIBRATE only; CI debug APK (green) and signed .aab when the four secrets exist; store docs and screenshots. Pedro installed the debug APK on his phone: "Works so good!!! It's perfect." That confirms it installs, runs and plays well, nothing more. Not confirmed, carried in X34: vibration strength and whether the system touch-feedback switch silences it, outdoor brightness, cutout, rotation, fps, offline, edge-swipe back. Still his to do: Play developer account, upload key and the four secrets, CONTACT_EMAIL in three files, closed test (docs/PLAY.md)
 - H1 Shell and hub (2026-11-25)
 - B1 Bricks (2026-11-25)
 - B1a Bricks haptics do not fire on Pedro's device (2026-11-25)
@@ -34,6 +33,6 @@ Rows are defined in docs/PLAN.md. Nothing is built that is not a row here. A don
 
 ## Proposed
 
-- X34 Device check of the low grid hub (card size and tap comfort, keel card edge too heavy or not, sun and sky look), and of what Pedro's report did not cover (PLAN §8 list); in the browser or in the P3 app
+- X34 Device check of the low grid hub (card size and tap comfort, keel card edge too heavy or not, sun and sky look), and of what Pedro's report did not cover (PLAN §8 list); in the browser or in the installed app; Pedro's first install (2026-11-26) confirmed only that it installs, runs and plays well
 - X35 Remove shared/font.js: no page loads it since H2 and, since P3, tools/make-icons.py draws the icons from tools/rlx_art.py; drop it from sw.js FILES and retire the font checks in tests/check.py
 - X36 P3 hardening: pin actions by SHA, validate the Gradle wrapper, an API 36 smoke run for predictive back
