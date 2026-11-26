@@ -1,5 +1,6 @@
 // Colour measures for the readability checks (row B4 contrast pass), shared by
-// tests/bricks-sim.mjs and tests/catch-sim.mjs; tests/check.py has the same in
+// tests/bricks-sim.mjs, tests/catch-sim.mjs, tests/putt-sim.mjs and
+// tests/stack-sim.mjs; tests/check.py has the same in
 // Python. Not shipped.
 //
 // The standard (docs/CHANGELOG.md, 2026-11-25, B4):
@@ -11,7 +12,8 @@
 //     when outlined (hub tile labels), against its outline. The hull's rows
 //     below the horizon are drawn in the keel colour and measured against
 //     the sea.
-// (b) bricks, things to catch, nasty ones, fish, sail and jib, and the
+// (b) bricks, Stack's floors and overhang bits (fill or their 1 px edge in
+//     edge()), things to catch, nasty ones, fish, sail and jib, and the
 //     effects named in the B4 review (the sky-event glint, the spray under a
 //     leaping fish, the ink cloud against the sea it darkens): CIE76 delta E
 //     >= 20 against every scene colour behind them, fill or 1 px outline.

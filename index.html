@@ -13,7 +13,7 @@
 <link rel="stylesheet" href="shared/theme.css">
 </head>
 <body>
-<canvas class="screen" id="screen" role="img" aria-label="RLX: Bricks, Catch and Putt. Stack coming soon. Haptics setting."></canvas>
+<canvas class="screen" id="screen" role="img" aria-label="RLX: Bricks, Catch, Putt and Stack. Haptics setting."></canvas>
 <script type="module">
 import { COLORS, mix, edge } from './shared/tokens.js';
 import { drawFitted, fitSize, measure } from './shared/font.js';
@@ -30,7 +30,7 @@ const TILES = [
   { id: 'bricks', label: 'BRICKS', active: true, href: 'games/bricks/' },
   { id: 'catch', label: 'CATCH', active: true, href: 'games/catch/' },
   { id: 'putt', label: 'PUTT', active: true, href: 'games/putt/' },
-  { id: 'stack', label: 'STACK', active: false },
+  { id: 'stack', label: 'STACK', active: true, href: 'games/stack/' },
 ];
 
 // Tile height and gap, largest first; short screens take a smaller pair

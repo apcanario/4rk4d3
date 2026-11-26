@@ -216,3 +216,21 @@ Judged acceptable by the reviewer: no drawScene (sea full height, no sun or star
 Not verifiable headless: no wait on the first opening and between holes on the phone, the three ticks by feel, Chrome's vibrate gate, the back gesture, touch feel, fps, reduced motion in a browser.
 
 Deferred: X18 (idle window), X19 (device pass), X20 (PLAN amendments for the choices made where it is silent), X21 (rule number in §6c).
+
+## 2026-11-26: S1 Stack
+
+Models that ran: main chat Sonnet 5.5 (claude-sonnet-5-5); builder Opus 5.5 (claude-opus-5-5); reviewer Opus 5.5 (claude-opus-5-5), which had not seen the build; fixes applied by the builder agent, Opus 5.5.
+
+Built: games/stack/ (index.html, stack.js, sim.js; sim.js has no DOM and no imports) per PLAN §6d: tap anywhere drops the sliding block, overhang breaks into pixel bits, near-perfect drop within 2 px snaps and regains 2 px up to 60, a complete miss plops and the same block returns, a floor under 12 px is followed by a fresh 60 px block, the camera slides the tower down one floor per drop past mid-screen, pace 40 to 80 from 50 with the dusk ceiling falling 80 to 40 over minutes 10 to 12, haptics 8 ms landed and 16 ms near-perfect with the shared 40 ms gap. No HUD, no text, nothing stored; touches within 24 CSS px of an edge are ignored. Shared clock, scene and tokens reused and unchanged (git diff shared/ empty). Hub STACK tile is active; service worker rlx-v12. Tests: tests/stack-sim.mjs (109 checks, 15 simulated minutes), Stack checks in tests/check.py (354 in all), bricks-sim 230, catch-sim 189, putt-sim 69, all passing.
+
+Review findings and fixes (no blockers):
+1. should-fix, a block already sliding never followed the dusk ceiling down, so an idle player was still at 80 at minute 13. The sliding block's speed and the pace are now clamped to the ceiling every step; a test covers an untapped block through minutes 10 to 13. Fixed.
+2. should-fix, a taller screen after the tower had been trimmed left the tower floating above the horizon. Resize now also lowers the tower until its lowest kept floor reaches the horizon; four resize round trips are tested. Fixed.
+3. nit, a second finger dropped an unaimed block. Non-primary pointers are ignored; real two-touch check added. Fixed.
+4. nit, after a clock reset a sliding block keeps its old speed until the next drop. Kept, as in Bricks X8(c); proposed in X22.
+5. nit, the horizon was a literal H - 42. Now SEA_HEIGHT from shared/pixel.js. Fixed.
+6. nit, Stack's time is in memory only and is lost on return to the hub, as in Putt. Left to X1.
+
+Not verifiable headless: tap-to-drop latency and feel, the 8 and 16 ms ticks told apart by feel, Chrome's vibrate gate, fps, the camera slide, the back gesture, the look at dusk and outdoors, reduced motion on a device, split screen and rotation.
+
+Deferred: X22 (PLAN amendments), X23 (device pass).
