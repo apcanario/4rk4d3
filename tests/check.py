@@ -511,7 +511,7 @@ def run_hub_grid(browser, base):
                         tap(page, game)
                         page.wait_for_function("document.body.dataset.game", timeout=10000)
                         got = page.evaluate("[document.body.dataset.game, document.querySelector('iframe.game').getAttribute('src')]")
-                        check(got == [game, f"games/{game}/"], f"[{tag}] the {game} card opens {game} {got}")
+                        check(got == [game, f"games/{game}/index.html"], f"[{tag}] the {game} card opens {game} {got}")
                         back_to_hub(page)
                     # A touch that begins in the side band (the back gesture) opens nothing, even level with a card.
                     y = hits(page)["bricks"]["y"]
@@ -2415,7 +2415,7 @@ def run_version_bump(browser):
     sw.write_text(sw.read_text().replace(f"const VERSION = '{SW_VERSION}';", f"const VERSION = '{nxt}';"))
     # Change a shipped file so we can see the new deploy arrive.
     hub = site / "index.html"
-    hub.write_text(hub.read_text().replace("<title>RLX</title>", "<title>RLX new</title>"))
+    hub.write_text(hub.read_text().replace("<title>rlx</title>", "<title>rlx new</title>"))
     page.reload()  # navigation triggers the update check
     deadline = time.time() + 10
     after = before
@@ -2427,7 +2427,7 @@ def run_version_bump(browser):
     check(before == [SW_VERSION] and after == [nxt], f"version bump replaces the cache {before} -> {after}")
     page.reload()
     page.wait_for_timeout(300)
-    check(page.title() == "RLX new", f"after the bump the next load serves the new deploy ({page.title()})")
+    check(page.title() == "rlx new", f"after the bump the next load serves the new deploy ({page.title()})")
     ctx.close()
     httpd.shutdown()
 

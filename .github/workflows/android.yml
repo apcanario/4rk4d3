@@ -1,7 +1,7 @@
 # rlx Android app (PLAN §6f, docs/PLAY.md): a debug APK on every push to main
 # that touches the app or its shipped files, and on demand; a signed release
-# bundle (.aab) too when the four signing secrets exist. A smoke job installs
-# the debug APK on an emulator and walks hub, game and back.
+# bundle (.aab) too when the four signing secrets exist. On a manual run only,
+# a smoke job installs the debug APK on an emulator and walks hub, game and back.
 name: android
 
 on:
@@ -132,8 +132,10 @@ jobs:
         run: |
           echo "No release bundle: the four RLX_* signing secrets are not all set (docs/PLAY.md). Debug APK only." >> "$GITHUB_STEP_SUMMARY"
 
+  # Optional, manual runs only (Actions, android, Run workflow): not part of a push build.
   smoke:
     needs: build
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

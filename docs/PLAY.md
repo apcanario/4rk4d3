@@ -55,7 +55,11 @@ The secrets are only read by the workflow on this repo's main branch and manual 
 
 Every later update: push to main, take the new `app-release.aab` (its versionCode is the run number, so it always goes up), upload it to a track.
 
-## 5. Build locally (optional)
+## 5. Optional emulator check (manual)
+
+Actions, android, Run workflow, branch main: besides the build, a manual run starts the **smoke** job. It boots an Android 15 emulator (Pixel 6 screen), installs the debug APK, opens the hub, taps the Stack card and drops a block, goes back, opens Bricks, goes back, and presses back once more at the hub (tools/android-smoke.sh, judged by tools/android-smoke-check.py). The run log shows each check and the emulator's vibrator log; the screenshots are in the **rlx-smoke** artifact. Pushes do not run it.
+
+## 6. Build locally (optional)
 
 Needs Node 22, JDK 21 and the Android SDK (platform 36, build tools).
 
