@@ -394,3 +394,11 @@ Written for Pedro's portfolio case study (docs/ rows are the record of what was 
 10. **The first real test (11:21).** Pedro installed the debug APK from the CI artifact: "Works so good!!! It's perfect." What that confirms: it installs, runs and plays well on his phone. Not confirmed: vibration strength (and whether the system's touch-feedback switch silences it), outdoor brightness, cutout and rotation.
 
 Process notes worth keeping: Pedro never approves proposals, he vetoes, and short decisive sentences ("close them all", "just do it right") were enough to steer large pieces of work; every unit got a reviewer that had not seen the build; tuning rows (one constant each) skipped the reviewer; a row is only closed with an honest list of what was not checked; and the one thing the process cannot do is play the game on the phone, which is why "feel report" is the input the whole tuning loop waited for.
+
+## 2026-11-26: X37 social teaser assets
+
+Added: docs/social/rlx-story-1080x1920.png (Instagram story), docs/social/rlx-post-1080x1440.png (3:4 post), docs/social/caption-teaser.md, tools/social-teaser-story.py and tools/social-teaser-post.py (they regenerate both images, byte for byte, from tools/rlx_art.py and shared/font.js).
+
+Design, from Pedro's feedback in order: no system fonts, everything on the pixel grid; text "rlx", "games for no brain power", "coming soon"; "coming soon" lower case in the same ink as the rest, in the water, no box ("it's not shouting, it's whispering"); the games shown as a composition, not scattered pieces: bricks as clouds with a blue ball and trail knocking one out (Bricks), a piece falling toward the sailboat (Catch), a ball with a trail rolling to the hole (Putt); the stack tower dropped. The beach is raised so the Putt scene clears Instagram's reply bar.
+
+Pedro confirmed the caption's "free, no ads" and "nothing to win or lose" as true. No app file changed; sw.js cache unchanged. Models: main chat Sonnet 5.5, no agents.
