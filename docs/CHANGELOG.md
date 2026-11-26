@@ -402,3 +402,11 @@ Added: docs/social/rlx-story-1080x1920.png (Instagram story), docs/social/rlx-po
 Design, from Pedro's feedback in order: no system fonts, everything on the pixel grid; text "rlx", "games for no brain power", "coming soon"; "coming soon" lower case in the same ink as the rest, in the water, no box ("it's not shouting, it's whispering"); the games shown as a composition, not scattered pieces: bricks as clouds with a blue ball and trail knocking one out (Bricks), a piece falling toward the sailboat (Catch), a ball with a trail rolling to the hole (Putt); the stack tower dropped. The beach is raised so the Putt scene clears Instagram's reply bar.
 
 Pedro confirmed the caption's "free, no ads" and "nothing to win or lose" as true. No app file changed; sw.js cache unchanged. Models: main chat Sonnet 5.5, no agents.
+
+## 2026-11-26: X38 the web app updates itself
+
+Pedro: the Pages version was older than the app. The live site was current (sw.js rlx-v20, checked with a cache-busting URL); the cause is the cache-first service worker: a new version installed on one visit and showed on the next, so the first open after a deploy always showed the old build. Changed: shared/pixel.js reloads the page once when a new worker takes over a page that an old worker controlled (no reload on a first visit, none in the Android app, which does not register the worker). tests/check.py: the version-bump check now expects the open page to load the new deploy by itself, then once more on the next load; its cache poll tolerates the reload. sw.js cache bumped to rlx-v21.
+
+Tests: Node sims 219, 181, 71, 109 and 19 checks, 0 failures; the full browser suite passed, apart from one Stack check once (X39, proposed): "a landed drop ... as N bits" failed in the full run and in 1 of 3 isolated Stack runs with the change, in 0 of 13 without it. 8 more runs with the change: 0 failures. Not shown to be unrelated; the change touches only service worker registration. One effect to know: when a new version deploys, a game open at that moment restarts once (no state is saved).
+
+Not checked: the real phone. If an installed copy on a phone still shows the old build after this deploys, it has to be opened twice once (the old worker does not have this code); after that it updates by itself. Models: main chat Sonnet 5.5, no agents.

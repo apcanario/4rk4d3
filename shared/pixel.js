@@ -428,5 +428,15 @@ export function initPage() {
     navigator.serviceWorker
       .register(swUrl.href, { scope: scope.pathname, updateViaCache: 'none' })
       .catch(() => {});
+    // The cache is first, so a new version used to show only from the launch after it installed.
+    // When a new worker takes over a page that an old one controlled, load the page again, once.
+    if (navigator.serviceWorker.controller) {
+      let again = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (again) return;
+        again = true;
+        location.reload();
+      });
+    }
   }
 }

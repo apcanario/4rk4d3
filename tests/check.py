@@ -2424,14 +2424,29 @@ def run_version_bump(browser):
     deadline = time.time() + 10
     after = before
     while time.time() < deadline:
-        after = page.evaluate("caches.keys()")
+        try:
+            after = page.evaluate("caches.keys()")
+        except Exception:
+            after = before  # the page is reloading itself as the new worker takes over
         if after == [nxt]:
             break
         page.wait_for_timeout(200)
     check(before == [SW_VERSION] and after == [nxt], f"version bump replaces the cache {before} -> {after}")
+    # The page reloads itself once when the new worker takes over: no second launch is needed.
+    title = ""
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        try:
+            title = page.title()
+        except Exception:
+            title = ""
+        if title == "rlx new":
+            break
+        page.wait_for_timeout(200)
+    check(title == "rlx new", f"after the bump the open page loads the new deploy by itself ({title})")
     page.reload()
     page.wait_for_timeout(300)
-    check(page.title() == "rlx new", f"after the bump the next load serves the new deploy ({page.title()})")
+    check(page.title() == "rlx new", f"and the next load serves it too ({page.title()})")
     ctx.close()
     httpd.shutdown()
 
