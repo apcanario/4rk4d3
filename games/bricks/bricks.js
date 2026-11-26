@@ -42,11 +42,7 @@ const PARTICLE_S = 0.3;
 const SPLASH_S = 0.3;
 const TRAIL = 3;
 const TRAIL_SPACING = 4; // px of travel between trail squares
-const RING_R = 7;
 const SPLASH = ['#.....#', '.#.#.#.', '..###..'];
-// The pause ring's chevrons, drawn as pixels (the shapes of the font's < and >).
-const CHEVRON_L = ['...#', '..#.', '.#..', '#...', '.#..', '..#.', '...#'];
-const CHEVRON_R = CHEVRON_L.map((row) => [...row].reverse().join(''));
 
 const canvas = document.getElementById('screen');
 let game = null;
@@ -80,7 +76,6 @@ function sprite(w, h, color, steps) {
 const BRICK_SPRITES = BRICK_ROWS.map((c) => sprite(P.BRICK_W, P.BRICK_H, c, 1));
 const PARTICLE_HI = BRICK_ROWS.map((c) => highlight(c));
 const TRAIL_COLOR = highlight(COLORS.blue);
-const RING_FILL = highlight(SEA_BANDS[1]);
 const SPLASH_TOP = COLORS.cloud;
 const SPLASH_BODY = highlight(SEA_BANDS[0]);
 const PADDLE_EDGE = edge(COLORS.coral); // B4: the paddle's 1 px edge all round
@@ -91,12 +86,11 @@ function layout(s) {
   // No HUD: the field takes the whole screen down from the top.
   const horizon = s.H - SEA_HEIGHT;
   const geo = P.geometry(s.W, TOP + s.safe.top, horizon);
-  const ring = { x: Math.floor(s.W / 2), y: Math.min(horizon + 21, s.H - s.safe.bottom - RING_R - 2) };
   // Thumb travel (PLAN §6a, §6e): a drag across INPUT.thumbTravel of the screen
   // width carries the paddle from one end of the field to the other. The finger
   // is measured in logical px, so the screen width is too.
   sensitivity = thumbSensitivity(geo.W - P.PADDLE_W, canvas.width / s.scale);
-  return { geo, ring };
+  return { geo };
 }
 
 function paintBackground(s, phase) {
@@ -147,40 +141,6 @@ function drawBricks(ctx) {
   ctx.restore();
 }
 
-function drawRing(ctx) {
-  const { x, y } = rects.ring;
-  const disc = (r, color) => {
-    ctx.fillStyle = color;
-    for (let dy = -r; dy <= r; dy++) {
-      const half = Math.floor(Math.sqrt((r + 0.5) * (r + 0.5) - dy * dy));
-      ctx.fillRect(x - half, y + dy, half * 2 + 1, 1);
-    }
-  };
-  // B4: a white ring in a 1 px ink ring, white chevrons in a 1 px ink
-  // outline; on every sea colour one of the two stands off it.
-  disc(RING_R + 1, COLORS.ink);
-  disc(RING_R, COLORS.cloud);
-  disc(RING_R - 1, RING_FILL);
-  chevron(ctx, CHEVRON_L, x - RING_R - 8 - CHEVRON_L[0].length, y - 3);
-  chevron(ctx, CHEVRON_R, x + RING_R + 9, y - 3);
-}
-
-/** A white chevron in a 1 px ink outline. */
-function chevron(ctx, rows, x0, y0) {
-  const ink = (c, r) => r >= 0 && r < rows.length && c >= 0 && c < rows[r].length && rows[r][c] === '#';
-  ctx.fillStyle = COLORS.ink;
-  for (let r = -1; r <= rows.length; r++) {
-    for (let c = -1; c <= rows[0].length; c++) {
-      if (ink(c, r)) continue;
-      let near = false;
-      for (let dr = -1; dr <= 1 && !near; dr++) for (let dc = -1; dc <= 1; dc++) if (ink(c + dc, r + dr)) near = true;
-      if (near) ctx.fillRect(x0 + c, y0 + r, 1, 1);
-    }
-  }
-  ctx.fillStyle = COLORS.cloud;
-  rows.forEach((row, r) => { for (let c = 0; c < row.length; c++) if (row[c] === '#') ctx.fillRect(x0 + c, y0 + r, 1, 1); });
-}
-
 function draw(ctx, s) {
   const key = `${s.W}x${s.H}@${s.scale}:${s.safe.top},${s.safe.right},${s.safe.bottom},${s.safe.left}`;
   const phase = phaseOf(clock.active);
@@ -225,7 +185,7 @@ function draw(ctx, s) {
       for (let c = 0; c < row.length; c++) if (row[c] === '#') ctx.fillRect(x0 + c, g.horizon - 3 + r, 1, 1);
     });
   }
-  if (mode === 'paused') drawRing(ctx);
+  // X33 (2026-11-26): no pause marker; a paused frame is the scene and the pieces only.
   layoutKey = key;
 }
 

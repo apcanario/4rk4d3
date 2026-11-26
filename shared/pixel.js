@@ -302,9 +302,13 @@ export function starsAt(step) {
  * stars are spread over. Returns { horizon, step }.
  */
 export function drawScene(ctx, W, H, {
-  clouds = defaultClouds(H), sunX = 96, phase = 0, stars: starSky = null,
+  clouds = defaultClouds(H), sunX = 96, phase = 0, stars: starSky = null, seaHeight = SEA_HEIGHT,
+  sunRadius = SUN_RADIUS, glintDepth = SEA_HEIGHT,
 } = {}) {
-  const horizon = H - SEA_HEIGHT;
+  // seaHeight, sunRadius, glintDepth: the games use the defaults; the hub (row H2)
+  // raises the horizon so its cards sit on the sea (the sea bands keep the same
+  // proportions), sizes the sun to its sky and keeps the glints to the open strip.
+  const horizon = H - seaHeight;
   const step = sceneStep(phase);
   const t = step / SESSION.sceneSteps;
   const pal = scenePalette(t);
@@ -326,21 +330,28 @@ export function drawScene(ctx, W, H, {
 
   // Sun: pale half-disc of radius 24 on the horizon, right of centre; it
   // sinks with the steps and is below the horizon at the last one.
-  const sink = Math.round(t * SUN_RADIUS);
+  const sink = Math.round(t * sunRadius);
   ctx.fillStyle = COLORS.sun;
-  for (let dy = 1 + sink; dy <= SUN_RADIUS; dy++) {
-    const half = Math.round(Math.sqrt(SUN_RADIUS * SUN_RADIUS - (dy - 0.5) * (dy - 0.5)));
+  for (let dy = 1 + sink; dy <= sunRadius; dy++) {
+    const half = Math.round(Math.sqrt(sunRadius * sunRadius - (dy - 0.5) * (dy - 0.5)));
     if (half > 0) ctx.fillRect(sunX - half, horizon - (dy - sink), half * 2, 1);
   }
 
   // Sea: three bands with dither seams and pale glint dashes.
-  const seaH = [13, 14, SEA_HEIGHT - 27];
+  const seaH = seaSplit(seaHeight); // 13, 14, 15 for the games' 42 rows
   bands(ctx, 0, horizon, W, seaH, pal.sea);
   ctx.fillStyle = mix(COLORS.sun, pal.sea[0], 0.15);
   for (const [gx, gy, len] of GLINTS) {
-    if (gy < SEA_HEIGHT - 1) ctx.fillRect(gx, horizon + gy, Math.min(len, W - gx), 1);
+    if (gy < Math.min(glintDepth, seaHeight - 1)) ctx.fillRect(gx, horizon + gy, Math.min(len, W - gx), 1);
   }
   return { horizon, step };
+}
+
+/** The three sea bands for a sea of h rows, in the game's 13 : 14 : 15 proportions. */
+export function seaSplit(h) {
+  const a = Math.round((h * 13) / SEA_HEIGHT);
+  const b = Math.round((h * 27) / SEA_HEIGHT);
+  return [a, b - a, h - b];
 }
 
 export function defaultClouds(H) {

@@ -711,8 +711,7 @@ check(/^\/\/[^\n]*\n(\/\/[^\n]*\n)*\n\/\/[^\n]*\nexport const SESSION/.test(read
   // (with and without a 10 px top inset), 300 and 400. No exceptions.
   // Backgrounds come from the real layout: the brick field (top to 12 rows
   // down), the paddle line (its sky bands and the sun), the ball (every sky
-  // band, the clouds and the sun), the pause ring and its chevrons (the sea
-  // bands). Row X1: no HUD; the field starts 5 px below the top (plus the inset).
+  // band, the clouds and the sun). Row X33: no pause marker is drawn. Row X1: no HUD; the field starts 5 px below the top (plus the inset).
   const C = T.COLORS;
   const edge = T.edge || T.shade; // tokens before B4 had no edge
   const ink = C.ink || C.blue;
@@ -742,8 +741,6 @@ check(/^\/\/[^\n]*\n(\/\/[^\n]*\n)*\n\/\/[^\n]*\nexport const SESSION/.test(read
       T.BRICK_ROWS.forEach((c, i) => add(`brick row ${i + 1}`, 'de', c, null, sky(field)));
       add('paddle', 'cr', C.coral, edge(C.coral), [...sky(paddle), ...sun]);
       add('ball', 'cr', C.blue, null, [...sky(all), ...sun, ['cloud', C.cloud]]);
-      add('pause ring', 'cr', C.cloud, ink, sea);
-      add('pause chevrons', 'cr', C.cloud, ink, sea);
     }
   }
   const rows = M.rows;
@@ -753,7 +750,7 @@ check(/^\/\/[^\n]*\n(\/\/[^\n]*\n)*\n\/\/[^\n]*\nexport const SESSION/.test(read
   for (const u of rows.filter((r) => !r.ok)) console.log(`  [readability] UNDER: ${CT.fmt(u)}`);
   for (const [tag] of screens) {
     const mine = rows.filter((r) => r.tag === tag);
-    for (const [rule, label] of [['cr', `paddle, ball, pause ring and chevrons: contrast >= ${CT.MIN_CR} (fill or edge)`],
+    for (const [rule, label] of [['cr', `paddle and ball: contrast >= ${CT.MIN_CR} (fill or edge)`],
       ['de', `bricks: fill delta E >= ${CT.MIN_DE}`]]) {
       const r = mine.filter((x) => x.rule === rule);
       check(r.length > 0 && r.every((x) => x.ok), `[${tag}] sunset and all 10 steps, ${label} (weakest ${CT.worst(r).v.toFixed(2)}, ${r.filter((x) => !x.ok).length} under)`);
@@ -771,10 +768,11 @@ check(/^\/\/[^\n]*\n(\/\/[^\n]*\n)*\n\/\/[^\n]*\nexport const SESSION/.test(read
   check(/PADDLE_EDGE = edge\(COLORS\.coral\)/.test(src) && /pixelBody\(ctx, game\.paddleX[^;]*COLORS\.coral, 2, PADDLE_EDGE\)/.test(src),
     'bricks.js draws the paddle in coral with its edge all round');
   check(/pixelBody\(ctx, game\.ball\.x[^;]*COLORS\.blue, 1\)/.test(src), 'bricks.js draws the ball in the blue');
-  check(/disc\(RING_R \+ 1, COLORS\.ink\);\s*disc\(RING_R, COLORS\.cloud\);/.test(src)
-    && (src.match(/chevron\(ctx, CHEVRON_[LR],/g) || []).length === 2
-    && /ctx\.fillStyle = COLORS\.ink;[\s\S]*ctx\.fillStyle = COLORS\.cloud;/.test(src.slice(src.indexOf('function chevron'))),
-    'bricks.js draws the pause ring white in an ink ring, the chevrons white in an ink outline');
+  // Row X33: no pause marker. draw() paints the same frame in every mode: no ring, chevron or other
+  // marker code, and draw() never reads the pause mode.
+  const drawBody = src.slice(src.indexOf('function draw(ctx, s)'), src.indexOf('/* ---------- effects'));
+  check(drawBody.length > 0 && !/mode/.test(drawBody) && !/\bRING_|drawRing|\bchevron|CHEVRON_/.test(src),
+    'bricks.js draws no pause marker: no ring or chevrons, and draw() does not depend on the pause mode (X33)');
   // Row X1: no text, number, button or HUD on the Bricks screen.
   check(!/font\.js|drawFitted|drawText|fillText|drawBackControl|publishHits|dataset\.(hits|hud|layout)|store\.js|settings\.js|localStorage|sessionStorage|goToHub/.test(src),
     'bricks.js draws no text, number or back control, publishes no hit areas and stores nothing (row X1)');

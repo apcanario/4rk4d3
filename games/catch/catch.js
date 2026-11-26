@@ -56,7 +56,6 @@ import * as S from './sim.js';
 initPage();
 
 const TOP = 5; // things appear this far below the top of the screen (inside the safe area)
-const RING_R = 7;
 const SUN_X = 96; // drawScene's default
 const SEA_H = [13, 14, SEA_HEIGHT - 27]; // drawScene's sea bands
 const SPLASH_S = 0.3;
@@ -132,7 +131,6 @@ const GULL = shade(COLORS.blue);
 const DOLPHIN = COLORS.blue;
 const SPLASH_TOP = COLORS.cloud;
 const SPLASH_BODY = highlight(SEA_BANDS[0]);
-const RING_FILL = highlight(SEA_BANDS[1]);
 
 function newSeed() {
   return ((Date.now() ^ Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0) || 1;
@@ -144,13 +142,12 @@ function layout(s) {
   // No HUD: things fall from the top of the screen.
   const horizon = s.H - SEA_HEIGHT;
   const geo = S.geometry(s.W, TOP + s.safe.top, horizon);
-  const ring = { x: Math.floor(s.W / 2), y: Math.min(horizon + 21, s.H - s.safe.bottom - RING_R - 2) };
   // Thumb travel (PLAN §6a, §6e): a drag across INPUT.thumbTravel of the screen
   // width carries the boat from one end of the field to the other. The finger
   // is measured in logical px, so the screen width is too.
   const sensitivity = thumbSensitivity(geo.W - S.BOAT_W, canvas.width / s.scale);
   ctlCfg = Object.freeze({ ...CONFIG, sensitivity });
-  return { geo, ring, sensitivity };
+  return { geo, sensitivity };
 }
 
 function paintBackground(s, phase) {
@@ -301,22 +298,6 @@ function drawSplash(ctx, sp) {
   });
 }
 
-function drawRing(ctx) {
-  const { x, y } = rects.ring;
-  const disc = (r, color) => {
-    ctx.fillStyle = color;
-    for (let dy = -r; dy <= r; dy++) {
-      const half = Math.floor(Math.sqrt((r + 0.5) * (r + 0.5) - dy * dy));
-      ctx.fillRect(x - half, y + dy, half * 2 + 1, 1);
-    }
-  };
-  disc(RING_R + 1, COLORS.ink); // B4: the white ring in a 1 px ink ring
-  disc(RING_R, COLORS.cloud);
-  disc(RING_R - 1, SEA_BANDS[1]);
-  ctx.fillStyle = RING_FILL;
-  ctx.fillRect(x - 2, y - 2, 5, 5);
-}
-
 function draw(ctx, s) {
   const key = `${s.W}x${s.H}@${s.scale}:${s.safe.top},${s.safe.right},${s.safe.bottom},${s.safe.left}`;
   const phase = phaseOf(clock.active);
@@ -345,7 +326,7 @@ function draw(ctx, s) {
   }
   drawBoat(ctx);
   for (const sp of fx.splashes) drawSplash(ctx, sp);
-  if (ctl.mode === 'paused') drawRing(ctx);
+  // X33 (2026-11-26): no pause marker; a paused frame is the scene and the pieces only.
   layoutKey = key;
 }
 

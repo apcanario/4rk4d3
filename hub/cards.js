@@ -5,7 +5,7 @@
 // measure every piece against the window colours behind it.
 
 import { COLORS, BRICK_ROWS, mix, shade, highlight, edge, scenePalette } from '../shared/tokens.js';
-import { pixelBody, steppedRect, ditherRow, SEA_HEIGHT, SUN_RADIUS } from '../shared/pixel.js';
+import { pixelBody, steppedRect, ditherRow, SUN_RADIUS } from '../shared/pixel.js';
 import { SESSION } from '../shared/session.js';
 import { LOOK, spriteGrid, turnUp } from '../games/catch/sim.js';
 
@@ -21,36 +21,58 @@ export const CARDS = Object.freeze([
 export const GRID = Object.freeze({
   gap: 5, // between the cards, across and down
   side: 4, // least margin at the screen's sides
-  top: 4, // least margin below the top safe inset
-  sunClear: SUN_RADIUS + 4, // the grid ends this far above the horizon, so the whole sun shows
-  maxRatio: 2, // a card is never taller than this many times its width
+  bottomMin: 8, // least margin above the bottom safe inset ...
+  bottomFrac: 0.05, // ... or this fraction of the screen height, whichever is larger
+  seaClear: 8, // the horizon is this far above the grid: the cards sit on the sea, clear of the sun
+  skyMin: SUN_RADIUS + 16, // the open sky above the horizon is at least this tall (below the top safe inset)
+  maxRatio: 1.3, // a card is never taller than this many times its width (the approved mockup is about 1.25)
+  sunMax: 40, // the hub's sun radius grows with its sky up to this
   minCard: 40, // every card is at least this big in each direction (the tap target)
   frame: 4, // frame thickness at the top and sides; the bottom is one more (the drop shade)
 });
 
 /**
- * The grid for a logical screen W x H with safe insets (logical px) and the
- * side band (logical px) where a touch is ignored. Cards are as big as fit:
- * the width from the margins, the height from the open sky between the top
- * inset and the sun, capped at maxRatio x the width. The grid sits right
- * above the sun, in the thumb's half. Returns { cards: {id: rect}, x0, y0,
- * cw, ch, gap, top, bottom }.
+ * The hub's composition for a logical screen W x H with safe insets (logical
+ * px) and the side band (logical px) where a touch is ignored. The grid sits
+ * low, in the thumb's reach, a margin above the bottom; the cards are as wide
+ * as the margins allow and at most maxRatio x their width tall. The horizon
+ * is seaClear above the grid, so the cards sit on the sea and the whole sky
+ * above them, with the sun on the horizon, is the picture. Returns { cards:
+ * {id: rect}, x0, y0, cw, ch, gap, top, bottom, side, horizon, seaHeight }.
  */
 export function gridLayout(W, H, safe, edgeBand = 0) {
   const side = Math.max(GRID.side, edgeBand, safe.left + 2, safe.right + 2);
   const cw = Math.floor((W - side * 2 - GRID.gap) / 2);
   const x0 = Math.floor((W - (cw * 2 + GRID.gap)) / 2);
-  const horizon = H - SEA_HEIGHT;
-  const top = safe.top + GRID.top;
-  const bottom = horizon - GRID.sunClear;
+  const bottom = H - safe.bottom - Math.max(GRID.bottomMin, Math.round(H * GRID.bottomFrac));
+  const top = safe.top + GRID.skyMin + GRID.seaClear; // the highest the grid may start
   const fit = Math.floor((bottom - top - GRID.gap) / 2);
-  const ch = Math.max(GRID.minCard, Math.min(fit, cw * GRID.maxRatio));
-  const y0 = Math.max(top, bottom - (ch * 2 + GRID.gap));
+  const ch = Math.max(GRID.minCard, Math.min(fit, Math.floor(cw * GRID.maxRatio)));
+  const y0 = bottom - (ch * 2 + GRID.gap);
+  const horizon = y0 - GRID.seaClear;
   const cards = {};
   CARDS.forEach((c, i) => {
     cards[c.id] = { x: x0 + (i % 2) * (cw + GRID.gap), y: y0 + Math.floor(i / 2) * (ch + GRID.gap), w: cw, h: ch };
   });
-  return { cards, x0, y0, cw, ch, gap: GRID.gap, top, bottom: y0 + ch * 2 + GRID.gap, side };
+  return { cards, x0, y0, cw, ch, gap: GRID.gap, top, bottom, side, horizon, seaHeight: H - horizon };
+}
+
+/**
+ * The hub's scene options for drawScene (shared/pixel.js): the raised horizon,
+ * three clouds and the stars in the sky above it, clear of the sun.
+ */
+export function hubScene(grid, safe) {
+  const sky = grid.horizon - safe.top;
+  const at = (f) => safe.top + Math.round(sky * f);
+  // The sun grows with the sky: 0.3 of it, from the games' radius up to GRID.sunMax.
+  const sunRadius = Math.max(SUN_RADIUS, Math.min(GRID.sunMax, Math.round(sky * 0.3)));
+  return {
+    seaHeight: grid.seaHeight,
+    sunRadius,
+    glintDepth: GRID.seaClear, // only the glints in the open strip between the horizon and the cards
+    clouds: [[92, at(0.1)], [8, at(0.42)], [44, at(0.72)]],
+    stars: [safe.top + 2, grid.horizon - sunRadius - 4],
+  };
 }
 
 /** The inner window of a card rect (the game's scene shows through it). */
@@ -60,7 +82,10 @@ export function windowOf(r) {
 }
 
 const FRAME = COLORS.coral;
-const FRAME_EDGE = edge(COLORS.coral);
+const FRAME_EDGE = edge(COLORS.coral); // round the window
+// The card's outer 1 px edge: the cards sit on the sea, so, like the hull's rows below
+// the horizon in Catch (B4 review), the edge is the keel colour, which clears every sea step.
+const FRAME_RIM = COLORS.keel;
 
 /* ---------- the parts of each window ---------- */
 
@@ -382,7 +407,7 @@ function stackParts(win, pal) {
   for (let i = 0; i < n; i++) {
     const bw = widths[i];
     const c = BRICK_ROWS[i % BRICK_ROWS.length];
-    parts.push(body(`floor ${i + 1}`, 'de', x + Math.floor((w - bw) / 2) + shifts[i], hz - 8 * (i + 1) + 2, bw, 8, c, 2, edge(c)));
+    parts.push(body(`floor ${i + 1}`, 'de', x + Math.floor((w - bw) / 2) + shifts[i], hz - 8 * (i + 1), bw, 8, c, 2, edge(c))); // floor 0's bottom on the horizon, as games/stack/sim.js floorTop
   }
   // The next block, sliding in above the tower, off to the right.
   const nw = widths[n - 1];
@@ -405,13 +430,13 @@ export function cardParts(id, win, step) {
 }
 
 /** The colours a card's frame draws: coral body, its highlight and shade, the edge all round and round the window. */
-export const FRAME_COLOURS = Object.freeze([FRAME, highlight(FRAME), shade(FRAME), FRAME_EDGE]);
-export { FRAME, FRAME_EDGE };
+export const FRAME_COLOURS = Object.freeze([FRAME, highlight(FRAME), shade(FRAME), FRAME_EDGE, FRAME_RIM]);
+export { FRAME, FRAME_EDGE, FRAME_RIM };
 
-/** Draw one card: the coral frame with its 1 px edge all round, stepped corners, and the window. */
+/** Draw one card: the coral frame with its 1 px keel edge all round, stepped corners, and the window in its coral edge. */
 export function drawCard(ctx, id, r, step, pressed = false) {
   const card = { ...r, y: r.y + (pressed ? 1 : 0) };
-  pixelBody(ctx, card.x, card.y, card.w, card.h, FRAME, 3, FRAME_EDGE);
+  pixelBody(ctx, card.x, card.y, card.w, card.h, FRAME, 3, FRAME_RIM);
   const win = windowOf(card);
   steppedRect(ctx, win.x - 1, win.y - 1, win.w + 2, win.h + 2, FRAME_EDGE, 2);
   ctx.save();

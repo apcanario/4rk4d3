@@ -127,14 +127,30 @@ def layout_of(page):
     return json.loads(page.eval_on_selector("#screen", "c => c.dataset.layout"))
 
 
+# Row H2 layout values (PLAN §5a), restated here so a change in hub/cards.js fails a check.
+H2_GAP, H2_SEA_CLEAR, H2_RATIO, H2_SKY_MIN = 5, 8, 1.3, 40
+
+
+# Card sizes (w, h) by CSS width and device scale, at logical heights 240, 300 and 400 (row H2).
+H2_CARD_SIZE = {(360, 2.625): (56, 72), (360, 3): (56, 72), (412, 2.625): (57, 74), (412, 3): (58, 75)}
+
+
+def h2_bottom_margin(H):
+    return max(8, round(H * 0.05))
+
+
+def h2_sun_radius(sky):
+    return max(24, min(40, round(sky * 0.3)))
+
+
 def hub_layout_checks(page, tag, h):
     """Row H2: four equal cards in a 2x2 grid (Bricks, Catch / Putt, Stack), each at least 40 logical px each way,
-    equal gaps, centred, inside the safe area and clear of the 24 CSS px side band, the whole sun and the sea below,
-    as big as fit; the cards and nothing else; no text drawn."""
+    5 px gaps, centred, inside the safe area and clear of the 24 CSS px side band, low in the thumb's reach (the grid's
+    bottom a fixed margin above the bottom inset), at most 1.3 x as tall as wide, the horizon 8 px above the grid with
+    the sky above it; the cards and nothing else; no text drawn."""
     lay = layout_of(page)
     g = json.loads(page.eval_on_selector("#screen", "c => c.dataset.grid"))
     H, W, r = lay["H"], lay["W"], lay["rects"]
-    horizon = H - 42
     safe = g["safe"]
     check(sorted(r) == sorted(GAMES) and sorted(hits(page)) == sorted(GAMES),
           f"[{tag}] the hub has one card per built game and nothing else {sorted(hits(page))}")
@@ -146,19 +162,42 @@ def hub_layout_checks(page, tag, h):
     gx = c["x"] - (b["x"] + w)
     gy = p["y"] - (b["y"] + hh)
     check(b["y"] == c["y"] and p["y"] == s["y"] and b["x"] == p["x"] and c["x"] == s["x"]
-          and s["x"] - (p["x"] + w) == gx and s["y"] - (c["y"] + hh) == gy and gx == gy and gx >= 3,
-          f"[{tag}] a 2x2 grid in order Bricks, Catch / Putt, Stack with equal gaps ({gx}, {gy})")
+          and s["x"] - (p["x"] + w) == gx and s["y"] - (c["y"] + hh) == gy and gx == gy == H2_GAP,
+          f"[{tag}] a 2x2 grid in order Bricks, Catch / Putt, Stack with 5 px gaps ({gx}, {gy})")
     left, right, top, bottom = b["x"], c["x"] + w, b["y"], p["y"] + hh
     check(left >= safe["left"] and W - right >= safe["right"] and top >= safe["top"] and bottom <= H - safe["bottom"],
           f"[{tag}] the grid ({left}..{right} x {top}..{bottom}) is inside the safe area {safe}")
-    check(left >= g["edge"] and W - right >= g["edge"] and abs(left - (W - right)) <= 1,
-          f"[{tag}] the grid is centred and clear of the side band where touches are ignored ({left}, {W - right}, band {g['edge']})")
-    check(bottom <= horizon - 28, f"[{tag}] the whole sun and the sea show below the grid (grid ends {bottom}, sun top {horizon - 24})")
-    check(hh == 2 * w or top - (safe["top"] + 4) <= 1,
-          f"[{tag}] the cards are as big as fit (top {top}, safe top {safe['top']}, {w}x{hh})")
+    side = max(4, g["edge"], safe["left"] + 2, safe["right"] + 2)
+    check(left >= g["edge"] and W - right >= g["edge"] and abs(left - (W - right)) <= 1 and w == (W - 2 * side - H2_GAP) // 2,
+          f"[{tag}] the grid is centred, clear of the side band where touches are ignored, the cards as wide as the margins allow "
+          f"({left}, {W - right}, band {g['edge']}, width {w})")
+    want_bottom = H - safe["bottom"] - h2_bottom_margin(H)
+    check(bottom == want_bottom, f"[{tag}] the grid sits low, in the thumb's reach: it ends {bottom}, want {want_bottom} "
+          f"(H {H} - bottom inset {safe['bottom']} - {h2_bottom_margin(H)})")
+    check(hh == int(w * H2_RATIO), f"[{tag}] the cards are {H2_RATIO} x as tall as wide at most, and that tall ({w}x{hh})")
+    horizon = g["horizon"]
+    check(horizon == top - H2_SEA_CLEAR and g["seaHeight"] == H - horizon and horizon - safe["top"] >= H2_SKY_MIN,
+          f"[{tag}] the horizon {horizon} is {H2_SEA_CLEAR} px above the grid (top {top}): the cards sit on the sea, "
+          f"the sky above is at least {H2_SKY_MIN} px ({horizon - safe['top']})")
     check(page.eval_on_selector("#screen", "c => c.dataset.labels || null") is None and page.evaluate("window.__text") == 0,
           f"[{tag}] the hub draws no text (no labels, no fillText or strokeText)")
     return lay
+
+
+def hub_scene_checks(page, shot, tag):
+    """Row H2 at sunset: the whole sun on the raised horizon in the open sky above the cards, sized to the sky,
+    clear of every card; the sea from the horizon down behind the cards."""
+    g = json.loads(page.eval_on_selector("#screen", "c => c.dataset.grid"))
+    tok = page.evaluate(HUB_TOKENS_JS)
+    C, pal = tok["C"], tok["pals"][0]
+    hz, safe = g["horizon"], g["safe"]
+    rad = h2_sun_radius(hz - safe["top"])
+    got = logical_pixels(page, shot, [(96, hz - 1), (96, hz - rad), (96, hz - rad - 1), (1, hz), (1, hz - 1),
+                                      (4, g["y0"] + g["ch"]), (2, g["bottom"] + 1)])
+    check(got[0] == C["sun"] and got[1] == C["sun"] and got[2] != C["sun"] and got[3] == pal["sea"][0] and got[4] in pal["sky"]
+          and got[5] in pal["sea"] and got[6] in pal["sea"] and hz - rad > safe["top"] + 8 and hz < g["y0"],
+          f"[{tag}] sunset: the whole sun (radius {rad}) on the horizon {hz} in the open sky, clear of the cards (top {g['y0']}); "
+          f"the sea from the horizon down behind and below the cards ({got})")
 
 
 def logical_to_css(page, x, y):
@@ -256,9 +295,9 @@ def run_viewport(browser, base, w, h):
               f"[{tag}] back gesture (history back) returns from {game} to the hub, the game gone")
     check(page.evaluate("history.length") == hlen + 1, f"[{tag}] going in and out of games leaves one history entry above the hub")
 
-    # Only cards open games: a tap on the open sky between the grid and the horizon opens nothing.
+    # Only cards open games: a tap on the open sky above the grid opens nothing.
     lay = layout_of(page)
-    sky_x, sky_y = logical_to_css(page, 40, (lay["rects"]["putt"]["y"] + lay["rects"]["putt"]["h"] + lay["H"] - 42) / 2)
+    sky_x, sky_y = logical_to_css(page, 40, json.loads(page.eval_on_selector("#screen", "c => c.dataset.grid"))["horizon"] / 2)
     page.touchscreen.tap(sky_x, sky_y)
     page.wait_for_timeout(300)
     check(page.url == base and page.evaluate("document.querySelectorAll('iframe').length") == 0,
@@ -439,6 +478,10 @@ def run_hub_grid(browser, base):
                     info, sc, HH, bad, total, _, _ = crisp(page, shot)
                     check(bad == 0 and info["sw"] <= info["iw"] and info["sh"] <= info["ih"],
                           f"[{tag}] crisp ({total - bad}/{total}), no scrolling; cards {lay['rects']['bricks']['w']}x{lay['rects']['bricks']['h']}")
+                    # The card size, stated per view: the same at logical heights 240, 300 and 400 (capped at 1.3 x the width).
+                    size = (lay["rects"]["bricks"]["w"], lay["rects"]["bricks"]["h"])
+                    check(size == H2_CARD_SIZE[(w, dpr)], f"[{tag}] H{H}: cards {size[0]}x{size[1]}, want {H2_CARD_SIZE[(w, dpr)]}")
+                    hub_scene_checks(page, shot, tag)
                     # Each card opens its own game; the back gesture returns.
                     for game in GAMES:
                         tap(page, game)
@@ -641,6 +684,7 @@ def run_bricks(browser, base):
     check([r["c"] for r in g0["rows"][:9]] == list(range(9)), f"[{tag}] rows coloured by the brick tokens top to bottom")
     shot = OUT / "bricks-game-paused.png"
     page.screenshot(path=str(shot))
+    no_pause_marker(page, shot, tag, "__bricks", "Bricks opening")
     info, s, H, bad, total, ncol, size = crisp(page, shot)
     check(bad == 0, f"[{tag}] crisp: {total - bad}/{total} uniform {s}x{s} blocks")
     check(info["sw"] <= info["iw"] and info["sh"] <= info["ih"], f"[{tag}] no scrolling or overflow")
@@ -712,7 +756,7 @@ def run_bricks(browser, base):
     check(8 in vib and 16 in vib and set(vib) <= {8, 16},
           f"[{tag}] haptics always on: brick 8 ms and paddle 16 ms ticks only ({vib})")
 
-    # Lift: frozen within one frame, ring shown.
+    # Lift: frozen within one frame, no marker drawn (X33).
     page.mouse.up()
     a = snap(page)
     page.wait_for_timeout(300)
@@ -722,7 +766,9 @@ def run_bricks(browser, base):
     r1 = page.evaluate("window.__raf")
     page.wait_for_timeout(400)
     check(page.evaluate("window.__raf") == r1, f"[{tag}] no animation loop while paused")
-    page.screenshot(path=str(OUT / "bricks-game-lifted.png"))
+    shot = OUT / "bricks-game-lifted.png"
+    page.screenshot(path=str(shot))
+    no_pause_marker(page, shot, tag, "__bricks", "Bricks after the lift")
     no_hud(page, tag, "Bricks after play")
     # Session clock (row B2, X1): play advanced it in memory, the pause does not.
     page.wait_for_timeout(1000)
@@ -820,6 +866,36 @@ def logical_pixels(page, shot, points):
     return ["#%02X%02X%02X" % img.getpixel((v["ox"] + x * s + s // 2, v["oy"] + y * s + s // 2)) for x, y in points]
 
 
+# Row X33: no pause marker. The scene as shared/pixel.js drawScene paints it for the page's
+# phase, rows from 4 below the horizon to the bottom (the sea, where the ring used to be).
+SCENE_SEA_JS = """async (hook) => {
+  const base = location.href.split('/games/')[0] + '/shared/';
+  const px = await import(base + 'pixel.js');
+  const se = await import(base + 'session.js');
+  const q = window[hook].snapshot();
+  const W = q.view.W, H = q.view.H, y0 = H - px.SEA_HEIGHT + 4;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d', { alpha: false });
+  px.drawScene(g, W, H, { phase: se.phaseOf(q.clock.active) });
+  const d = g.getImageData(0, y0, W, H - y0).data;
+  const out = [];
+  for (let i = 0; i < d.length; i += 4) out.push('#' + [d[i], d[i + 1], d[i + 2]].map((v) => v.toString(16).padStart(2, '0')).join('').toUpperCase());
+  return { W, H, y0, px: out };
+}"""
+
+
+def no_pause_marker(page, shot, tag, hook, what):
+    """Row X33: in a frame drawn while paused, the sea below the boat or paddle is the bare scene, pixel for pixel."""
+    want = page.evaluate(SCENE_SEA_JS, hook)
+    W, y0 = want["W"], want["y0"]
+    pts = [(x, y) for y in range(y0, want["H"]) for x in range(W)]
+    got = logical_pixels(page, shot, pts)
+    diff = [pts[i] for i in range(len(pts)) if got[i] != want["px"][i]]
+    check(page.evaluate(f"window.{hook}.snapshot().mode") == "paused" and len(pts) > 0 and not diff,
+          f"[{tag}] {what}: paused, and no pause marker drawn: the sea is the bare scene ({len(pts)} px, {len(diff)} differ {diff[:3]})")
+
+
 def delta_e(a, b):
     """CIE76 colour difference in CIELAB (D65), as in tests/bricks-sim.mjs."""
     def lab(h):
@@ -874,7 +950,7 @@ def run_scene(browser, base):
         shot = OUT / f"hub-scene-{name}.png"
         page.screenshot(path=str(shot))
         lay = layout_of(page)
-        hz = lay["H"] - 42
+        hz = json.loads(page.eval_on_selector("#screen", "c => c.dataset.grid"))["horizon"]  # the hub's raised horizon (H2)
         step = int(page.eval_on_selector("#screen", "c => c.dataset.scene"))
         return step, shot, lay, hz
 
@@ -1074,6 +1150,7 @@ def run_catch(browser, base):
           f"[{tag}] opening: paused, pace 0.3, 2 kinds, variety counts at 0")
     shot = OUT / "catch-game-paused.png"
     page.screenshot(path=str(shot))
+    no_pause_marker(page, shot, tag, "__catch", "Catch opening")
     info, s, H, bad, total, _, _ = crisp(page, shot)
     check(bad == 0 and info["sw"] <= info["iw"] and info["sh"] <= info["ih"], f"[{tag}] crisp, no scrolling or overflow")
     no_hud(page, tag, "Catch")
@@ -1341,6 +1418,29 @@ HUB_PARTS_JS = """async (step) => {
   return { parts, frame: M.FRAME_COLOURS, windows: g.windows };
 }"""
 
+# Row H2: the colours of the bare hub scene under each card (and the 1 px ring round it) at a step.
+HUB_UNDER_JS = """async (step) => {
+  const M = await import(new URL('hub/cards.js', document.baseURI).href);
+  const PX = await import(new URL('shared/pixel.js', document.baseURI).href);
+  const S = await import(new URL('shared/session.js', document.baseURI).href);
+  const g = JSON.parse(document.getElementById('screen').dataset.grid);
+  const L = JSON.parse(document.getElementById('screen').dataset.layout);
+  const c = document.createElement('canvas');
+  c.width = L.W; c.height = L.H;
+  const x = c.getContext('2d', { alpha: false });
+  PX.drawScene(x, L.W, L.H, { ...M.hubScene(g, g.safe), phase: step / S.SESSION.sceneSteps });
+  const hex = (d, i) => '#' + [d[i], d[i + 1], d[i + 2]].map((v) => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+  const out = {};
+  for (const id of Object.keys(g.cards)) {
+    const r = g.cards[id];
+    const d = x.getImageData(r.x - 1, r.y - 1, r.w + 2, r.h + 2).data;
+    const set = new Set();
+    for (let i = 0; i < d.length; i += 4) set.add(hex(d, i));
+    out[id] = [...set];
+  }
+  return out;
+}"""
+
 # Logical heights 240, 300 and 400 at 360 and 412 CSS px wide, device scale 3 and 2.625.
 CONTRAST_HUB_VIEWS = [(360, 640, 3, "360 H240"), (360, 800, 3, "360 H300"), (360, 1067, 3, "360 H400"),
                       (412, 732, 2.625, "412 H240"), (412, 915, 2.625, "412 H300"), (412, 1220, 2.625, "412 H400")]
@@ -1380,19 +1480,15 @@ def run_contrast_hub(browser, base):
         lay = layout_of(page)
         tok = page.evaluate(HUB_TOKENS_JS)
         C, H, r = tok["C"], lay["H"], lay["rects"]
-        horizon = H - 42
-
-        def bands(y0, y1):
-            return [i for i in range(tok["bands"]) if round(i * horizon / 10) < y1 and round((i + 1) * horizon / 10) > y0]
 
         rows, exempt, lonely = [], set(), []
         for k in range(11):
-            pal = tok["pals"][k]
-            sky = lambda ix: [(f"sky band {i + 1}", pal["sky"][i]) for i in ix]  # noqa: E731
+            # Row H2: what is behind each card is read from the hub's own scene (hub/cards.js hubScene through
+            # shared/pixel.js drawScene) at this step: every colour under the card and in the 1 px ring round it.
+            under = page.evaluate(HUB_UNDER_JS, k)
             for t in GAMES:
-                bgs = sky(bands(r[t]["y"], r[t]["y"] + r[t]["h"])) + [("cloud", C["cloud"])]
-                for on, bg in bgs:
-                    rows.append((f"{t} card frame", MIN_CR, max(contrast(C["coral"], bg), contrast(tok["edgeCoral"], bg)), on, bg, k))
+                for bg in under[t]:
+                    rows.append((f"{t} card frame", MIN_CR, max(contrast(C["coral"], bg), contrast(tok["keel"], bg)), "scene", bg, k))
             look = page.evaluate(HUB_PARTS_JS, k)
             for t in GAMES:
                 parts = look["parts"][t]
@@ -1467,9 +1563,10 @@ def run_contrast_pages(browser, base):
                 got += logical_pixels(page, shot, [(bt["x"], bt["y"] + 20), (bt["x"] + 2, bt["y"] + 20), (bt["x"] + 3, bt["y"] + 20),
                                                    (bt["x"] + 3, bt["y"]), (bt["x"] + bt["w"] // 2, bt["y"] + bt["h"] - 1)])
             check(page.eval_on_selector("#screen", "c => c.dataset.scene") == str(k)
-                  and got == [tok["edgeCoral"], C["coral"], tok["edgeCoral"], tok["edgeCoral"], tok["edgeCoral"]] * 4,
-                  f"[{tag}] hub: every card's frame coral in its 1 px edge all round, the window inside its edge ({got[:5]})")
-            # Bricks: paddle edge and fill, the pause ring in its ink ring.
+                  and got == [tok["keel"], C["coral"], tok["edgeCoral"], tok["keel"], tok["keel"]] * 4,
+                  f"[{tag}] hub: every card's frame coral in its 1 px keel edge all round (the cards sit on the sea), "
+                  f"the window inside its coral edge ({got[:5]})")
+            # Bricks: paddle edge and fill; no pause marker at any step (X33).
             g_ = open_tile(page, "bricks")
             page.wait_for_timeout(150)
             q = snap(g_)
@@ -1478,10 +1575,10 @@ def run_contrast_pages(browser, base):
             shot = OUT / f"b4-bricks-{vtag}-{k}.png"
             page.screenshot(path=str(shot))
             px, py = round(g["paddleX"]), geo["paddleY"]
-            ring_y = min(geo["horizon"] + 21, q["view"]["H"] - 7 - 2)
-            got = logical_pixels(g_, shot, [(px + 15, py), (px + 15, py + 3), (67, ring_y - 8), (67, ring_y - 7)])
-            check(q["step"] == k and q["mode"] == "paused" and got == [tok["edgeCoral"], C["coral"], C["ink"], C["cloud"]],
-                  f"[{tag}] Bricks: paddle coral in its edge, pause ring white in an ink ring ({got})")
+            got = logical_pixels(g_, shot, [(px + 15, py), (px + 15, py + 3)])
+            check(q["step"] == k and q["mode"] == "paused" and got == [tok["edgeCoral"], C["coral"]],
+                  f"[{tag}] Bricks: paddle coral in its edge ({got})")
+            no_pause_marker(g_, shot, tag, "__bricks", "Bricks from the hub")
             back_to_hub(page)
             # Catch: hull edge and fill, sail in its token.
             g_ = open_tile(page, "catch")
@@ -1494,6 +1591,7 @@ def run_contrast_pages(browser, base):
             got = logical_pixels(g_, shot, [(bx + 12, deck), (bx + 12, deck + 3), (bx + 12, deck - 3), (bx + 11, deck - 6)])
             check(q["step"] == k and got == [tok["edgeCoral"], C["coral"], C["sail"], tok["edgeCoral"]],
                   f"[{tag}] Catch: hull coral in its edge, sail in its own colour, mast in the edge ({got})")
+            no_pause_marker(g_, shot, tag, "__catch", "Catch from the hub")
             # B4 review: the hull's rows at and below the horizon in the keel; with an ink cloud and a
             # glint set in the live state, the inked sea and the glint as drawn.
             hz = gg["geo"]["horizon"]

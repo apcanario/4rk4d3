@@ -8,7 +8,7 @@ A one-thumb arcade for Pedro's Android phone: a hub of small endless games to pi
 
 - Android only: Chrome now, an APK WebView later. No iOS or Safari work of any kind.
 - Portrait, one thumb. Each game defines its own gesture and its own pause behaviour in its row.
-- Full screen. No game shows a title, a number, a button or any other HUD. The manifest's display mode is fullscreen.
+- Full screen. No game shows a title, a number, a button, a pause marker or any other HUD (X33: no pause marker anywhere; a paused game shows its frozen scene only). The manifest's display mode is fullscreen.
 - Going home: the Android back gesture (a swipe in from the side edge) returns from a game to the hub. There is no on-screen back control. Every game ignores a touch that begins within 24 CSS px of the left or right edge of the screen, so an edge swipe never moves anything in the game.
 - No points of any kind: no score, count, rally, strokes, level number or difficulty marker, neither on screen nor stored.
 - No saved game state. Nothing about a game is written to storage. Opening a game from the hub always starts it fresh. If Android kept the app alive in the background it carries on where it was; if not, it opens at the hub. Nothing at all is stored.
@@ -70,7 +70,7 @@ Light summer sunset, rounded 8-bit. docs/style-reference.jpg is the approved ref
 Pixel grid
 - Logical width is 135 px. Scale is the largest integer that fits the screen width in device pixels; the canvas is centred. Logical height is whatever the screen gives at that scale (design for 240 and up).
 - Nearest-neighbour only, no smoothing. Positions may be fractional in the simulation and are rounded when drawn.
-- Layout anchors: HUD and bricks to the top, horizon, paddle and sea to the bottom. Extra height goes into the open sky between them.
+- Layout anchors: HUD and bricks to the top, horizon, paddle and sea to the bottom. Extra height goes into the open sky between them. (The hub is the exception since row H2: its horizon sits just above the card grid, §5a.)
 
 Tokens (shared/tokens.js, mirrored in shared/theme.css)
 - sky-top #FFF7EC, sky-bottom #FFCDC0
@@ -86,7 +86,7 @@ Rounded 8-bit shapes
 
 Scene (static in v1)
 - Sky: 10 flat bands from sky-top to sky-bottom, with a 1 px checker dither seam between bands.
-- Sun: a pale half-disc, radius 24, sitting on the horizon, right of centre.
+- Sun: a pale half-disc, radius 24, sitting on the horizon, right of centre (on the hub it grows with the sky, §5a).
 - Sea: three blue bands below the horizon with short pale glint dashes. The sea is the thumb zone.
 - Two or three small white pixel clouds in the open sky.
 
@@ -99,10 +99,10 @@ Motion
 
 B4 contrast pass (in force; replaces the value above where they differ)
 - Blue #436495 (ball, nasty ones). Ink #30486B for small lettering and control edges on the sea. Sail and card #A0D0E8 (the sail is no longer cream). Brick row 7 #FFA2CE; the jib is brick row 6.
-- A 1 px edge all round, 70 percent toward #783C5A, on the paddle, hull, mast, the hub's card frames (row H2; before it the tiles and wordmark), and the outlines of things to catch and fish. (The white tile lettering in a 1 px outline went with the tiles in H2.) The pause ring is white in an ink edge.
+- A 1 px edge all round, 70 percent toward #783C5A, on the paddle, hull, mast, the edge round each hub card's window (row H2; before it the tiles and wordmark), and the outlines of things to catch and fish. (The white tile lettering in a 1 px outline went with the tiles in H2.) The hub's card frames sit on the sea, so their outer 1 px edge is the keel colour, as the hull's rows below the horizon. (The pause ring, white in an ink edge, was removed by X33.)
 - Keel #241E38 (the hull's rows below the horizon). Glint #FFA2CE (the sky-event glint and the spray). Ink cloud #483080 mixed 0.45 into each sea band.
 - Standard in place of "readable": every game piece against every scene step meets CIE76 delta E 20 or better (tests/contrast.mjs), WCAG contrast 3 for edges and fills seen as one shape, and WCAG 4.5 for small lettering.
-- Not yet inside the standard, left as built: the ball trail (delta E 16.42 from the sky) and a pop particle's highlight bit and the splash's white top (their other bits carry them). Pedro may ask for them to read more strongly.
+- Outside the standard (accepted, 2026-11-26, X16): the ball trail (delta E 16.42 from the sky), a pop particle's highlight bit and the splash's white top (their other bits carry them).
 
 ## 4. Repo layout
 
@@ -145,27 +145,32 @@ Choice made in the build (X1): the hub creates each game's fullscreen frame on t
 
 ## 5a. Row H2: the card grid hub
 
-Pedro chose option 1 of four hub mockups (2026-11-26): the grid.
+Pedro chose option 1 of four hub mockups (2026-11-26): the grid. After the build he asked (2026-11-26) for the cards in the thumb's reach, low on the screen, with the sky above them as the picture; the layout below is that second version.
 
 What it is
 - The hub is a 2x2 grid of four big framed cards over the sunset scene, each a small window onto its game, drawn in that game's own scene colours: Bricks top left (three columns of coloured bricks, the ball with its trail, the paddle), Catch top right (the boat, the sun, the sea, things falling, a leaping fish), Putt bottom left (the hole and flag, the ball with its dotted aim guide, a coral bar, a peg, water, a sand trap, a block where the card is tall enough), Stack bottom right (a tower of floors, the next block above, the sea at the base).
-- Each card: a coral frame with the 1 px edge all round (B4), stepped corners (3 px outside, 1 px on the window), a highlight line at the top and a drop shade at the bottom; the window inside its own 1 px edge. Every colour is a token or a PLAN §3 mix; the pieces are drawn as their games draw them (the Catch sprites come from games/catch/sim.js).
+- Each card: a coral frame with a 1 px keel-coloured edge all round (the cards sit on the sea; §3 B4), stepped corners (3 px outside, 1 px on the window), a highlight line at the top and a drop shade at the bottom; the window inside its own 1 px coral edge (70 percent toward #783C5A). Every colour is a token or a PLAN §3 mix; the pieces are drawn as their games draw them (the Catch sprites come from games/catch/sim.js).
 - No app name, no wordmark, no text of any kind. The cards are static. The windows follow the exit ramp with the scene: their sky, sea, sand and sun step toward dusk with the hub's background (§2b), the pieces keep their colours.
 - Behaviour as the hub before it (§5): the frame is made on the card's pointerdown and shown on pointerup with one history entry; the back gesture returns; a touch that slides off a card opens nothing; a touch that begins within 24 CSS px of a side edge opens nothing; the session clock is the hub's. Nothing stored, no settings.
 - Code: hub/cards.js (layout, parts, drawing; no DOM) and index.html.
 
-Layout rule
-- Side margin: the larger of 4 px, the 24 CSS px side band in logical px, and each side's safe inset plus 2. The two columns share the rest equally, with a 5 px gap.
-- The grid ends 28 px above the horizon (the sun's radius plus 4), so the whole sun and the sea show below it. Its top is at least 4 px below the top safe inset.
-- The cards are as tall as fit between those two lines, with the same 5 px gap between the rows, capped at twice their width; when capped, the grid stays right above the sun and the extra sky is above it.
-- Integer logical pixels throughout, one integer scale; at logical height 240 the cards are about 56 x 80, at 300 about 56 x 110.
-- Clouds: one left of the sun below the grid; two more in the sky above the grid when there are 14 px or more of it. Stars spread over the sky above the grid when there are 20 px of it, else over the strip between the grid and the horizon.
+Layout rule (code: hub/cards.js GRID, gridLayout, hubScene)
+- Side margin: the larger of 4 px, the 24 CSS px side band in logical px, and each side's safe inset plus 2. The two columns share the rest equally, with a 5 px gap; the rows have the same 5 px gap.
+- The grid sits low, in the thumb's reach: its bottom is the larger of 8 px and 5 percent of the logical height above the bottom safe inset.
+- The cards are at most 1.3 times as tall as they are wide (the approved mockup is about 1.25) and that tall wherever it fits, which it does from logical height 240 up; they are never under 40 px either way. At 360 CSS px wide (device scale 2.625 or 3) they are 56 x 72; at 412 CSS px, 57 x 74 (2.625) or 58 x 75 (3), the same at logical heights 240, 300 and 400.
+- The horizon is 8 px above the grid: the cards sit on the sea, and the sea runs from the horizon to the bottom of the screen behind and below them, in the scene's three sea bands at the game's 13 : 14 : 15 proportions. Only the glints in the 8 px strip above the cards are drawn. The open sky above the horizon is at least 40 px below the top safe inset.
+- Everything above the horizon is the picture: the sky bands, the sun on the horizon at x 96 with a radius of 0.3 of the sky's height (24 to 40 px), sinking with the steps; three clouds at 0.1, 0.42 and 0.72 of the sky's height, clear of the sun; the stars of steps 8 to 10 spread over the sky above the sun. The sun never reaches a card: it sits wholly above the horizon, 8 px above the grid.
+- Integer logical pixels throughout, one integer scale.
+- Bricks card: its bricks are 13 px wide at these card widths (14 at 58 px), three columns in the window, a departure from the game's 15; the card is a picture, not the game.
+- Stack card: floor 0's bottom sits on the window's horizon, as in the game (games/stack/sim.js floorTop).
+- Note: sw.js still precaches shared/font.js, which no page loads since H2 (tools/make-icons.py reads it); harmless, left as is.
 
 Accept
-- Four equal cards in a 2x2 grid in the order above, equal gaps across and down, centred, each at least 40 logical px each way, inside the safe area and clear of the side band, at logical heights 240, 300 and 400, widths 360 and 412 CSS px, device scale 2.625 and 3, with and without safe-area insets.
+- Four equal cards in a 2x2 grid in the order above, 5 px gaps across and down, centred, each at least 40 logical px each way, inside the safe area and clear of the side band, at logical heights 240, 300 and 400, widths 360 and 412 CSS px, device scale 2.625 and 3, with and without safe-area insets.
+- The grid's bottom at the margin above; the cards at the stated sizes and at most 1.3 times as tall as wide; the horizon 8 px above the grid; the whole sun, at its radius, on the horizon in the sky and clear of the cards at sunset; sea behind and below the cards.
 - The hub draws no text and loads no font.
 - Each card opens its own game full screen over the hub; back returns; a touch beginning in the side band opens nothing; a slide off a card opens nothing.
-- B4 standard: each card's frame (fill or edge) against every scene colour behind it, and every piece inside a card (fill or edge, by its game's rule) against the window colours behind it, at sunset and all 10 steps. The ball trail stays outside the standard as in the game (§3, X16).
+- B4 standard: each card's frame (coral fill or keel edge) against every scene colour under it and in the 1 px ring round it, read from the hub's own scene, and every piece inside a card (fill or edge, by its game's rule) against the window colours behind it, at sunset and all 10 steps. The ball trail stays outside the standard as in the game (§3, X16).
 - Each window draws only its own scene colours and its pieces' colours; no two pieces in a card overlap (the parts of the boat and of the hole and flag aside); every piece lies inside its window.
 - The hub shows the phase of the session clock as before (sunset, step 5, dusk; the reset after 5 minutes hidden).
 - Crisp pixels, no scrolling. Not verifiable headless: how the cards look and feel on the phone (X32).
@@ -206,7 +211,7 @@ Paddle and control
 - Relative drag anywhere on screen: the paddle moves by the finger's horizontal movement on the shared thumb travel (section 6a), clamped to the field. It is never absolute positioning, so the thumb rests in the sea and never covers the paddle. A touch that begins within 24 CSS px of the left or right edge is ignored.
 
 Pause
-- No finger on the screen means paused: ball and timers freeze within one frame, and a thumb ring with left and right chevrons shows in the sea.
+- No finger on the screen means paused: ball and timers freeze within one frame. Nothing marks the pause on screen (X33, 2026-11-26: the thumb ring with chevrons was removed).
 - Finger down resumes after 250 ms. Every opening starts in the same paused state.
 - Nothing is saved. The page hidden or closed pauses at once. Opening Bricks always starts a fresh field.
 
@@ -230,7 +235,7 @@ After B1, Pedro plays it and reports on feel. Tuning is a follow-up row.
 Choices made in the build (in force)
 - A new ball is served 10 degrees from vertical, alternating sides. Loop breaker: each launch counts toward a loop when no brick was popped since the last one; from the 3rd the path is nudged, 8 degrees more on each launch, alternating sides, capped at 70 degrees. A wedged ball escapes. The first finger down drives the paddle; a second finger does not move it, and when the first lifts the next takes over from where it is.
 - Without the HUD the field starts 5 px below the top plus the safe-area inset.
-- The pause ring, with its chevrons, stays: section 6e does not list it. Open question X33.
+- No pause marker (X33, 2026-11-26): the ring and chevrons were removed; Pedro found them not needed.
 - The ball speed, the pace, 10 degree serve and 8 degree nudge are in CONFIG at the top of bricks.js; the thumb travel is shared (section 6a).
 - A Bricks page loaded without a tap from the hub (direct URL, or Chrome reloading it) cannot vibrate until its first lift, because Chrome wants a tap on the page first. Accepted: no in-page fix exists without changing the controls.
 
@@ -268,7 +273,7 @@ Brought in line with the hard rules of update 2 by row X1.
 
 Sections 2, 2b, 3 and 7 apply unchanged. Catch reuses the shared kit: tokens, pixel.js, haptics.js, session.js.
 
-docs/style-reference-catch.jpg is the approved look for this game. Its lettering is a placeholder; use the shared pixel font.
+docs/style-reference-catch.jpg is the approved look for this game. Its lettering does not apply: nothing is written on screen (§2).
 
 ### Idea
 
@@ -374,7 +379,7 @@ Choices made in the build (in force)
 - The boat dips 1 px for 100 ms, and rocks 1 px left and right every 125 ms for 1 s. The ink cloud mixes the sea toward the ink cloud colour (section 3) for 4 s, then fades over 0.6 s in two dither stages.
 - Items and fish carry a 1 px outline in the edge colour; the nasty ones are bare blue with the shade inside. Bite bits (6, 300 ms) and a 3-dot spray under a leaping fish go away with reduced motion; the miss and dive splashes stay.
 - Catch keeps its input code in games/catch (a state machine in sim.js). A touch that starts while paused or resuming is never a tap; a finger down in the grace plays on at once; lifted while resuming, the game stays paused. The grace counts as active play. The page hidden or pagehide pauses at once with no grace.
-- The pause ring (with a square, no chevrons, as in style-reference-catch.jpg) stays; open question X33.
+- No pause marker (X33, 2026-11-26): the ring with a square, as in style-reference-catch.jpg, was removed; the reference's ring does not apply.
 
 ## 6c. Row U1: Putt
 
@@ -511,7 +516,7 @@ Solvable, always
 - Look: blocks are brick rows 3 or 5, pegs row 6, sand traps the sand mixed 55 percent toward row 4 with dots, water is sea band 2 with glint dashes, the hole is the keel plum with a rim 35 percent toward white and a coral flag. The guide is 2 x 2 dots every 5 px, the power bar five 4 x 2 bars, with a pull ring where the thumb went down and a large ring under it.
 - Sink drop 240 ms; the next level starts to slide in 800 ms after the drop and arrives over 420 ms (about 1.2 s after the drop); under reduced motion it appears with no slide. The 4 px cancel distance is in logical px.
 - Putt reads the shared session clock and advances it in memory only: while the ball rolls, while the thumb is down and for CONFIG.idleS (10 s) after either.
-- The hub's smallest tile size is 15 px with a 2 px gap, so four tiles fit at logical height 240.
+- (Superseded by row H2: the hub has no tiles; its cards are laid out by §5a.)
 
 ## 6d. Row S1: Stack
 
@@ -607,4 +612,4 @@ The starter for every later session:
 
 ## 8. Parked
 
-- P3 APK wrapper, with a native haptics bridge if the web ticks feel mushy.
+- P3 APK wrapper, with a native haptics bridge if the web ticks feel mushy. Its first device check carries what X32 did not confirm (Pedro's 2026-11-26 report did not cover it): installed-app fullscreen and offline, one edge swipe back to the hub, outdoors brightness, fps, safe-area insets with a display cutout, split screen and rotation.

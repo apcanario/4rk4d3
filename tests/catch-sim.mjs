@@ -711,7 +711,7 @@ function itemAt(s, x, y, vy = 40) {
 {
   // Readability, row B4 contrast pass (standard in tests/contrast.mjs and the
   // B4 changelog entry): the boat, the things to catch, the nasty ones, the
-  // fish and the pause ring (row X1: no HUD) against every scene colour under them,
+  // fish (row X1: no HUD; row X33: no pause marker) against every scene colour under them,
   // at sunset and each of the 10 steps, on logical heights 240 (with and
   // without a 10 px top inset), 300 and 400. No exceptions. Outlined sprites
   // pass a background when the fill or the outline clears it. The hull's
@@ -764,7 +764,6 @@ function itemAt(s, x, y, vy = 40) {
       for (const it of S.LOOK.items) add(`item ${it.name}`, 'de', colour(it.colour), edge(colour(it.colour)), skyBg);
       for (const n of S.LOOK.nasties) add(`nasty ${n.name}`, 'de', colour(n.colour), null, skyBg);
       for (const name of S.LOOK.fish.colours) add(`fish ${name}`, 'de', colour(name), edge(colour(name)), [...skyBg, ...seaBg]);
-      add('pause ring', 'cr', C.cloud, ink, seaBg);
       // Effects (B4 review): the glint sits on the sun (on the sea's top band from step 8, where the sun is low);
       // the spray under a leaping fish over the open sky, the sun, a cloud or the sea's top band;
       // the ink cloud against the sea band it darkens.
@@ -780,7 +779,7 @@ function itemAt(s, x, y, vy = 40) {
   for (const u of rows.filter((r) => !r.ok)) console.log(`  [readability] UNDER: ${CT.fmt(u)}`);
   for (const [tag] of screens) {
     const mine = rows.filter((r) => r.tag === tag);
-    for (const [rule, label] of [['cr', `boat hull, keel and mast, pause ring: contrast >= ${CT.MIN_CR} (fill or edge)`],
+    for (const [rule, label] of [['cr', `boat hull, keel and mast: contrast >= ${CT.MIN_CR} (fill or edge)`],
       ['de', `sail (its fill too), jib, items, nasties, fish, glint, spray, ink cloud: delta E >= ${CT.MIN_DE} (fill or outline)`]]) {
       const r = mine.filter((x) => x.rule === rule);
       check(r.length > 0 && r.every((x) => x.ok), `[${tag}] sunset and all 10 steps, ${label} (weakest ${CT.worst(r).v.toFixed(2)}, ${r.filter((x) => !x.ok).length} under)`);
@@ -799,7 +798,10 @@ function itemAt(s, x, y, vy = 40) {
   check(/INK = COLORS\.inkCloud/.test(src) && /mix\(pal\.sea\[i\], INK, INK_CLOUD_AMOUNT\)/.test(src), 'catch.js mixes the ink cloud with its token and amount');
   check(/SAIL = COLORS\.sail/.test(src) && /SAIL_EDGE = edge\(COLORS\.sail\)/.test(src) && /JIB = BRICK_ROWS\[5\]/.test(src)
     && /JIB_EDGE = edge\(BRICK_ROWS\[5\]\)/.test(src), 'catch.js draws the sail in its token and the jib in brick row 6, each with its edge');
-  check(/disc\(RING_R \+ 1, COLORS\.ink\);\s*disc\(RING_R, COLORS\.cloud\);/.test(src), 'catch.js draws the pause ring white in an ink ring');
+  // Row X33: no pause marker. draw() paints the same frame in every mode.
+  const drawBody = src.slice(src.indexOf('function draw(ctx, s)'), src.indexOf('function draw(ctx, s)') + src.slice(src.indexOf('function draw(ctx, s)')).indexOf('\n}\n'));
+  check(drawBody.length > 0 && !/mode/.test(drawBody) && !/\bRING_|drawRing/.test(src),
+    'catch.js draws no pause marker: no ring, and draw() does not depend on the pause mode (X33)');
 }
 
 /* ---------- haptics: the shared tick with the game's events ---------- */

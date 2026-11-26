@@ -15,9 +15,9 @@
 <body>
 <canvas class="screen" id="screen" role="img" aria-label="Four games: Bricks, Catch, Putt and Stack. The Android back gesture returns from a game."></canvas>
 <script type="module">
-import { INPUT, createScreen, drawScene, initPage, hitTest, publishHits, atSideEdge, SEA_HEIGHT } from './shared/pixel.js';
+import { INPUT, createScreen, drawScene, initPage, hitTest, publishHits, atSideEdge } from './shared/pixel.js';
 import { sessionClock, phaseOf, sceneStep } from './shared/session.js';
-import { CARDS, gridLayout, windowOf, drawCard } from './hub/cards.js';
+import { CARDS, gridLayout, hubScene, windowOf, drawCard } from './hub/cards.js';
 
 initPage();
 
@@ -36,16 +36,12 @@ function edgeBand(s) {
 
 function draw(ctx, s) {
   grid = gridLayout(s.W, s.H, s.safe, edgeBand(s));
-  const horizon = s.H - SEA_HEIGHT;
-  const open = grid.y0 - s.safe.top;
   // The hub never advances the clock; it shows the phase it stands at.
   const phase = phaseOf(clock.active);
-  const clouds = [[8, grid.bottom + 8]];
-  if (open >= 14) clouds.unshift([96, s.safe.top + Math.round(open * 0.25)], [12, s.safe.top + Math.round(open * 0.6)]);
-  // Stars spread over the open sky above the grid, or, when the grid fills
-  // the sky, over the strip between the grid and the horizon.
-  const stars = open >= 20 ? [s.safe.top + 2, grid.y0 - 3] : [grid.bottom + 2, horizon - 2];
-  drawScene(ctx, s.W, s.H, { clouds, phase, stars });
+  // The sky above the low grid is the picture: the horizon sits just above the
+  // cards, the sun on it, clouds and (at the last steps) stars above (§5a).
+  const scene = hubScene(grid, s.safe);
+  drawScene(ctx, s.W, s.H, { ...scene, phase });
   const step = sceneStep(phase);
   canvas.dataset.scene = String(step);
   const windows = {};
@@ -53,7 +49,7 @@ function draw(ctx, s) {
     drawCard(ctx, c.id, grid.cards[c.id], step, pressed === c.id);
     windows[c.id] = windowOf(grid.cards[c.id]);
   }
-  canvas.dataset.grid = JSON.stringify({ ...grid, windows, edge: edgeBand(s), safe: s.safe, stars });
+  canvas.dataset.grid = JSON.stringify({ ...grid, windows, edge: edgeBand(s), safe: s.safe, stars: scene.stars, clouds: scene.clouds });
   publishHits(canvas, s, grid.cards);
 }
 
