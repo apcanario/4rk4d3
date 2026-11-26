@@ -13,9 +13,9 @@ A one-thumb arcade for Pedro's Android phone: a hub of small endless games to pi
 - No points of any kind: no score, count, rally, strokes, level number or difficulty marker, neither on screen nor stored.
 - No saved game state. Nothing about a game is written to storage. Opening a game from the hub always starts it fresh. If Android kept the app alive in the background it carries on where it was; if not, it opens at the hub. Nothing at all is stored.
 - No fail state: no lives, no game over, no timers, no streaks, no daily goals, no notifications, no leaderboards, no accounts, no ads, no network calls.
-- No sound at all. Haptics are always on. There are no settings and no options anywhere: the hub is the game tiles and nothing else.
+- No sound at all. Haptics are always on. There are no settings and no options anywhere: the hub is the four game cards and nothing else.
 - Vanilla HTML, CSS and JS, ES modules, no build step, no dependencies, no CDN. Static files on GitHub Pages.
-- Text on the hub never wraps or overflows its tile or button: fit the text size to the box.
+- No text anywhere: no page draws a letter or a digit, the hub included (row H2). The app's name lives only in the manifest and the icons.
 
 ## 2a. Evidence
 
@@ -57,13 +57,13 @@ Choices made in the build (in force)
 - The session clock counts active play only and lives in memory, never saved. It resets when the app starts and when the page has been hidden for 5 minutes or more, and also if the device clock went backwards while hidden. A game left open but paused no longer resets it. After a reset the pace restarts at the next play start (Bricks, Catch) or on show (Stack); a ball or block already moving keeps its speed until its next paddle bounce or drop.
 - The scene has sunset plus 10 steps, one per whole minute of active play, full dusk at minute 10. The sun sinks round(24 x step / 10) px. Stars are 3 x 3 white crosses, 2, 4 and 6 at steps 8, 9 and 10, spread over the open sky. Clouds and glints stay.
 - The dusk ceiling falls linearly over minutes 10 to 12. In Bricks a new serve after a miss takes the current pace, and both a miss and a serve are clamped to the falling ceiling.
-- Chrome lets a page vibrate only after a tap on it. A game opened from its tile gets that tap from the tile; a game page loaded on its own (or reloaded) cannot vibrate until its first lift. Accepted for every game; the headless tests cannot see Chrome's gate (they use a stub), only the activation check in tests/check.py does.
+- Chrome lets a page vibrate only after a tap on it. A game opened from its hub card gets that tap from the card; a game page loaded on its own (or reloaded) cannot vibrate until its first lift. Accepted for every game; the headless tests cannot see Chrome's gate (they use a stub), only the activation check in tests/check.py does.
 - The hub holds the one clock in memory and each game it opens uses it, so there is one clock for all games. A game page opened on its own URL has a clock of its own and no way back to the hub (the back gesture leaves the app); this is accepted.
 - Stored rlx.* keys are cleared on every start; other keys on the origin are kept.
 
 ## 3. Look
 
-The hard rules of update 2 removed every HUD, score and count, so the HUD and score parts below are void and the lettering applies to the hub only. The B4 contrast pass changed some values (list at the end of this section).
+The hard rules of update 2 removed every HUD, score and count, so the HUD and score parts below are void; since row H2 the hub draws no text either, so the lettering applies to the app icons only (tools/make-icons.py). The B4 contrast pass changed some values (list at the end of this section).
 
 Light summer sunset, rounded 8-bit. docs/style-reference.jpg is the approved reference; match it.
 
@@ -74,7 +74,7 @@ Pixel grid
 
 Tokens (shared/tokens.js, mirrored in shared/theme.css)
 - sky-top #FFF7EC, sky-bottom #FFCDC0
-- coral #F05A68 (paddle, wordmark), blue #4A6FA5 (ball, score)
+- coral #F05A68 (paddle, hub card frames), blue #4A6FA5 (ball, score)
 - brick rows, top to bottom: #F05A68 #F77476 #FF8C7A #FFA38C #FF96B2 #F57DA8 #FFB2C4 #78B4D8 #A0D0E8
 - sun #FFF4D6, cloud #FFFFFF
 - sea bands #96D0E6 #84C4DE #74B8D6
@@ -91,7 +91,7 @@ Scene (static in v1)
 - Two or three small white pixel clouds in the open sky.
 
 Lettering
-- One hand-drawn rounded pixel font in shared/font.js: capitals and digits, drawn on canvas, with rounded outer corners. No web fonts anywhere.
+- One hand-drawn rounded pixel font in shared/font.js: capitals and digits, with rounded outer corners. No web fonts anywhere. Since row H2 no page loads it; tools/make-icons.py reads it to draw the app icons.
 
 Motion
 - Only where it helps: brick pop particles (about 8 bits, 300 ms) and a ball trail of 3 fading squares.
@@ -99,7 +99,7 @@ Motion
 
 B4 contrast pass (in force; replaces the value above where they differ)
 - Blue #436495 (ball, nasty ones). Ink #30486B for small lettering and control edges on the sea. Sail and card #A0D0E8 (the sail is no longer cream). Brick row 7 #FFA2CE; the jib is brick row 6.
-- A 1 px edge all round, 70 percent toward #783C5A, on the paddle, hull, mast, tiles, wordmark, and the outlines of things to catch and fish. White tile lettering with a 1 px outline of the coral's edge in place of the drop shade. The pause ring is white in an ink edge.
+- A 1 px edge all round, 70 percent toward #783C5A, on the paddle, hull, mast, the hub's card frames (row H2; before it the tiles and wordmark), and the outlines of things to catch and fish. (The white tile lettering in a 1 px outline went with the tiles in H2.) The pause ring is white in an ink edge.
 - Keel #241E38 (the hull's rows below the horizon). Glint #FFA2CE (the sky-event glint and the spray). Ink cloud #483080 mixed 0.45 into each sea band.
 - Standard in place of "readable": every game piece against every scene step meets CIE76 delta E 20 or better (tests/contrast.mjs), WCAG contrast 3 for edges and fills seen as one shape, and WCAG 4.5 for small lettering.
 - Not yet inside the standard, left as built: the ball trail (delta E 16.42 from the sky) and a pop particle's highlight bit and the splash's white top (their other bits carry them). Pedro may ask for them to read more strongly.
@@ -109,7 +109,8 @@ B4 contrast pass (in force; replaces the value above where they differ)
 Brought in line with the hard rules of update 2 by row X1.
 
 - /index.html: the hub. It opens each game in a frame over itself and closes it on the back gesture.
-- /shared/: tokens.js, theme.css, font.js (used by the hub only), pixel.js (canvas setup, scaling, stepped-corner rect, dither, scene, the shared input values, clearing old stored keys), haptics.js, session.js (the session clock and scene phase, in memory)
+- /hub/cards.js: the hub's card grid (row H2): the layout, and each card's frame and window. No DOM; it reuses the Catch sprite masks from games/catch/sim.js.
+- /shared/: tokens.js, theme.css, font.js (no page loads it since H2; tools/make-icons.py reads it for the icons), pixel.js (canvas setup, scaling, stepped-corner rect, dither, scene, the shared input values, clearing old stored keys), haptics.js, session.js (the session clock and scene phase, in memory)
 - /games/bricks/: index.html, bricks.js, physics.js
 - /games/catch/: index.html, catch.js, sim.js
 - /games/putt/: index.html, putt.js, sim.js, gen.js
@@ -125,7 +126,7 @@ Brought in line with the hard rules of update 2 by row X1.
 
 Build
 - The shared modules listed above.
-- Hub: the sunset scene full screen on the pixel canvas. Wordmark RLX at the top. Game tiles as rounded pixel cards in the lower, thumb-reachable half, one active tile for every built game: BRICKS, CATCH, PUTT and STACK. Tiles and nothing else: no switch, no setting. One tap on a tile opens its game.
+- Hub (replaced by row H2, §5a): the sunset scene full screen on the pixel canvas and one card per built game, Bricks, Catch, Putt and Stack, in a 2x2 grid. No wordmark, no text. Cards and nothing else: no switch, no setting. One tap on a card opens its game.
 - Opening a game: the hub opens it full screen in a frame over itself, made fresh on every opening, and adds one history entry. The page never leaves the hub, so the session clock stays in memory across games.
 - Back: the Android back gesture returns from a game to the hub and removes the game. There is no on-screen back control.
 - Nothing is stored. At every start, any rlx.* key an earlier build left in localStorage or sessionStorage is removed.
@@ -140,7 +141,34 @@ Accept
 - Storage stays empty.
 - No console errors; no requests to any host but its own.
 
-Choice made in the build (X1): the hub creates each game's fullscreen frame on the tile's pointerdown and shows it on pointerup, with one history.pushState entry. The back gesture removes the frame, so the page never leaves the hub and its clock lives on. A reload on a game's history entry opens the hub. Safe-area insets inside the frame come from the hub's probe.
+Choice made in the build (X1): the hub creates each game's fullscreen frame on the card's pointerdown and shows it on pointerup, with one history.pushState entry. The back gesture removes the frame, so the page never leaves the hub and its clock lives on. A reload on a game's history entry opens the hub. Safe-area insets inside the frame come from the hub's probe.
+
+## 5a. Row H2: the card grid hub
+
+Pedro chose option 1 of four hub mockups (2026-11-26): the grid.
+
+What it is
+- The hub is a 2x2 grid of four big framed cards over the sunset scene, each a small window onto its game, drawn in that game's own scene colours: Bricks top left (three columns of coloured bricks, the ball with its trail, the paddle), Catch top right (the boat, the sun, the sea, things falling, a leaping fish), Putt bottom left (the hole and flag, the ball with its dotted aim guide, a coral bar, a peg, water, a sand trap, a block where the card is tall enough), Stack bottom right (a tower of floors, the next block above, the sea at the base).
+- Each card: a coral frame with the 1 px edge all round (B4), stepped corners (3 px outside, 1 px on the window), a highlight line at the top and a drop shade at the bottom; the window inside its own 1 px edge. Every colour is a token or a PLAN §3 mix; the pieces are drawn as their games draw them (the Catch sprites come from games/catch/sim.js).
+- No app name, no wordmark, no text of any kind. The cards are static. The windows follow the exit ramp with the scene: their sky, sea, sand and sun step toward dusk with the hub's background (§2b), the pieces keep their colours.
+- Behaviour as the hub before it (§5): the frame is made on the card's pointerdown and shown on pointerup with one history entry; the back gesture returns; a touch that slides off a card opens nothing; a touch that begins within 24 CSS px of a side edge opens nothing; the session clock is the hub's. Nothing stored, no settings.
+- Code: hub/cards.js (layout, parts, drawing; no DOM) and index.html.
+
+Layout rule
+- Side margin: the larger of 4 px, the 24 CSS px side band in logical px, and each side's safe inset plus 2. The two columns share the rest equally, with a 5 px gap.
+- The grid ends 28 px above the horizon (the sun's radius plus 4), so the whole sun and the sea show below it. Its top is at least 4 px below the top safe inset.
+- The cards are as tall as fit between those two lines, with the same 5 px gap between the rows, capped at twice their width; when capped, the grid stays right above the sun and the extra sky is above it.
+- Integer logical pixels throughout, one integer scale; at logical height 240 the cards are about 56 x 80, at 300 about 56 x 110.
+- Clouds: one left of the sun below the grid; two more in the sky above the grid when there are 14 px or more of it. Stars spread over the sky above the grid when there are 20 px of it, else over the strip between the grid and the horizon.
+
+Accept
+- Four equal cards in a 2x2 grid in the order above, equal gaps across and down, centred, each at least 40 logical px each way, inside the safe area and clear of the side band, at logical heights 240, 300 and 400, widths 360 and 412 CSS px, device scale 2.625 and 3, with and without safe-area insets.
+- The hub draws no text and loads no font.
+- Each card opens its own game full screen over the hub; back returns; a touch beginning in the side band opens nothing; a slide off a card opens nothing.
+- B4 standard: each card's frame (fill or edge) against every scene colour behind it, and every piece inside a card (fill or edge, by its game's rule) against the window colours behind it, at sunset and all 10 steps. The ball trail stays outside the standard as in the game (§3, X16).
+- Each window draws only its own scene colours and its pieces' colours; no two pieces in a card overlap (the parts of the boat and of the hole and flag aside); every piece lies inside its window.
+- The hub shows the phase of the session clock as before (sunset, step 5, dusk; the reset after 5 minutes hidden).
+- Crisp pixels, no scrolling. Not verifiable headless: how the cards look and feel on the phone (X32).
 
 ## 6. Row B1: Bricks (session 2)
 

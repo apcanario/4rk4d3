@@ -4,7 +4,7 @@ Rows are defined in docs/PLAN.md. Nothing is built that is not a row here. A don
 
 ## Queue
 
-- X32 Real-device pass of every game on Pedro's phone, installed app in fullscreen (replaces X2, X12, X17, X19, X23, X25; cannot be done headless): one edge swipe from each game back to the hub (if Android needs two, set the manifest to standalone); install, portrait, offline; fps; tap and drag feel in Catch (200 ms, 4 px, 400 ms grace) and Putt pull and release; tick strengths told apart in each game; vibrate on a game opened from its tile; look at sunset, step 5 and dusk at normal and low brightness and outdoors (are the edges, ink, keel, ink cloud and outlined tile labels too heavy for the pastel look); Putt first opening and hole-to-hole wait, the PUTT tile at 15 px on a 240-high screen; Stack tap latency and camera slide; safe-area insets with a display cutout; reduced motion; kill and reopen opens the hub, and the first back after a reload on a game entry; split screen and rotation. Bricks and Catch thumb travel at 35 percent (B3).
+- X32 Real-device pass of every game on Pedro's phone, installed app in fullscreen (replaces X2, X12, X17, X19, X23, X25; cannot be done headless): one edge swipe from each game back to the hub (if Android needs two, set the manifest to standalone); install, portrait, offline; fps; tap and drag feel in Catch (200 ms, 4 px, 400 ms grace) and Putt pull and release; tick strengths told apart in each game; vibrate on a game opened from its card; look at sunset, step 5 and dusk at normal and low brightness and outdoors (are the edges, ink, keel, ink cloud and hub card frames too heavy for the pastel look); Putt first opening and hole-to-hole wait; the new grid hub: card size and tap comfort; Stack tap latency and camera slide; safe-area insets with a display cutout; reduced motion; kill and reopen opens the hub, and the first back after a reload on a game entry; split screen and rotation. Bricks and Catch thumb travel at 28 percent (B3a) and Putt's pull cap at 48 px.
 
 ## Done
 
@@ -22,6 +22,7 @@ Rows are defined in docs/PLAN.md. Nothing is built that is not a row here. A don
 - X18 Putt idle window 10 s (2026-11-26)
 - X29, X7, X6, X31, X4 closed: superseded by X1 or accepted and documented in PLAN (2026-11-26)
 - B3a Thumb travel 28 percent and Putt pull cap 48 px from Pedro's feel report (2026-11-26)
+- H2 Hub redesign: a 2x2 grid of four framed cards, each a small window onto its game, no text (Pedro chose mockup 1 of 4; PLAN §5a) (2026-11-26)
 
 ## Parked
 

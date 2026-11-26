@@ -5,7 +5,7 @@
 // file under the new name, takes over at once and deletes the old caches.
 // The next launch runs the new files. Add any new shipped file to FILES.
 
-const VERSION = 'rlx-v16';
+const VERSION = 'rlx-v17';
 
 const FILES = [
   './',
@@ -17,6 +17,7 @@ const FILES = [
   './shared/pixel.js',
   './shared/haptics.js',
   './shared/session.js',
+  './hub/cards.js',
   './games/bricks/',
   './games/bricks/index.html',
   './games/bricks/bricks.js',

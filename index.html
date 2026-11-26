@@ -13,127 +13,48 @@
 <link rel="stylesheet" href="shared/theme.css">
 </head>
 <body>
-<canvas class="screen" id="screen" role="img" aria-label="RLX: Bricks, Catch, Putt and Stack. The Android back gesture returns from a game."></canvas>
+<canvas class="screen" id="screen" role="img" aria-label="Four games: Bricks, Catch, Putt and Stack. The Android back gesture returns from a game."></canvas>
 <script type="module">
-import { COLORS, edge } from './shared/tokens.js';
-import { drawFitted, fitSize } from './shared/font.js';
-import {
-  createScreen, drawScene, pixelBody, initPage, hitTest, publishHits, SEA_HEIGHT, SUN_RADIUS,
-} from './shared/pixel.js';
+import { INPUT, createScreen, drawScene, initPage, hitTest, publishHits, atSideEdge, SEA_HEIGHT } from './shared/pixel.js';
 import { sessionClock, phaseOf, sceneStep } from './shared/session.js';
+import { CARDS, gridLayout, windowOf, drawCard } from './hub/cards.js';
 
 initPage();
 
-// The hub is the game tiles and nothing else (PLAN §2): one active tile per built game.
-const TILES = [
-  { id: 'bricks', label: 'BRICKS', href: 'games/bricks/' },
-  { id: 'catch', label: 'CATCH', href: 'games/catch/' },
-  { id: 'putt', label: 'PUTT', href: 'games/putt/' },
-  { id: 'stack', label: 'STACK', href: 'games/stack/' },
-];
-
-// Tile height and gap, largest first; short screens take a smaller pair
-// (U1: the smallest pair added so four tiles fit a logical height of 240).
-const TILE_SIZES = [[22, 6], [20, 5], [18, 4], [16, 3], [15, 2]];
-const SUN_CLEAR = SUN_RADIUS + 4; // tiles end this far above the horizon to keep the sun clear
-// B4 contrast pass: every tile and the wordmark carry a 1 px edge all round
-// that stands off every scene colour; the tiles take white lettering in a
-// 1 px outline of the coral's edge.
-const TILE_INK = COLORS.cloud;
-const TILE_EDGE = edge(COLORS.coral);
+// The hub is the four game cards and nothing else (PLAN §2, §5a): a 2x2 grid
+// of framed windows onto the games over the sunset scene. No text of any kind.
 
 const clock = sessionClock(); // the one session clock: the hub holds it, the games it opens share it
 let pressed = null;
-let rects = {};
+let grid = null;
 
-function layout(s) {
-  const { W, H, safe } = s;
-  const side = Math.max(safe.left, safe.right);
-  const mx = 8 + side;
-  const horizon = H - SEA_HEIGHT;
-  const r = {};
-  r.wordmark = { x: mx, y: safe.top + 11, w: W - mx * 2, h: 30 }; // letters at y + 12, 28 tall, in a 1 px outline
-  const tw = W - (mx + 8) * 2;
-  // Tiles live in the lower half and never start above it. Prefer the
-  // largest tiles that leave the sun clear; else the largest that leave at
-  // least half the sun showing; else the smallest.
-  const minTop = Math.max(Math.ceil(H / 2), r.wordmark.y + r.wordmark.h + 10);
-  const stack = ([h, g]) => TILES.length * h + (TILES.length - 1) * g;
-  let size = TILE_SIZES.find((sz) => minTop + stack(sz) <= horizon - SUN_CLEAR);
-  let ty;
-  if (size) {
-    ty = horizon - SUN_CLEAR - stack(size);
-  } else {
-    size = TILE_SIZES.find((sz) => minTop + stack(sz) <= horizon - SUN_RADIUS / 2)
-      || TILE_SIZES[TILE_SIZES.length - 1];
-    ty = minTop;
-  }
-  const [th, gap] = size;
-  TILES.forEach((t, i) => {
-    r[t.id] = { x: mx + 8, y: ty + i * (th + gap), w: tw, h: th };
-  });
-  return r;
-}
-
-// One box computation, used both to size the labels and to draw them.
-const TILE_PAD = 6;
-
-function tileParts(r, y) {
-  const right = r.x + r.w - TILE_PAD;
-  const chevron = { x: right - 4, y: y + Math.floor((r.h - 7) / 2) };
-  const end = chevron.x - 4;
-  return { chevron, label: { x: r.x + TILE_PAD, y: y + 3, w: end - (r.x + TILE_PAD), h: r.h - 6 } };
-}
-
-// The largest size at which every label fits its box (with room for the
-// 1 px outline all round), so all tiles share one label size.
-function labelSizeFor(tiles, rectsById) {
-  let size = 16;
-  for (const t of tiles) {
-    const box = tileParts(rectsById[t.id], rectsById[t.id].y).label;
-    size = Math.min(size, fitSize(t.label, box.w - 2, box.h - 2, 16));
-  }
-  return Math.max(1, size);
-}
-
-function drawTile(ctx, t, r, labelSize) {
-  const y = r.y + (pressed === t.id ? 1 : 0);
-  pixelBody(ctx, r.x, y, r.w, r.h, COLORS.coral, 2, TILE_EDGE);
-  const parts = tileParts(r, y);
-  // chevron: this one opens
-  ctx.fillStyle = TILE_INK;
-  const { x: cx, y: cy } = parts.chevron;
-  [0, 1, 2, 3, 2, 1, 0].forEach((c, i) => ctx.fillRect(cx + c, cy + i, 2, 1));
-  // B4 review: white in a 1 px outline of the coral's edge (6.13:1), as the wordmark.
-  return drawFitted(ctx, t.label, parts.label, TILE_INK, { align: 'left', maxSize: labelSize, outline: TILE_EDGE });
+/** The side band where a touch is ignored (INPUT.edgeIgnoreCssPx), in logical px from the canvas's own edge. */
+function edgeBand(s) {
+  const ratio = canvas.width / Math.max(1, canvas.clientWidth); // device px per CSS px
+  return Math.max(0, Math.ceil((INPUT.edgeIgnoreCssPx * ratio - s.ox) / s.scale));
 }
 
 function draw(ctx, s) {
-  rects = layout(s);
-  const firstTile = rects[TILES[0].id].y;
-  const wordBottom = rects.wordmark.y + rects.wordmark.h;
-  const open = firstTile - wordBottom;
+  grid = gridLayout(s.W, s.H, s.safe, edgeBand(s));
+  const horizon = s.H - SEA_HEIGHT;
+  const open = grid.y0 - s.safe.top;
   // The hub never advances the clock; it shows the phase it stands at.
   const phase = phaseOf(clock.active);
-  drawScene(ctx, s.W, s.H, {
-    clouds: [
-      [96, wordBottom + Math.round(open * 0.2)],
-      [10, wordBottom + Math.round(open * 0.5)],
-      [62, wordBottom + Math.round(open * 0.78)],
-    ],
-    phase,
-    stars: [wordBottom + 2, firstTile - 3],
-  });
-  canvas.dataset.scene = String(sceneStep(phase));
-  drawFitted(ctx, 'RLX', rects.wordmark, COLORS.coral, { maxSize: 6, outline: TILE_EDGE });
-
-  const labelSize = labelSizeFor(TILES, rects);
-  const drawn = {};
-  for (const t of TILES) drawn[t.id] = drawTile(ctx, t, rects[t.id], labelSize);
-  canvas.dataset.labels = JSON.stringify(drawn);
-  const hitRects = {};
-  for (const t of TILES) hitRects[t.id] = rects[t.id];
-  publishHits(canvas, s, hitRects);
+  const clouds = [[8, grid.bottom + 8]];
+  if (open >= 14) clouds.unshift([96, s.safe.top + Math.round(open * 0.25)], [12, s.safe.top + Math.round(open * 0.6)]);
+  // Stars spread over the open sky above the grid, or, when the grid fills
+  // the sky, over the strip between the grid and the horizon.
+  const stars = open >= 20 ? [s.safe.top + 2, grid.y0 - 3] : [grid.bottom + 2, horizon - 2];
+  drawScene(ctx, s.W, s.H, { clouds, phase, stars });
+  const step = sceneStep(phase);
+  canvas.dataset.scene = String(step);
+  const windows = {};
+  for (const c of CARDS) {
+    drawCard(ctx, c.id, grid.cards[c.id], step, pressed === c.id);
+    windows[c.id] = windowOf(grid.cards[c.id]);
+  }
+  canvas.dataset.grid = JSON.stringify({ ...grid, windows, edge: edgeBand(s), safe: s.safe, stars });
+  publishHits(canvas, s, grid.cards);
 }
 
 const canvas = document.getElementById('screen');
@@ -141,9 +62,9 @@ const screen = createScreen(canvas, draw);
 
 /* ---------- opening a game: a fresh frame over the hub ---------- */
 
-// The game is made on the tile's touch, so the tap that opens it also counts
+// The game is made on the card's touch, so the tap that opens it also counts
 // as the game page's own tap (Chrome lets a page vibrate only after one); it
-// shows when the touch lifts on the tile, with a history entry, so the
+// shows when the touch lifts on the card, with a history entry, so the
 // Android back gesture returns here. Going back removes the frame: the next
 // opening is a fresh game. The page itself never leaves the hub, so the
 // session clock lives on in memory across games.
@@ -153,7 +74,7 @@ function prepare(t) {
   discard();
   const el = document.createElement('iframe');
   el.className = 'game';
-  el.title = t.label;
+  el.title = t.name;
   el.src = t.href;
   document.body.appendChild(el);
   game = { el, id: t.id, shown: false };
@@ -185,16 +106,17 @@ if (history.state && history.state.rlx) history.back();
 
 function targetAt(e) {
   const p = screen.toLogical(e.clientX, e.clientY);
-  for (const t of TILES) if (hitTest(p, rects[t.id], 2)) return t.id;
+  for (const c of CARDS) if (hitTest(p, grid.cards[c.id], 2)) return c.id;
   return null;
 }
 
 canvas.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   if (game && game.shown) return;
+  if (atSideEdge(e)) return; // the back gesture's band: a touch that begins here opens nothing
   pressed = targetAt(e);
   if (pressed) {
-    prepare(TILES.find((t) => t.id === pressed));
+    prepare(CARDS.find((c) => c.id === pressed));
     screen.render();
   }
 });

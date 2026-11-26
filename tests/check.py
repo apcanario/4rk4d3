@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""RLX checks (rows H1, B1, B2, C1, B4, U1, S1 and X1) in headless Chromium and Node. Not needed to run the app.
+"""RLX checks (rows H1, H2, B1, B2, C1, B4, U1, S1 and X1) in headless Chromium and Node. Not needed to run the app.
 
 Needs Python Playwright with Chromium (pip install playwright;
 python -m playwright install chromium). Run: python3 tests/check.py
 Serves the repo under /4rk4d3/ (the GitHub Pages project subpath), then checks
-both phone widths: pixels crisp, no scroll, the hub's tiles and nothing else,
-each game opened over the hub by its tile and closed by the back gesture
+both phone widths: pixels crisp, no scroll, the hub's four cards and nothing else
+(row H2: a 2x2 grid of equal cards, no text drawn), each game opened over the
+hub by its card and closed by the back gesture
 (history back), old rlx.* keys cleared at start, the manifest fullscreen, the
 service worker offline, cache version bump, no console errors, no requests to
 another host. Row X1 throughout: no text, number or button on any game screen,
@@ -13,14 +14,14 @@ storage empty after play in every game, touches that begin within 24 CSS px
 of a side edge ignored in every game, a fresh game on every opening, haptics
 always on, one session clock in memory shared by the hub and every game it
 opens (reset when the app starts and after 5 minutes hidden), Catch's drag on
-the shared thumb travel, and a game opened by its tile allowed to vibrate at
+the shared thumb travel, and a game opened by its card allowed to vibrate at
 once (real vibrate, real touch). Rows B1 and B2: tests/bricks-sim.mjs (physics
 in Node) and Bricks in the browser: pause and resume, relative drag, haptics,
 reduced motion, no loop while paused, the clock, the hub drawing the scene
 phase, Bricks at full dusk. Row C1: tests/catch-sim.mjs and Catch with real
 touch events (CDP): taps and fish, the pause grace, haptics, dusk. Row B4: the
-contrast standard on the hub (wordmark, tiles) at sunset and all 10 steps on
-logical heights 240, 300 and 400, and the drawn colours of the hub, Bricks and
+contrast standard on the hub (card frames, and the pieces in each card) at sunset and all 10 steps on
+logical heights 240, 300 and 400 (360 and 412 CSS px wide), and the drawn colours of the hub, Bricks and
 Catch at sunset, step 5 and step 10 (see tests/contrast.mjs). Row U1:
 tests/putt-sim.mjs and Putt with real touch events: a level at once and the
 next built in a Web Worker, a cancelled pull, real shots planned with the
@@ -93,6 +94,11 @@ Object.defineProperty(Navigator.prototype, 'vibrate', {
   configurable: true,
   value: function (p) { window.__vib.push(p); window.__vibAt.push(performance.now()); return true; },
 });
+window.__text = 0;
+for (const k of ['fillText', 'strokeText']) {
+  const real = CanvasRenderingContext2D.prototype[k];
+  CanvasRenderingContext2D.prototype[k] = function (...a) { window.__text++; return real.apply(this, a); };
+}
 window.__raf = 0;
 const __rafReal = window.requestAnimationFrame.bind(window);
 window.requestAnimationFrame = (cb) => { window.__raf++; return __rafReal(cb); };
@@ -122,23 +128,44 @@ def layout_of(page):
 
 
 def hub_layout_checks(page, tag, h):
-    """Tiles: top edge in the lower half, sun clear where room allows, one label size; tiles and nothing else."""
+    """Row H2: four equal cards in a 2x2 grid (Bricks, Catch / Putt, Stack), each at least 40 logical px each way,
+    equal gaps, centred, inside the safe area and clear of the 24 CSS px side band, the whole sun and the sea below,
+    as big as fit; the cards and nothing else; no text drawn."""
     lay = layout_of(page)
-    H, r = lay["H"], lay["rects"]
+    g = json.loads(page.eval_on_selector("#screen", "c => c.dataset.grid"))
+    H, W, r = lay["H"], lay["W"], lay["rects"]
     horizon = H - 42
-    top = r["bricks"]["y"]
-    bottom = r["stack"]["y"] + r["stack"]["h"]
-    check(top * 2 >= H, f"[{tag}] first tile top edge {top} >= H/2 ({H}/2)")
-    if H >= 270:
-        check(bottom <= horizon - 28, f"[{tag}] sun fully clear of the tiles (tiles end {bottom}, sun top {horizon - 24})")
-    else:
-        check(bottom <= horizon - 12, f"[{tag}] at least half the sun clear of the tiles (tiles end {bottom}, horizon {horizon})")
-    labels = json.loads(page.eval_on_selector("#screen", "c => c.dataset.labels"))
-    check(len(set(labels.values())) == 1 and 0 not in labels.values(), f"[{tag}] all tile labels drawn at one size {labels}")
-    # Row X1: the hub is the game tiles and nothing else: one active tile per built game, no switch, no setting.
-    check(sorted(hits(page)) == sorted(GAMES) and sorted(labels) == sorted(GAMES),
-          f"[{tag}] the hub has one tile per built game and nothing else {sorted(hits(page))}")
+    safe = g["safe"]
+    check(sorted(r) == sorted(GAMES) and sorted(hits(page)) == sorted(GAMES),
+          f"[{tag}] the hub has one card per built game and nothing else {sorted(hits(page))}")
+    b, c, p, s = (r[k] for k in GAMES)
+    sizes = {(q["w"], q["h"]) for q in r.values()}
+    check(len(sizes) == 1, f"[{tag}] the four cards are the same size {sizes}")
+    w, hh = b["w"], b["h"]
+    check(w >= 40 and hh >= 40, f"[{tag}] every card is a tap target of at least 40 logical px each way ({w}x{hh})")
+    gx = c["x"] - (b["x"] + w)
+    gy = p["y"] - (b["y"] + hh)
+    check(b["y"] == c["y"] and p["y"] == s["y"] and b["x"] == p["x"] and c["x"] == s["x"]
+          and s["x"] - (p["x"] + w) == gx and s["y"] - (c["y"] + hh) == gy and gx == gy and gx >= 3,
+          f"[{tag}] a 2x2 grid in order Bricks, Catch / Putt, Stack with equal gaps ({gx}, {gy})")
+    left, right, top, bottom = b["x"], c["x"] + w, b["y"], p["y"] + hh
+    check(left >= safe["left"] and W - right >= safe["right"] and top >= safe["top"] and bottom <= H - safe["bottom"],
+          f"[{tag}] the grid ({left}..{right} x {top}..{bottom}) is inside the safe area {safe}")
+    check(left >= g["edge"] and W - right >= g["edge"] and abs(left - (W - right)) <= 1,
+          f"[{tag}] the grid is centred and clear of the side band where touches are ignored ({left}, {W - right}, band {g['edge']})")
+    check(bottom <= horizon - 28, f"[{tag}] the whole sun and the sea show below the grid (grid ends {bottom}, sun top {horizon - 24})")
+    check(hh == 2 * w or top - (safe["top"] + 4) <= 1,
+          f"[{tag}] the cards are as big as fit (top {top}, safe top {safe['top']}, {w}x{hh})")
+    check(page.eval_on_selector("#screen", "c => c.dataset.labels || null") is None and page.evaluate("window.__text") == 0,
+          f"[{tag}] the hub draws no text (no labels, no fillText or strokeText)")
     return lay
+
+
+def logical_to_css(page, x, y):
+    """CSS px of a logical point on the hub."""
+    v = view_of(page)
+    k = page.evaluate("document.getElementById('screen').getBoundingClientRect().width / document.getElementById('screen').width")
+    return (v["ox"] + x * v["scale"]) * k, (v["oy"] + y * v["scale"]) * k
 
 
 def tap(page, name):
@@ -209,8 +236,10 @@ def run_viewport(browser, base, w, h):
     hub_layout_checks(page, tag, h)
     hub_dom = page.evaluate("() => ({ text: document.body.innerText.trim(), controls: document.querySelectorAll('button, a, input, select, [role=button]').length })")
     check(hub_dom == {"text": "", "controls": 0}, f"[{tag}] the hub has no switch, setting or other control in the DOM {hub_dom}")
+    fonts = page.evaluate("performance.getEntriesByType('resource').map((e) => e.name).filter((n) => /font/.test(n))")
+    check(fonts == [], f"[{tag}] the hub loads no font (shared/font.js or any other) {fonts}")
 
-    # Navigation: each tile opens its game over the hub; the back gesture (history back) returns.
+    # Navigation: each card opens its game over the hub; the back gesture (history back) returns.
     hlen = page.evaluate("history.length")
     for game in GAMES:
         g = open_tile(page, game)
@@ -218,21 +247,23 @@ def run_viewport(browser, base, w, h):
         page.screenshot(path=str(OUT / f"{game}-{tag}.png"))
         shown = page.evaluate("(() => { const f = document.querySelector('iframe.game'); const r = f.getBoundingClientRect(); "
                               "return { shown: f.classList.contains('shown'), w: r.width, h: r.height, n: document.querySelectorAll('iframe').length }; })()")
-        check(page.url == base and shown == {"shown": True, "w": w, "h": h, "n": 1},
-              f"[{tag}] tap {game.upper()} opens {game} full screen over the hub (the page stays the hub) {shown}")
+        src = page.evaluate("document.querySelector('iframe.game').getAttribute('src')")
+        check(page.url == base and shown == {"shown": True, "w": w, "h": h, "n": 1} and src == f"games/{game}/",
+              f"[{tag}] tap the {game} card opens {game} ({src}) full screen over the hub (the page stays the hub) {shown}")
         no_hud(g, tag, game)
         back_to_hub(page)
         check(page.url == base and page.evaluate("document.querySelectorAll('iframe').length") == 0,
               f"[{tag}] back gesture (history back) returns from {game} to the hub, the game gone")
     check(page.evaluate("history.length") == hlen + 1, f"[{tag}] going in and out of games leaves one history entry above the hub")
 
-    # Only tiles open games: a tap on the open sky between the wordmark and the tiles opens nothing.
-    sky_y = hits(page)["bricks"]["y"] * 0.6
-    page.touchscreen.tap(180, sky_y)
+    # Only cards open games: a tap on the open sky between the grid and the horizon opens nothing.
+    lay = layout_of(page)
+    sky_x, sky_y = logical_to_css(page, 40, (lay["rects"]["putt"]["y"] + lay["rects"]["putt"]["h"] + lay["H"] - 42) / 2)
+    page.touchscreen.tap(sky_x, sky_y)
     page.wait_for_timeout(300)
     check(page.url == base and page.evaluate("document.querySelectorAll('iframe').length") == 0,
           f"[{tag}] a tap on the hub's open sky ({sky_y:.0f} CSS px) opens nothing")
-    # A touch that starts on a tile and slides off it opens nothing (the frame made on touch is dropped).
+    # A touch that starts on a card and slides off it opens nothing (the frame made on touch is dropped).
     p0 = hits(page)["catch"]
     cdp = ctx.new_cdp_session(page)
     cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": p0["x"], "y": p0["y"]}]})
@@ -242,7 +273,7 @@ def run_viewport(browser, base, w, h):
     cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
     page.wait_for_timeout(200)
     check(made == 1 and page.evaluate("document.querySelectorAll('iframe').length") == 0 and not page.evaluate("document.body.dataset.game || ''"),
-          f"[{tag}] a touch that slides off its tile opens nothing")
+          f"[{tag}] a touch that slides off its card opens nothing")
     # Reloading on a game's history entry (Chrome reopening the app) shows the hub.
     open_tile(page, "bricks")
     page.reload()
@@ -361,6 +392,72 @@ def run_layout_only(browser, base, w, h, dpr):
     ctx.close()
 
 
+SAFE_INSETS_JS = """(pad) => new MutationObserver((m, o) => {
+  if (!document.head) return;
+  const s = document.createElement('style');
+  s.textContent = `.safe-probe { padding: ${pad} !important; }`;
+  document.head.appendChild(s);
+  o.disconnect();
+}).observe(document, { childList: true, subtree: true })"""
+
+
+def css_height_for(w, dpr, H):
+    """The CSS height that gives a logical height of H at width w and device scale dpr."""
+    scale = round(w * dpr) // 135
+    h = int(H * scale / dpr)
+    while (round(h * dpr) // scale) < H:
+        h += 1
+    return h
+
+
+def run_hub_grid(browser, base):
+    """Row H2: the card grid at logical heights 240, 300 and 400, widths 360 and 412 CSS px, device scale 2.625 and 3,
+    with no insets and with safe-area insets (a display cutout and a gesture bar; side insets as in landscape split
+    screen): the layout rules, crisp pixels, each card opening its own game, a touch in the side band opening nothing."""
+    for w in (360, 412):
+        for dpr in (2.625, 3):
+            for H in (240, 300, 400):
+                for inset in ("", "32px 10px 16px 10px"):
+                    h = css_height_for(w, dpr, H)
+                    tag = f"grid {w}x{h}@{dpr} H{H}" + (f" insets {inset}" if inset else "")
+                    ctx = new_context(browser, w, h, dpr)
+                    if inset:
+                        ctx.add_init_script(f"({SAFE_INSETS_JS})({json.dumps(inset)})")
+                    page = ctx.new_page()
+                    errors = []
+                    page.on("pageerror", lambda e: errors.append(str(e)))
+                    page.goto(base)
+                    lay = hub_layout_checks(page, tag, h)
+                    g = json.loads(page.eval_on_selector("#screen", "c => c.dataset.grid"))
+                    want = {"top": 0, "right": 0, "bottom": 0, "left": 0}
+                    if inset:
+                        conv = lambda v: -(-v * dpr // lay["scale"])  # noqa: E731  (ceil, as pixel.js)
+                        want = {"top": conv(32), "right": conv(10), "bottom": conv(16), "left": conv(10)}
+                    check(lay["H"] == H and all(abs(g["safe"][k] - want[k]) <= 1 for k in want), f"[{tag}] logical height {lay['H']}, insets read {g['safe']} (want {want})")
+                    shot = OUT / f"hub-grid-{w}x{h}-{dpr}{'-insets' if inset else ''}.png"
+                    page.screenshot(path=str(shot))
+                    info, sc, HH, bad, total, _, _ = crisp(page, shot)
+                    check(bad == 0 and info["sw"] <= info["iw"] and info["sh"] <= info["ih"],
+                          f"[{tag}] crisp ({total - bad}/{total}), no scrolling; cards {lay['rects']['bricks']['w']}x{lay['rects']['bricks']['h']}")
+                    # Each card opens its own game; the back gesture returns.
+                    for game in GAMES:
+                        tap(page, game)
+                        page.wait_for_function("document.body.dataset.game", timeout=10000)
+                        got = page.evaluate("[document.body.dataset.game, document.querySelector('iframe.game').getAttribute('src')]")
+                        check(got == [game, f"games/{game}/"], f"[{tag}] the {game} card opens {game} {got}")
+                        back_to_hub(page)
+                    # A touch that begins in the side band (the back gesture) opens nothing, even level with a card.
+                    y = hits(page)["bricks"]["y"]
+                    for x in (20, w - 20):
+                        page.touchscreen.tap(x, y)
+                        page.wait_for_timeout(120)
+                        check(page.evaluate("document.querySelectorAll('iframe').length") == 0 and not page.evaluate("document.body.dataset.game || ''"),
+                              f"[{tag}] a touch beginning at x {x} CSS px, inside the 24 CSS px side band, opens nothing")
+                    pieces_fit(page, tag)
+                    check(not errors, f"[{tag}] no page errors {errors}")
+                    ctx.close()
+
+
 def run_resize(browser, base):
     """A live window resize, portrait to landscape and back, re-lays out cleanly."""
     ctx = new_context(browser, 360, 800)
@@ -413,22 +510,23 @@ def static_checks():
                 if ink(r, c) and ink(r, c - 1) + ink(r, c + 1) == 1 and ink(r - 1, c) + ink(r + 1, c) == 1:
                     bad.append((key, r, c))
     check(not bad, f"font: every outer corner is cut {bad}")
-    needed = set("RLXBRICKSCATCHPUTTSTACK")
-    check(needed <= set(re.findall(r"'(.)':", body)), "font has every character the UI uses (the wordmark and the tile labels)")
+    needed = set("RLX")
+    check(needed <= set(re.findall(r"'(.)':", body)), "font has every character the app icons use (tools/make-icons.py draws RLX)")
 
-    # Row X1: no settings, no storage module, fullscreen; text is drawn on the hub only.
+    # Row X1: no settings, no storage module, fullscreen. Row H2: no page draws text, the hub included.
     check(not (ROOT / "shared" / "settings.js").exists() and not (ROOT / "shared" / "store.js").exists(),
           "shared/settings.js and shared/store.js are gone (row X1)")
     manifest = json.loads((ROOT / "manifest.webmanifest").read_text())
     check(manifest["display"] == "fullscreen", f"manifest display is fullscreen ({manifest['display']})")
-    shipped_js = [p for p in list((ROOT / "shared").glob("*.js")) + list((ROOT / "games").rglob("*.js")) + [ROOT / "index.html"]]
+    shipped_js = [p for p in list((ROOT / "shared").glob("*.js")) + list((ROOT / "games").rglob("*.js")) + list((ROOT / "hub").glob("*.js"))
+                  + [ROOT / "index.html"]]
     uses = {p.relative_to(ROOT).as_posix() for p in shipped_js
             if re.search(r"localStorage|sessionStorage|indexedDB|document\.cookie|settings\.js|store\.js|hapticsOn|setHaptics",
                          re.sub(r"//.*", "", p.read_text()))}
     check(uses == {"shared/pixel.js"}, f"only pixel.js touches storage (to clear old rlx.* keys); nothing else reads a setting {sorted(uses)}")
     texty = {p.relative_to(ROOT).as_posix() for p in shipped_js if re.search(r"font\.js|drawFitted|drawText|fillText", re.sub(r"//.*", "", p.read_text()))}
-    check(texty == {"index.html", "shared/font.js"}, f"text is drawn on the hub only (no game imports the font) {sorted(texty)}")
-    hub = (ROOT / "index.html").read_text()
+    check(texty == {"shared/font.js"}, f"no page draws text: nothing imports the font, the hub included (row H2) {sorted(texty)}")
+    hub = (ROOT / "index.html").read_text() + (ROOT / "hub" / "cards.js").read_text()
     check(not re.search(r"SOON|HAPTICS|haptics|TOGGLE|TAG_", hub), "the hub has no SOON tile code and no haptics switch (row X1)")
 
 
@@ -794,13 +892,13 @@ def run_scene(browser, base):
     step, shot, lay, hz = hub("dusk", 720)
     info, s, H, bad, total, _, _ = crisp(page, shot)
     r = lay["rects"]
-    s1 = r["bricks"]["y"] - 3
-    star = (22, round(42 + 0.05 * (s1 - 42)))
-    top, sea, sun, st, tile = logical_pixels(page, shot, [(1, 1), (1, hz + 2), (96, hz - 1), star, (r["bricks"]["x"] + 3, r["bricks"]["y"] + 6)])
+    s0, s1 = json.loads(page.eval_on_selector("#screen", "c => c.dataset.grid"))["stars"]
+    star = (22, round(s0 + 0.05 * (s1 - s0)))
+    top, sea, sun, st, tile = logical_pixels(page, shot, [(1, 1), (1, hz + 2), (96, hz - 1), star, (r["bricks"]["x"] + 2, r["bricks"]["y"] + 20)])
     check(step == 10 and top == "#CDB8E0" and sea == "#6FA3C4" and bad == 0,
           f"[{tag}] hub after 12 minutes of play: full dusk, crisp ({step}, sky {top}, sea {sea}, {total - bad}/{total})")
     check(sun != C["sun"] and st == "#FFFFFF" and tile == C["coral"],
-          f"[{tag}] hub at dusk: sun below the horizon ({sun}), a white star ({st}), the BRICKS tile keeps its colour ({tile})")
+          f"[{tag}] hub at dusk: sun below the horizon ({sun}), a white star ({st}), the Bricks card's frame keeps its colour ({tile})")
     # Hidden just under 5 minutes: the clock carries on; 5 minutes or more: it starts again, and the hub shows sunset.
     set_hidden(page, True)
     page.evaluate("window.__rlxSession.hiddenAt = Date.now() - (5 * 60 * 1000 - 5000)")
@@ -1231,11 +1329,52 @@ HUB_TOKENS_JS = """async () => {
 CONTRAST_VIEWS = [(360, 640, "H240"), (360, 800, "H300"), (360, 1067, "H400")]
 
 
+HUB_PARTS_JS = """async (step) => {
+  const M = await import(new URL('hub/cards.js', document.baseURI).href);
+  const g = JSON.parse(document.getElementById('screen').dataset.grid);
+  const parts = {};
+  for (const c of M.CARDS) {
+    parts[c.id] = M.cardParts(c.id, g.windows[c.id], step).map((p) => ({
+      what: p.what, bg: !!p.bg, measure: p.measure !== false, colour: p.colour || null, rule: p.rule || null, fill: p.fill || null,
+      edge: p.edge || null, exempt: p.exempt || null, x: p.x, y: p.y, w: p.w, h: p.h, colours: p.colours || [] }));
+  }
+  return { parts, frame: M.FRAME_COLOURS, windows: g.windows };
+}"""
+
+# Logical heights 240, 300 and 400 at 360 and 412 CSS px wide, device scale 3 and 2.625.
+CONTRAST_HUB_VIEWS = [(360, 640, 3, "360 H240"), (360, 800, 3, "360 H300"), (360, 1067, 3, "360 H400"),
+                      (412, 732, 2.625, "412 H240"), (412, 915, 2.625, "412 H300"), (412, 1220, 2.625, "412 H400")]
+
+
+def overlaps(a, b):
+    return a["x"] < b["x"] + b["w"] and b["x"] < a["x"] + a["w"] and a["y"] < b["y"] + b["h"] and b["y"] < a["y"] + a["h"]
+
+
+def pieces_fit(page, tag):
+    """Row H2, nothing cramped."""
+    # Nothing cramped: no two pieces in a card overlap, except the parts of one thing (the boat; the hole and its flag)
+    # and the windows' edges (every piece inside its window).
+    group = lambda w_: "boat" if w_.startswith("boat") else "hole" if w_ in ("hole", "flag pole", "flag") else w_  # noqa: E731
+    look = page.evaluate(HUB_PARTS_JS, 0)
+    clash, outside = [], []
+    for t in GAMES:
+        win = look["windows"][t]
+        ps = [q for q in look["parts"][t] if not q["bg"]]
+        for i, a in enumerate(ps):
+            if not (a["x"] >= win["x"] and a["y"] >= win["y"] and a["x"] + a["w"] <= win["x"] + win["w"] and a["y"] + a["h"] <= win["y"] + win["h"]):
+                outside.append((t, a["what"]))
+            for b in ps[i + 1:]:
+                if group(a["what"]) != group(b["what"]) and overlaps(a, b):
+                    clash.append((t, a["what"], b["what"]))
+    check(not clash and not outside, f"[{tag}] in every card the pieces sit inside the window and none overlaps another (overlaps {clash[:4]}, outside {outside[:4]})")
+
+
 def run_contrast_hub(browser, base):
-    """Row B4: the hub's wordmark and tiles against the scene at sunset and all 10 steps."""
-    for w, h, tag in CONTRAST_VIEWS:
-        tag = f"contrast hub {tag}"
-        ctx = new_context(browser, w, h, 3)
+    """Rows B4 and H2: each card's frame against the scene, and every piece in a card against the window colours
+    behind it, at sunset and all 10 steps; the colours drawn in each window at sunset, step 5 and dusk."""
+    for w, h, dpr, vtag in CONTRAST_HUB_VIEWS:
+        tag = f"contrast hub {vtag}"
+        ctx = new_context(browser, w, h, dpr)
         page = ctx.new_page()
         page.goto(base)
         lay = layout_of(page)
@@ -1246,50 +1385,60 @@ def run_contrast_hub(browser, base):
         def bands(y0, y1):
             return [i for i in range(tok["bands"]) if round(i * horizon / 10) < y1 and round((i + 1) * horizon / 10) > y0]
 
-        rows = []
+        rows, exempt, lonely = [], set(), []
         for k in range(11):
             pal = tok["pals"][k]
-            sun = [("sun", C["sun"])] if k < 10 else []
             sky = lambda ix: [(f"sky band {i + 1}", pal["sky"][i]) for i in ix]  # noqa: E731
-            items = [("wordmark (large)", "cr", MIN_CR, C["coral"], tok["edgeCoral"], sky(bands(12, 40)))]
             for t in GAMES:
-                items.append((f"{t} tile", "cr", MIN_CR, C["coral"], tok["edgeCoral"], sky(bands(r[t]["y"], r[t]["y"] + r[t]["h"])) + sun))
-            for what, rule, need, fill, edge_, bgs in items:
-                m = contrast if rule == "cr" else delta_e
+                bgs = sky(bands(r[t]["y"], r[t]["y"] + r[t]["h"])) + [("cloud", C["cloud"])]
                 for on, bg in bgs:
-                    rows.append((what, need, max(m(fill, bg), m(edge_, bg)), on, bg, k))
+                    rows.append((f"{t} card frame", MIN_CR, max(contrast(C["coral"], bg), contrast(tok["edgeCoral"], bg)), on, bg, k))
+            look = page.evaluate(HUB_PARTS_JS, k)
+            for t in GAMES:
+                parts = look["parts"][t]
+                backs = [q for q in parts if q["bg"] and q["measure"]]
+                for q in parts:
+                    if q["bg"]:
+                        continue
+                    if q["exempt"]:
+                        exempt.add(f"{t}: {q['what']} ({q['exempt']})")
+                        continue
+                    behind = [b for b in backs if overlaps(q, b)]
+                    if not behind:
+                        lonely.append((t, q["what"], k))
+                    m = contrast if q["rule"] == "cr" else delta_e
+                    need = MIN_CR if q["rule"] == "cr" else MIN_DE
+                    for b in behind:
+                        v = max(m(q["fill"], b["colour"]), m(q["edge"], b["colour"]) if q["edge"] else 0)
+                        rows.append((f"{t} card: {q['what']}", need, v, b["what"], b["colour"], k))
+        pieces_fit(page, tag)
         under = [x for x in rows if x[2] < x[1]]
         worst = min(rows, key=lambda x: x[2] / x[1])
-        check(rows and not under, f"[{tag}] sunset and all 10 steps: wordmark and tiles (fill or edge) meet the B4 standard "
-              f"(weakest {worst[0]} on {worst[3]} {worst[4]} step {worst[5]}: {worst[2]:.2f}; {len(under)} under {under[:3]})")
-        labels = json.loads(page.eval_on_selector("#screen", "c => c.dataset.labels"))
-        size = min(labels.values())
-        # The tile labels as drawn (B4 review): scan each row of the label's left half for the first
-        # outline pixel and take the pixel just right of it; the commonest such colour is the glyph. The
-        # label is measured against its outline (small lettering 4.5 at size 1, 3 at larger sizes).
-        shot = OUT / f"b4-hub-labels-{tag.split()[-1]}.png"
-        page.screenshot(path=str(shot))
-        glyphs, outlines = {}, set()
-        for t in GAMES:
-            rt = r[t]
-            ys = list(range(rt["y"] + 2, rt["y"] + rt["h"] - 2))
-            xs = list(range(rt["x"] + 2, rt["x"] + rt["w"] // 2))
-            px = logical_pixels(page, shot, [(x, y) for y in ys for x in xs])
-            for j in range(len(ys)):
-                row = px[j * len(xs):(j + 1) * len(xs)]
-                for i in range(len(row) - 1):
-                    if row[i] == tok["edgeCoral"]:
-                        outlines.add(row[i])
-                        if row[i + 1] != tok["edgeCoral"]:
-                            glyphs[row[i + 1]] = glyphs.get(row[i + 1], 0) + 1
-                        break
-        glyph = max(glyphs, key=glyphs.get) if glyphs else None
-        outline = tok["edgeCoral"] if outlines else None
-        label_cr = contrast(glyph, outline) if glyph and outline else 0
-        check(glyph == C["cloud"] and outline == tok["edgeCoral"], f"[{tag}] tile labels drawn white in a 1 px outline of the coral's edge "
-              f"(sampled glyph {glyph}, outline {outline}, {glyphs})")
-        need = MIN_CR if size >= 2 else MIN_CR_SMALL
-        check(label_cr >= need, f"[{tag}] tile labels (size {size}) on their outline: contrast {label_cr:.2f} >= {need}")
+        check(rows and not under and not lonely,
+              f"[{tag}] sunset and all 10 steps: card frames (fill or edge) on the scene and every piece in each card (fill or edge) "
+              f"on the window colours behind it meet the B4 standard ({len(rows)} pairs; weakest {worst[0]} on {worst[3]} {worst[4]} "
+              f"step {worst[5]}: {worst[2]:.2f}; {len(under)} under {under[:3]}; unmeasured {lonely[:3]})")
+        if exempt:
+            print(f"  [{tag}] left outside the standard, as in the game: {sorted(exempt)}")
+        # The colours drawn in each window: only the window's own colours and its pieces', and every measured piece drawn.
+        for k, active in ((0, 0), (5, 300), (10, 720)):
+            page.evaluate(SET_CLOCK_JS, active)
+            page.wait_for_timeout(150)
+            shot = OUT / f"h2-hub-{vtag.replace(' ', '-')}-{k}.png"
+            page.screenshot(path=str(shot))
+            look = page.evaluate(HUB_PARTS_JS, k)
+            for t in GAMES:
+                win = look["windows"][t]
+                pts = [(x, y) for y in range(win["y"], win["y"] + win["h"]) for x in range(win["x"], win["x"] + win["w"])]
+                drawn = set(logical_pixels(page, shot, pts))
+                parts = look["parts"][t]
+                allowed = {tok["edgeCoral"]}  # the window's cut corners
+                for q in parts:
+                    allowed |= set([q["colour"]] if q["bg"] else q["colours"])
+                missing = [q["what"] for q in parts if not q["bg"] and not q["exempt"] and q["fill"] not in drawn]
+                check(drawn <= allowed and not missing,
+                      f"[{tag} step {k}] the {t} card draws only its window's and its pieces' colours, and every piece shows "
+                      f"(stray {sorted(drawn - allowed)[:4]}, not drawn {missing})")
         ctx.close()
 
 
@@ -1312,13 +1461,14 @@ def run_contrast_pages(browser, base):
             shot = OUT / f"b4-hub-{vtag}-{k}.png"
             page.screenshot(path=str(shot))
             r = lay["rects"]
-            bt = r["bricks"]
-            word = [(x, y) for y in range(11, 42) for x in range(135)]
-            got = logical_pixels(page, shot, word + [(bt["x"] + 3, bt["y"]), (bt["x"] + 3, bt["y"] + 6)])
-            wm, rest = set(got[:len(word)]), got[len(word):]
-            check(page.eval_on_selector("#screen", "c => c.dataset.scene") == str(k) and C["coral"] in wm and tok["edgeCoral"] in wm
-                  and rest == [tok["edgeCoral"], C["coral"]],
-                  f"[{tag}] hub: wordmark coral in its edge, tile coral in its edge ({rest})")
+            got = []
+            for t in GAMES:
+                bt = r[t]
+                got += logical_pixels(page, shot, [(bt["x"], bt["y"] + 20), (bt["x"] + 2, bt["y"] + 20), (bt["x"] + 3, bt["y"] + 20),
+                                                   (bt["x"] + 3, bt["y"]), (bt["x"] + bt["w"] // 2, bt["y"] + bt["h"] - 1)])
+            check(page.eval_on_selector("#screen", "c => c.dataset.scene") == str(k)
+                  and got == [tok["edgeCoral"], C["coral"], tok["edgeCoral"], tok["edgeCoral"], tok["edgeCoral"]] * 4,
+                  f"[{tag}] hub: every card's frame coral in its 1 px edge all round, the window inside its edge ({got[:5]})")
             # Bricks: paddle edge and fill, the pause ring in its ink ring.
             g_ = open_tile(page, "bricks")
             page.wait_for_timeout(150)
@@ -2084,7 +2234,7 @@ def game_frame(page, name):
 
 
 def open_tile(page, name, timeout=20000):
-    """Tap a hub tile, wait for the game's frame to show and the game to be ready. Returns a Hosted."""
+    """Tap a hub card, wait for the game's frame to show and the game to be ready. Returns a Hosted."""
     tap(page, name)
     page.wait_for_function(f"document.body.dataset.game === '{name}'", timeout=timeout)
     deadline = time.time() + timeout / 1000
@@ -2122,13 +2272,13 @@ SCREEN_DOM_JS = """() => {
   const c = document.getElementById('screen');
   return { odd: odd.map((e) => e.tagName + '.' + e.className), text: document.body.innerText.trim(),
            buttons: document.querySelectorAll('button, a, input, select, [role=button]').length,
-           hud: c.dataset.hud || null, hits: c.dataset.hits || null, layout: c.dataset.layout || null };
+           hud: c.dataset.hud || null, hits: c.dataset.hits || null, layout: c.dataset.layout || null, drawnText: window.__text || 0 };
 }"""
 
 
 def no_hud(page, tag, what):
     d = page.evaluate(SCREEN_DOM_JS)
-    check(d == {"odd": [], "text": "", "buttons": 0, "hud": None, "hits": None, "layout": None},
+    check(d == {"odd": [], "text": "", "buttons": 0, "hud": None, "hits": None, "layout": None, "drawnText": 0},
           f"[{tag}] {what}: no text, number or button drawn or in the DOM, no HUD or hit areas {d}")
 
 
@@ -2169,6 +2319,7 @@ def main():
         for w, h, dpr in LAYOUT_ONLY:
             run_layout_only(browser, base, w, h, dpr)
         run_resize(browser, base)
+        run_hub_grid(browser, base)
         run_bricks(browser, base)
         run_scene(browser, base)
         run_catch(browser, base)

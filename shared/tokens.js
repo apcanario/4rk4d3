@@ -7,7 +7,7 @@ export const LOGICAL_WIDTH = 135;
 export const COLORS = Object.freeze({
   skyTop: '#FFF7EC',
   skyBottom: '#FFCDC0',
-  coral: '#F05A68', // paddle, wordmark, hull, tiles (each with its edge all round)
+  coral: '#F05A68', // paddle, hull, hub card frames (each with its edge all round)
   blue: '#436495', // ball, nasty ones (B4: was #4A6FA5)
   ink: '#30486B', // small lettering, control edges on the sea (B4: new, the blue deepened)
   card: '#A0D0E8', // the value of brick row 9; drew the back control and SOON tag, both gone since X1 (kept, unused)

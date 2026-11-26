@@ -9,7 +9,9 @@
 //     it, at sunset and all 10 steps; small lettering (size 1) >= 4.5. A shape
 //     or control passes a background when its fill or its 1 px edge all round
 //     clears it; small lettering is measured on its glyph colour alone, or,
-//     when outlined (hub tile labels), against its outline. The hull's rows
+//     when outlined (the hub's tile labels, gone since row H2), against its
+//     outline. The hub's card frames and the pieces in its cards are measured
+//     in tests/check.py with the same rules. The hull's rows
 //     below the horizon are drawn in the keel colour and measured against
 //     the sea.
 // (b) bricks, Stack's floors and overhang bits (fill or their 1 px edge in

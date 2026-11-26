@@ -352,7 +352,7 @@ export function defaultClouds(H) {
   ];
 }
 
-/* ---------- hit areas (the hub's tiles) ---------- */
+/* ---------- hit areas (the hub's cards) ---------- */
 
 /** Logical point inside a rect, with optional padding for the thumb. */
 export function hitTest(p, r, pad = 0) {
