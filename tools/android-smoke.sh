@@ -12,6 +12,13 @@ mkdir -p "$OUT"
 shot() { adb exec-out screencap -p > "$OUT/$1.png"; }
 resumed() { adb shell dumpsys activity activities | grep -E "mResumedActivity|topResumedActivity" | head -1 | tr -d '\r'; }
 
+# The emulator's own dialogs would sit over the app and take the taps: Android's one-time
+# "Viewing full screen" note for immersive apps, and "isn't responding" dialogs of a launcher
+# still settling after boot. Neither is part of the app.
+adb shell settings put secure immersive_mode_confirmations confirmed
+adb shell settings put global hide_error_dialogs 1
+adb shell input keyevent KEYCODE_HOME
+sleep 20
 adb shell wm size > "$OUT/wm-size.txt"
 adb shell wm density >> "$OUT/wm-size.txt"
 adb install -r "$APK" || exit 1
