@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""RLX checks (rows H1, H2, B1, B2, C1, B4, U1, U2, S1 and X1) in headless Chromium and Node. Not needed to run the app.
+"""RLX checks (rows H1, H2, B1, B2, C1, B4, U1, U2, S1, X1 and A1) in headless Chromium and Node. Not needed to run the app.
 
 Needs Python Playwright with Chromium (pip install playwright;
 python -m playwright install chromium). Run: python3 tests/check.py
 Serves the repo under /4rk4d3/ (the GitHub Pages project subpath), then checks
-both phone widths: pixels crisp, no scroll, the hub's four cards and nothing else
-(row H2: a 2x2 grid of equal cards, no text drawn), each game opened over the
+both phone widths: pixels crisp, no scroll, the hub's five cards and nothing else
+(row H2, and row A1: a grid of 2 columns by 3 rows of equal cards, the sixth cell open, no text drawn), each game opened over the
 hub by its card and closed by the back gesture
 (history back), old rlx.* keys cleared at start, the manifest fullscreen, the
 service worker offline, cache version bump, no console errors, no requests to
@@ -32,7 +32,11 @@ with screenshots of each. Row S1: tests/stack-sim.mjs and Stack with real touch
 events: a new tower on every opening, timed taps for a near-perfect drop (16
 ms), a landed drop with bits (8 ms), a complete miss, a floor under 12 px
 followed by a 60 px block, hidden and pagehide pause, reduced motion, dusk,
-the drawn colours at sunset, step 5 and step 10.
+the drawn colours at sunset, step 5 and step 10. Row A1: tests/glide-sim.mjs and Glide
+in the browser: the table at the tested sizes (the sea strip, both goals inside the safe area, the table to
+the four edges), opened paused with the shell on the centre spot, the relative drag both ways on the shared
+thumb travel, the side band, the pause and the 250 ms resume, the haptic ticks, nothing stored, the contrast
+of shell, ring and crab as drawn in light and dark; the hub's Putt card as the open course (row U2c).
 Screenshots go to tests/out/.
 """
 import functools
@@ -132,16 +136,28 @@ def layout_of(page):
     return json.loads(page.eval_on_selector("#screen", "c => c.dataset.layout"))
 
 
-# Row H2 layout values (PLAN §5a), restated here so a change in hub/cards.js fails a check.
-H2_GAP, H2_SEA_CLEAR, H2_RATIO, H2_SKY_MIN = 5, 8, 1.3, 40
+# Row H2 layout values (PLAN §5a), restated here so a change in hub/cards.js fails a check. Row A1: 2 columns by 3 rows,
+# and where three rows of full-size cards do not fit, the sky gives way first (down to H2_SKY_FLOOR), then the cards shrink.
+H2_GAP, H2_SEA_CLEAR, H2_RATIO, H2_SKY_MIN, H2_ROWS, H2_SKY_FLOOR = 5, 8, 1.3, 40, 3, 0
 
 
-# Card sizes (w, h) by CSS width and device scale, at logical heights 240, 300 and 400 (row H2).
+# Card sizes (w, h) by CSS width and device scale, at logical heights 300 and 400 (row H2; row A1: at 240 three rows
+# do not fit and the cards are shorter, run_hub_grid).
 H2_CARD_SIZE = {(360, 2.625): (56, 72), (360, 3): (56, 72), (412, 2.625): (57, 74), (412, 3): (58, 75)}
 
 
 def h2_bottom_margin(H):
     return max(8, round(H * 0.05))
+
+
+def h2_card_size(W, H, safe, edge):
+    """The card size by the layout rule (PLAN §5a, §6i), restated: as wide as the margins allow, 1.3 x that tall,
+    smaller only where three rows do not fit once the sky has given way."""
+    side = max(4, edge, safe["left"] + 2, safe["right"] + 2)
+    cw = (W - side * 2 - H2_GAP) // 2
+    bottom = H - safe["bottom"] - h2_bottom_margin(H)
+    fit = (bottom - (safe["top"] + H2_SKY_FLOOR + H2_SEA_CLEAR) - H2_GAP * (H2_ROWS - 1)) // H2_ROWS
+    return cw, max(40, min(fit, int(cw * H2_RATIO)))
 
 
 def mix_hex(a, b, t):
@@ -151,31 +167,37 @@ def mix_hex(a, b, t):
 
 
 def h2_sun_radius(sky):
-    return max(24, min(40, round(sky * 0.3)))
+    """hub/cards.js sunRadiusFor, restated: 0.3 of the sky from 24 to 40, at least 8 below the top inset; none under 6."""
+    r = min(max(24, min(40, round(sky * 0.3))), sky - 8)
+    return r if r >= 6 else 0
 
 
 def hub_layout_checks(page, tag, h):
-    """Row H2: four equal cards in a 2x2 grid (Bricks, Catch / Putt, Stack), each at least 40 logical px each way,
-    5 px gaps, centred, inside the safe area and clear of the 24 CSS px side band, low in the thumb's reach (the grid's
-    bottom a fixed margin above the bottom inset), at most 1.3 x as tall as wide, the horizon 8 px above the grid with
-    the sky above it; the cards and nothing else; no text drawn."""
+    """Rows H2 and A1: five equal cards in a grid of 2 columns by 3 rows (Bricks, Catch / Putt, Stack / Glide and the
+    sixth cell open), each at least 40 logical px each way, 5 px gaps, centred, inside the safe area and clear of the
+    24 CSS px side band, low in the thumb's reach (the grid's bottom a fixed margin above the bottom inset), 1.3 x as
+    tall as wide where three rows fit (the sky gives way first), the horizon 8 px above the grid with the sky above
+    it; the cards and nothing else; no text drawn."""
     lay = layout_of(page)
     g = json.loads(page.eval_on_selector("#screen", "c => c.dataset.grid"))
     H, W, r = lay["H"], lay["W"], lay["rects"]
     safe = g["safe"]
-    check(sorted(r) == sorted(GAMES) and sorted(hits(page)) == sorted(GAMES),
-          f"[{tag}] the hub has one card per built game and nothing else {sorted(hits(page))}")
-    b, c, p, s = (r[k] for k in GAMES)
+    check(sorted(r) == sorted(GAMES) and sorted(hits(page)) == sorted(GAMES) and len(GAMES) == 5,
+          f"[{tag}] the hub has one card per built game, five, and nothing else {sorted(hits(page))}")
+    b, c, p, s, gl = (r[k] for k in GAMES)
     sizes = {(q["w"], q["h"]) for q in r.values()}
-    check(len(sizes) == 1, f"[{tag}] the four cards are the same size {sizes}")
+    check(len(sizes) == 1, f"[{tag}] the five cards are the same size {sizes}")
     w, hh = b["w"], b["h"]
     check(w >= 40 and hh >= 40, f"[{tag}] every card is a tap target of at least 40 logical px each way ({w}x{hh})")
     gx = c["x"] - (b["x"] + w)
     gy = p["y"] - (b["y"] + hh)
-    check(b["y"] == c["y"] and p["y"] == s["y"] and b["x"] == p["x"] and c["x"] == s["x"]
-          and s["x"] - (p["x"] + w) == gx and s["y"] - (c["y"] + hh) == gy and gx == gy == H2_GAP,
-          f"[{tag}] a 2x2 grid in order Bricks, Catch / Putt, Stack with 5 px gaps ({gx}, {gy})")
-    left, right, top, bottom = b["x"], c["x"] + w, b["y"], p["y"] + hh
+    check(b["y"] == c["y"] and p["y"] == s["y"] and b["x"] == p["x"] == gl["x"] and c["x"] == s["x"]
+          and s["x"] - (p["x"] + w) == gx and s["y"] - (c["y"] + hh) == gy and gl["y"] - (p["y"] + hh) == gy and gx == gy == H2_GAP,
+          f"[{tag}] a grid of 2 columns by 3 rows in order Bricks, Catch / Putt, Stack / Glide with 5 px gaps ({gx}, {gy})")
+    op = g["open"]
+    check(op == {"x": c["x"], "y": gl["y"], "w": w, "h": hh} and all(not overlaps(op, q) for q in r.values()) and "open" not in hits(page),
+          f"[{tag}] the sixth cell (bottom right) is left open: no card, nothing to tap {op}")
+    left, right, top, bottom = b["x"], c["x"] + w, b["y"], gl["y"] + hh
     check(left >= safe["left"] and W - right >= safe["right"] and top >= safe["top"] and bottom <= H - safe["bottom"],
           f"[{tag}] the grid ({left}..{right} x {top}..{bottom}) is inside the safe area {safe}")
     side = max(4, g["edge"], safe["left"] + 2, safe["right"] + 2)
@@ -185,11 +207,17 @@ def hub_layout_checks(page, tag, h):
     want_bottom = H - safe["bottom"] - h2_bottom_margin(H)
     check(bottom == want_bottom, f"[{tag}] the grid sits low, in the thumb's reach: it ends {bottom}, want {want_bottom} "
           f"(H {H} - bottom inset {safe['bottom']} - {h2_bottom_margin(H)})")
-    check(hh == int(w * H2_RATIO), f"[{tag}] the cards are {H2_RATIO} x as tall as wide at most, and that tall ({w}x{hh})")
+    want = h2_card_size(W, H, safe, g["edge"])
+    full = hh == int(w * H2_RATIO)
     horizon = g["horizon"]
-    check(horizon == top - H2_SEA_CLEAR and g["seaHeight"] == H - horizon and horizon - safe["top"] >= H2_SKY_MIN,
+    sky = horizon - safe["top"]
+    check((w, hh) == want and (full or sky - H2_SKY_FLOOR < H2_ROWS),
+          f"[{tag}] the cards are {H2_RATIO} x as tall as wide where three rows fit ({w}x{hh}, want {want}); "
+          f"{'full size' if full else 'smaller only once the sky has given way (sky ' + str(sky) + ')'}")
+    check(horizon == top - H2_SEA_CLEAR and g["seaHeight"] == H - horizon and sky >= H2_SKY_FLOOR,
           f"[{tag}] the horizon {horizon} is {H2_SEA_CLEAR} px above the grid (top {top}): the cards sit on the sea, "
-          f"the sky above is at least {H2_SKY_MIN} px ({horizon - safe['top']})")
+          f"the sky above is {sky} px (it gives way to three rows first; at least {H2_SKY_MIN} where they leave room: "
+          f"{'yes' if sky >= H2_SKY_MIN else 'given way'})")
     check(page.eval_on_selector("#screen", "c => c.dataset.labels || null") is None and page.evaluate("window.__text") == 0,
           f"[{tag}] the hub draws no text (no labels, no fillText or strokeText)")
     return lay
@@ -197,25 +225,41 @@ def hub_layout_checks(page, tag, h):
 
 def hub_scene_checks(page, shot, tag):
     """Row H2 at sunset: the whole sun on the raised horizon in the open sky above the cards, sized to the sky,
-    clear of every card; the sea from the horizon down behind the cards."""
+    clear of every card; the sea from the horizon down behind the cards. Row A1: a sky too short for a sun has none,
+    and only the clouds and stars that fit whole in the sky are drawn."""
     g = json.loads(page.eval_on_selector("#screen", "c => c.dataset.grid"))
     tok = page.evaluate(HUB_TOKENS_JS)
     C, pal = tok["C"], tok["pals"][0]
     hz, safe = g["horizon"], g["safe"]
-    rad = h2_sun_radius(hz - safe["top"])
+    sky = hz - safe["top"]
+    rad = h2_sun_radius(sky)
     sx = g["sunX"]
-    got = logical_pixels(page, shot, [(sx, hz - 1), (sx, hz - rad), (sx, hz - rad - 1), (1, hz), (1, hz - 1),
-                                      (4, g["y0"] + g["ch"]), (2, g["bottom"] + 1), (sx - rad, hz - 1), (sx + rad - 1, hz - 1),
-                                      (sx + rad, hz - 1)])
-    check(got[0] == C["sun"] and got[1] == C["sun"] and got[2] != C["sun"] and got[3] == pal["sea"][0] and got[4] in pal["sky"]
-          and got[5] in pal["sea"] and got[6] in pal["sea"] and got[7] == C["sun"] and got[8] == C["sun"] and got[9] != C["sun"]
-          and g["sunRadius"] == rad and hz - rad > safe["top"] + 8 and hz < g["y0"],
-          f"[{tag}] sunset: the whole sun (radius {rad}, x {sx}) on the horizon {hz} in the open sky, clear of the cards (top {g['y0']}); "
-          f"the sea from the horizon down behind and below the cards ({got})")
-    check(sx <= 96 and sx + rad <= 135 - 4 and sx - rad >= 4,
-          f"[{tag}] the whole sun shows with a margin: x {sx} radius {rad} spans {sx - rad}..{sx + rad - 1} of 0..134 (at least 4 px clear of each edge)")
     H = g["horizon"] + g["seaHeight"]
-    check(len(g["clouds"]) == (4 if H > 300 else 3), f"[{tag}] {len(g['clouds'])} clouds in the sky at logical height {H} (a fourth over 300)")
+    if rad:
+        got = logical_pixels(page, shot, [(sx, hz - 1), (sx, hz - rad), (sx, hz - rad - 1), (1, hz), (1, hz - 1),
+                                          (4, g["y0"] + g["ch"]), (2, g["bottom"] + 1), (sx - rad, hz - 1), (sx + rad - 1, hz - 1),
+                                          (sx + rad, hz - 1)])
+        check(got[0] == C["sun"] and got[1] == C["sun"] and got[2] != C["sun"] and got[3] == pal["sea"][0] and got[4] in pal["sky"]
+              and got[5] in pal["sea"] and got[6] in pal["sea"] and got[7] == C["sun"] and got[8] == C["sun"] and got[9] != C["sun"]
+              and g["sunRadius"] == rad and hz - rad >= safe["top"] + 8 and hz < g["y0"],
+              f"[{tag}] sunset: the whole sun (radius {rad}, x {sx}) on the horizon {hz} in the open sky, clear of the cards (top {g['y0']}); "
+              f"the sea from the horizon down behind and below the cards ({got})")
+        check(sx <= 96 and sx + rad <= 135 - 4 and sx - rad >= 4,
+              f"[{tag}] the whole sun shows with a margin: x {sx} radius {rad} spans {sx - rad}..{sx + rad - 1} of 0..134 (at least 4 px clear of each edge)")
+    else:
+        row = logical_pixels(page, shot, [(x, y) for y in range(max(0, hz - 1), hz + 1) for x in range(135)])
+        check(g["sunRadius"] == 0 and C["sun"] not in row,
+              f"[{tag}] the sky ({sky} px) has no room for a whole sun: none is drawn (radius {g['sunRadius']})")
+    # The clouds: each whole in the sky and clear of the sun; where the sky has room for them (as in row H2), 3, or 4 over 300.
+    boxes = [(20, 6), (16, 5), (14, 5)]
+    def clear_of_sun(cx, cy, bw, bh):
+        nx, ny = max(cx, min(sx, cx + bw)), max(cy, min(hz, cy + bh))
+        return not rad or math.hypot(nx - sx, ny - hz) > rad + 1
+    fit = all(cy >= safe["top"] + 1 and cy + boxes[i % 3][1] <= hz - 2 and clear_of_sun(cx, cy, *boxes[i % 3])
+              for i, (cx, cy) in enumerate(g["clouds"]))
+    full = 4 if H > 300 else 3
+    check(fit and (len(g["clouds"]) == full or sky < H2_SKY_MIN),
+          f"[{tag}] {len(g['clouds'])} clouds, each whole in the sky ({sky} px) and clear of the sun (a fourth over 300 where the sky has room)")
     # The hub's extra sea glints: on the sea, round the cards, each at least 2 px clear of every card.
     gl = g["glints"]
     clear = all(gy >= hz and gy < H and gx >= 0 and gx + ln <= 135 and all(
@@ -505,9 +549,12 @@ def run_hub_grid(browser, base):
                     info, sc, HH, bad, total, _, _ = crisp(page, shot)
                     check(bad == 0 and info["sw"] <= info["iw"] and info["sh"] <= info["ih"],
                           f"[{tag}] crisp ({total - bad}/{total}), no scrolling; cards {lay['rects']['bricks']['w']}x{lay['rects']['bricks']['h']}")
-                    # The card size, stated per view: the same at logical heights 240, 300 and 400 (capped at 1.3 x the width).
+                    # The card size, stated per view: full size (1.3 x the width) at logical heights 300 and 400; at 240 three
+                    # rows do not fit, so the sky gives way and then the cards shrink: 70 tall, or 64 with the insets (row A1).
                     size = (lay["rects"]["bricks"]["w"], lay["rects"]["bricks"]["h"])
-                    check(size == H2_CARD_SIZE[(w, dpr)], f"[{tag}] H{H}: cards {size[0]}x{size[1]}, want {H2_CARD_SIZE[(w, dpr)]}")
+                    full = H2_CARD_SIZE[(w, dpr)]
+                    want = full if H >= 300 else (full[0], 64 if inset else 70)
+                    check(size == want, f"[{tag}] H{H}: cards {size[0]}x{size[1]}, want {want}")
                     hub_scene_checks(page, shot, tag)
                     # Each card opens its own game; the back gesture returns.
                     for game in GAMES:
@@ -1758,7 +1805,7 @@ def run_contrast_pages(browser, base, scheme="light"):
                 got += logical_pixels(page, shot, [(bt["x"], bt["y"] + 20), (bt["x"] + 2, bt["y"] + 20), (bt["x"] + 3, bt["y"] + 20),
                                                    (bt["x"] + 3, bt["y"]), (bt["x"] + bt["w"] // 2, bt["y"] + bt["h"] - 1)])
             check(page.eval_on_selector("#screen", "c => c.dataset.scene") == str(k)
-                  and got == [tok["keel"], C["coral"], tok["edgeCoral"], tok["keel"], tok["keel"]] * 4,
+                  and got == [tok["keel"], C["coral"], tok["edgeCoral"], tok["keel"], tok["keel"]] * len(GAMES),
                   f"[{tag}] hub: every card's frame coral in its 1 px keel edge all round (the cards sit on the sea), "
                   f"the window inside its coral edge ({got[:5]})")
             # Bricks: paddle edge and fill; no pause marker at any step (X33).
@@ -2178,6 +2225,271 @@ def run_putt_open(browser, base):
         check(psnap(g_)["look"] == "sand" and psnap(g_)["levelNo"] == 1, f"[{tag}] opening Putt again starts on a sand level (nothing stored)")
         check(not errors, f"[{tag}] no console errors {errors}")
         ctx.close()
+
+
+
+# ---------------------------------------------------------------- row A1: Glide
+
+def run_glide_sim():
+    """tests/glide-sim.mjs: sim.js and bot.js in Node (ten minutes of play at four sizes, the rules, contrast)."""
+    res = subprocess.run(["node", str(ROOT / "tests" / "glide-sim.mjs")], capture_output=True, text=True)
+    out = res.stdout.strip().splitlines()
+    for line in out:
+        if line.startswith("FAIL"):
+            print("  sim " + line)
+    summary = out[-1] if out else res.stderr.strip()
+    check(res.returncode == 0, f"node tests/glide-sim.mjs: {summary}")
+
+
+def gsnap(page):
+    return page.evaluate("window.__glide.snapshot()")
+
+
+# The table's and the pieces' colours from games/glide/sim.js for the page's active theme, at step k.
+GLIDE_TOKENS_JS = """async (k) => {
+  const base = (location.href.includes('/games/') ? location.href.split('/games/')[0] : location.href.replace(/[^/]*$/, '')) + '/';
+  const T = await import(new URL('shared/tokens.js', base).href);
+  const S = await import(new URL('games/glide/sim.js', base).href);
+  return { table: S.tableColours(T, k / 10), pieces: S.pieceColours(T), theme: T.tokens().name };
+}"""
+
+
+def glide_table_checks(g_, shot, tag, H, safe):
+    """Row A1: the table at a size: the sea strip about 5 percent and at most 16 px (the only area off the table),
+    both goals inside the safe area, the walls at the screen's edges, as drawn."""
+    q = gsnap(g_)
+    geo = q["geo"]
+    tok = g_.evaluate(GLIDE_TOKENS_JS, q["step"])
+    t = tok["table"]
+    want = max(min(16, round(H * 0.05)), safe["top"])
+    check(geo["sea"] == want and geo["sea"] <= 16 and q["view"]["H"] == H,
+          f"[{tag}] the sea strip is {geo['sea']} px of {H} ({100 * geo['sea'] / H:.1f} percent; want {want}, at most 16)")
+    check(geo["G"] >= safe["top"] and geo["yB"] + 2 <= H - safe["bottom"] and geo["mx1"] - geo["mx0"] == 45 and geo["mx0"] + geo["mx1"] == 135,
+          f"[{tag}] both goals inside the safe area {safe}: the inlet's line at {geo['G']}, the bottom wall at {geo['yB']}; 45 px wide, centred")
+    T_, yB, mid = geo["T"], geo["yB"], round(geo["mid"])
+    pts = [(20, T_ - 1), (20, T_), (0, mid + 30), (1, mid + 30), (134, mid + 30), (133, mid + 30), (20, yB), (20, yB + 1),
+           (67, yB), (67, geo["G"] - 2), (5, yB - 12), (130, yB - 12), (5, T_ + 8)]
+    got = logical_pixels(g_, shot, pts)
+    ok = (got[0] in t["sea"] and got[1] == t["foam"] and got[2:6] == [t["wall"]] * 4 and got[6:8] == [t["wall"]] * 2
+          and got[8] == t["gap"] and got[9] in t["sea"] and got[10] == t["ground"] and got[11] == t["ground"] and got[12] == t["ground"])
+    check(ok, f"[{tag}] as drawn: sea down to the tide line and foam on it, the inlet's sea, the darker sand band along both side edges "
+              f"and the bottom, the player's goal a gap in it, sand everywhere else to the edges ({got})")
+    below = logical_pixels(g_, shot, [(x, y) for y in range(yB + 2, H) for x in (10, 67, 120)]) if yB + 2 < H else []
+    check(all(c == t["ground"] for c in below), f"[{tag}] below the bottom wall (the bottom inset) the sand runs to the screen's edge ({sorted(set(below))})")
+
+
+def run_glide_layout(browser, base):
+    """Row A1: Glide at logical heights 240, 300 and 400, widths 360 and 412 CSS px, device scale 2.625 and 3, with and
+    without safe-area insets: crisp, no scrolling, the table rules, the ring's thumb travel."""
+    for w, dpr in ((360, 2.625), (412, 3)):
+        for H in (240, 300, 400):
+            for inset in ("", "32px 10px 16px 10px"):
+                h = css_height_for(w, dpr, H)
+                tag = f"glide {w}x{h}@{dpr} H{H}" + (" insets" if inset else "")
+                ctx = new_context(browser, w, h, dpr)
+                if inset:
+                    ctx.add_init_script(f"({SAFE_INSETS_JS})({json.dumps(inset)})")
+                page = ctx.new_page()
+                errors = []
+                page.on("pageerror", lambda e: errors.append(str(e)))
+                page.goto(base + "games/glide/index.html")
+                page.wait_for_function(GAME_READY["glide"], timeout=10000)
+                page.wait_for_timeout(150)
+                shot = OUT / f"glide-{w}x{h}-{dpr}{'-insets' if inset else ''}.png"
+                page.screenshot(path=str(shot))
+                info, sc, HH, bad, total, _, _ = crisp(page, shot)
+                q = gsnap(page)
+                check(bad == 0 and info["sw"] <= info["iw"] and info["sh"] <= info["ih"] and q["view"]["H"] == H,
+                      f"[{tag}] crisp ({total - bad}/{total}), no scrolling, logical height {q['view']['H']}")
+                glide_table_checks(page, shot, tag, H, q["safe"])
+                # Thumb travel: the shared 28 percent of the screen width carries the ring across its travel; the same gain up and down.
+                travel = q["geo"]["ring"]["x1"] - q["geo"]["ring"]["x0"]
+                screen_w = info["cw"] / sc
+                check(abs(q["sensitivity"] - travel / (0.28 * screen_w)) < 1e-9,
+                      f"[{tag}] the drag gain {q['sensitivity']:.3f}: 28 percent of the screen width moves the ring across its travel ({travel} px)")
+                check(not errors, f"[{tag}] no page errors {errors}")
+                ctx.close()
+
+
+def glide_hold(touch, x, y):
+    touch.down(x, y)
+    time.sleep(0.35)  # past the 250 ms resume
+
+
+def run_glide(browser, base):
+    """Row A1: Glide opened from its hub card: fresh and paused, the shell on the centre spot; the drag both ways on the
+    shared gain; the side band; pause on lift within a frame, the 250 ms resume; the serve to the player; the haptic
+    ticks (hit 8 to 14 ms, wall 6, goal 24, nothing else); nothing stored, no text; the drawn contrast of shell, ring
+    and crab in light and dark at sunset, step 5 and dusk; screenshots of the hub and Glide at 360x800."""
+    for scheme in ("light", "dark"):
+        tag = f"glide {scheme} 360x800"
+        ctx = new_context(browser, 360, 800, DPR, scheme)
+        page = ctx.new_page()
+        errors = []
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        page.on("console", lambda m: m.type == "error" and errors.append(m.text))
+        page.goto(base)
+        hits(page)
+        page.wait_for_timeout(200)
+        page.screenshot(path=str(OUT / f"a1-hub-{scheme}-360x800.png"))
+        g_ = open_tile(page, "glide")
+        g_.wait_for_timeout(250)
+        shot = OUT / f"a1-glide-{scheme}-360x800.png"
+        page.screenshot(path=str(shot))
+        q = gsnap(g_)
+        geo = q["geo"]
+        tok = g_.evaluate(GLIDE_TOKENS_JS, 0)
+        check(tok["theme"] == scheme, f"[{tag}] Glide opened from its card is {scheme}")
+        gm = q["game"]
+        check(q["mode"] == "paused" and not q["raf"] and gm["phase"] == "ready" and gm["puck"]["x"] == geo["cx"] and gm["puck"]["y"] == geo["mid"]
+              and gm["puck"]["vx"] == 0 and gm["puck"]["vy"] == 0,
+              f"[{tag}] a fresh table, paused, the shell on the centre spot ({gm['puck']['x']}, {gm['puck']['y']})")
+        no_hud(g_, tag, "Glide")
+        glide_table_checks(g_, shot, tag, 300, q["safe"])
+        # The pieces as drawn: the shell's centre and edge, the ring's body and edge, the crab's shell and edge.
+        P = tok["pieces"]
+        px, py = round(gm["puck"]["x"]), round(gm["puck"]["y"])
+        rx, ry = round(gm["ring"]["x"]), round(gm["ring"]["y"])
+        cx, cy = round(gm["crab"]["x"]), round(gm["crab"]["y"])
+        got = logical_pixels(g_, shot, [(px, py), (px + 5, py), (px + 3, py), (rx, ry + 9), (rx, ry + 6), (cx, cy + 1), (cx - 8, cy + 3)])
+        want = [P["puck"]["p"], P["puck"]["o"], P["puck"]["w"], P["ring"]["o"], P["ring"]["#"], P["crab"]["#"], P["crab"]["o"]]
+        check(got == want, f"[{tag}] the shell, ring and crab drawn in their colours ({got}, want {want})")
+        # The side band: a touch that begins within 24 CSS px of a side edge does nothing.
+        touch = Touch(ctx, page)
+        for x in (10, 350):
+            touch.down(x, 600)
+            time.sleep(0.35)
+            touch.move(x + (40 if x < 100 else -40), 560)
+            q2 = gsnap(g_)
+            touch.up()
+            check(q2["mode"] == "paused" and q2["fingers"] == 0 and q2["target"] == q["target"],
+                  f"[{tag}] a touch beginning at x {x} CSS px (the side band) starts nothing and moves nothing")
+        # The resume: finger down, 250 ms, then play; the first serve goes to the player.
+        touch.down(180, 600)
+        time.sleep(0.12)
+        mid_wait = gsnap(g_)["mode"]
+        time.sleep(0.3)
+        q3 = gsnap(g_)
+        check(mid_wait == "resuming" and q3["mode"] == "running" and q3["game"]["phase"] == "play" and q3["game"]["puck"]["vy"] > 0,
+              f"[{tag}] finger down: still waiting at 120 ms ({mid_wait}), playing by 420 ms; the first serve comes to the player")
+        # The drag: 14 percent of the screen width left takes the ring from the middle to its left end; 28 percent right to its right end.
+        t0 = q3["target"]
+        k = 0.28 * 360
+        touch.move(180 - k / 2, 600)
+        time.sleep(0.05)
+        t1 = gsnap(g_)["target"]
+        touch.move(180 + k / 2, 600)
+        time.sleep(0.05)
+        t2 = gsnap(g_)["target"]
+        rg = geo["ring"]
+        check(abs(t1["x"] - rg["x0"]) < 0.6 and abs(t2["x"] - rg["x1"]) < 0.6 and abs(t0["x"] - (rg["x0"] + rg["x1"]) / 2) < 0.6,
+              f"[{tag}] 28 percent of the screen width moves the ring end to end ({t0['x']:.1f} -> {t1['x']:.1f} -> {t2['x']:.1f}; travel {rg['x0']}..{rg['x1']})")
+        sens = q3["sensitivity"]
+        touch.move(180 + k / 2, 560)
+        time.sleep(0.05)
+        t3 = gsnap(g_)["target"]
+        dy_log = 40 * 2.625 / q["view"]["scale"]
+        check(abs((t2["y"] - t3["y"]) - min(dy_log * sens, t2["y"] - rg["y0"])) < 0.6,
+              f"[{tag}] up and down on the same gain: 40 CSS px up moves the ring {t2['y'] - t3['y']:.2f} px (want {dy_log * sens:.2f})")
+        time.sleep(0.4)
+        # Lift: paused within a frame, the table frozen.
+        touch.up()
+        g_.evaluate("() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
+        a = gsnap(g_)
+        time.sleep(0.3)
+        b = gsnap(g_)
+        check(a["mode"] == "paused" and not b["raf"] and a["game"] == b["game"],
+              f"[{tag}] the thumb lifted: paused within a frame, the shell and the crab frozen, no loop running")
+        # Haptics: a hit, a wall touch and a goal, set up in the live state; only 6, 8 to 14 and 24 ms ticks.
+        g_.evaluate("window.__vib.length = 0")
+        g_.evaluate("""() => { const s = window.__glide.live(); const g = s.geo;
+          s.phase = 'play'; s.crab.x = 20; s.crab.y = g.crab.y0;
+          s.puck = { x: g.cx, y: g.G + 30, vx: 0, vy: -160 }; }""")
+        glide_hold(touch, 180, 600)
+        time.sleep(0.5)
+        goal = gsnap(g_)["game"]
+        touch.up()
+        g_.evaluate("""() => { const s = window.__glide.live(); const g = s.geo; const t = window.__glide.target();
+          s.phase = 'play'; s.goal = null; s.crab.x = 120; s.crab.y = g.crab.y0;
+          s.ring.x = 60; s.ring.y = g.ring.y0 + 30; t.x = s.ring.x; t.y = s.ring.y;
+          s.puck = { x: 60, y: g.ring.y0 + 30 - 30, vx: 0, vy: 120 }; }""")
+        time.sleep(0.1)
+        glide_hold(touch, 180, 600)
+        time.sleep(0.3)
+        touch.up()
+        g_.evaluate("""() => { const s = window.__glide.live(); const g = s.geo; const t = window.__glide.target();
+          s.phase = 'play'; s.ring.x = 100; s.ring.y = g.ring.y1; t.x = s.ring.x; t.y = s.ring.y;
+          s.puck = { x: 30, y: g.mid + 40, vx: -120, vy: 0 }; }""")
+        time.sleep(0.1)
+        glide_hold(touch, 180, 600)
+        time.sleep(0.4)
+        touch.up()
+        vib = g_.evaluate("window.__vib")
+        check(goal["phase"] == "goal" or goal["serveTo"] == "crab",
+              f"[{tag}] the shell out through the inlet is a goal (phase {goal['phase']}, next serve to {goal['serveTo']})")
+        check(24 in vib and 6 in vib and any(8 <= v <= 14 for v in vib) and all(v == 6 or v == 24 or 8 <= v <= 14 for v in vib),
+              f"[{tag}] haptics always on: goal 24 ms, wall 6 ms, a hit 8 to 14 ms, nothing else ({vib})")
+        at = g_.evaluate("window.__vibAt")
+        check(all(b_ - a_ >= 39.5 for a_, b_ in zip(at, at[1:])), f"[{tag}] at most one vibrate call per 40 ms")
+        gc = g_.evaluate(PAGE_CHROME_JS)
+        check(gc["stored"] == 0 and gc["cookie"] == "", f"[{tag}] nothing stored")
+        no_hud(g_, tag, "Glide after play")
+        back_to_hub(page)
+
+        # Contrast as drawn, at sunset, step 5 and dusk: every colour on the table where a piece can go (the sand,
+        # tide line, lines, decor, shadows; the castles for the ring and shell, the buoys for the shell) against the
+        # shell, ring and crab as drawn (WCAG 3, fill or edge).
+        rows = []
+        for k, active in ((0, 0), (5, 300), (10, 720)):
+            page.evaluate(SET_CLOCK_JS, active)
+            g_ = open_tile(page, "glide")
+            g_.wait_for_timeout(200)
+            shot = OUT / f"a1-glide-{scheme}-step{k}.png"
+            page.screenshot(path=str(shot))
+            q = gsnap(g_)
+            geo = q["geo"]
+            gm = q["game"]
+            tok = g_.evaluate(GLIDE_TOKENS_JS, k)
+            P = tok["pieces"]
+            boxes = []
+            for key, r_ in (("puck", 5), ("ring", 9), ("crab", 9)):
+                boxes.append((round(gm[key]["x"]) - r_ - 1, round(gm[key]["y"]) - r_ - 1, round(gm[key]["x"]) + r_ + 1, round(gm[key]["y"]) + r_ + 1))
+            # The buoys and the castles, measured apart (review of A1: the ring and the shell reach the castles, the
+            # shell a buoy's rim; the crab reaches neither).
+            buoy_box, castle_box = [], []
+            for bx in (geo["mx0"], geo["mx1"]):
+                buoy_box.append((round(bx) - 4, geo["G"] - 4, round(bx) + 4, geo["G"] + 4))
+                castle_box.append((round(bx) - 4, geo["yB"] - 11, round(bx) + 4, geo["yB"] - 1))
+            boxes += buoy_box + castle_box
+            pts = [(x, y) for y in range(geo["T"], geo["yB"]) for x in range(geo["xL"], geo["xR"])
+                   if not (geo["mx0"] - 1 <= x <= geo["mx1"] and y <= geo["G"])
+                   and not any(b0 <= x <= b2 and b1 <= y <= b3 for b0, b1, b2, b3 in boxes)]
+            bgs = set(logical_pixels(g_, shot, pts))
+            in_box = lambda bl: [(x, y) for b0, b1, b2, b3 in bl for y in range(b1, b3 + 1) for x in range(b0, b2 + 1)]
+            t = tok["table"]
+            castle_bgs = set(logical_pixels(g_, shot, in_box(castle_box)))
+            buoy_bgs = set(logical_pixels(g_, shot, in_box(buoy_box))) & {t["buoy"], t["buoyEdge"], t["buoyBand"]}
+            check({t["castle"], t["castleHi"], t["pole"], t["flag"]} <= castle_bgs and len(buoy_bgs) == 3,
+                  f"[{tag} step {k}] the castles and buoys as drawn: {sorted(castle_bgs)}, {sorted(buoy_bgs)}")
+            drawn = logical_pixels(g_, shot, [(round(gm["puck"]["x"]), round(gm["puck"]["y"])), (round(gm["puck"]["x"]) + 5, round(gm["puck"]["y"])),
+                                              (round(gm["puck"]["x"]) + 3, round(gm["puck"]["y"]))])
+            check(q["step"] == k and drawn == [P["puck"]["p"], P["puck"]["o"], P["puck"]["w"]],
+                  f"[{tag} step {k}] Glide reads the hub's clock (step {q['step']}); the shell drawn as {drawn}")
+            check(bgs <= {t["ground"], t["foam"], t["wet"], t["line"], t["pink"], t["blue"], t["pebble"], t["shadow"]},
+                  f"[{tag} step {k}] the table under the pieces draws only its ground, tide line, lines, decor and shadows {sorted(bgs)}")
+            for name, fills, edge_, extra in (("shell", [P["puck"]["p"], P["puck"]["w"]], P["puck"]["o"], castle_bgs | buoy_bgs),
+                                              ("ring", [P["ring"]["#"]], P["ring"]["o"], castle_bgs), ("crab", [P["crab"]["#"]], P["crab"]["o"], set())):
+                for bg in bgs | extra:
+                    rows.append((name, max([contrast(f, bg) for f in fills] + [contrast(edge_, bg)]), bg, k))
+            back_to_hub(page)
+        page.evaluate(SET_CLOCK_JS, 0)
+        worst = min(rows, key=lambda r_: r_[1])
+        under = [r_ for r_ in rows if r_[1] < MIN_CR]
+        check(rows and not under, f"[{tag}] contrast as drawn (B4): shell, ring and crab, fill or edge, against every colour on the table "
+                                  f"at sunset, step 5 and dusk ({len(rows)} pairs; weakest {worst[0]} on {worst[2]} step {worst[3]}: {worst[1]:.2f}; under {under[:3]})")
+        check(not errors, f"[{tag}] no page errors {errors}")
+        ctx.close()
+
 
 
 def run_haptics_native():
@@ -2667,6 +2979,7 @@ THEME_STATE_JS = {
     "catch": "(() => { const g = window.__catch.snapshot().game; return JSON.stringify(g); })()",
     "putt": "(() => { const q = window.__putt.snapshot(); return JSON.stringify({ level: q.level, ball: q.ball, levelNo: q.levelNo }); })()",
     "stack": "(() => { const g = window.__stack.snapshot().game; return JSON.stringify({ floors: g.floors, base: g.base, block: g.block.i, w: g.block.w }); })()",
+    "glide": "(() => { const g = window.__glide.snapshot().game; return JSON.stringify({ puck: g.puck, ring: g.ring, crab: g.crab, phase: g.phase }); })()",
 }
 
 THEME_TOKENS_JS = """async () => {
@@ -2700,6 +3013,11 @@ def corner(page, shot_name):
 def game_corner(page, g_, name, shot_name):
     """corner() for a game; for Putt (row U2: no sea round the course, pieces may sit in a corner) the sand
     ground in the bottom row under the tee, which the 12 px clearance round the tee keeps bare."""
+    if name == "glide":  # row A1: the top is the sea strip; the sand by the left wall, low on the table, bare of pieces and decor
+        shot = OUT / shot_name
+        page.screenshot(path=str(shot))
+        q = g_.evaluate("window.__glide.snapshot()")
+        return logical_pixels(g_, shot, [(5, q["geo"]["yB"] - 12)])[0]
     if name != "putt":
         return corner(page, shot_name)
     shot = OUT / shot_name
@@ -2732,7 +3050,7 @@ def run_theme(browser, base):
             g_ = open_tile(page, name)
             g_.wait_for_timeout(200)
             got = game_corner(page, g_, name, f"d1-{name}-{scheme}.png")
-            exp = want["sand"] if name == "putt" else want["sky"]
+            exp = want["sand"] if name in ("putt", "glide") else want["sky"]
             gc = g_.evaluate(PAGE_CHROME_JS)
             check(got == exp and gc["bg"] == rgb_css(top), f"[{tag}] {name} opened from its card is {scheme} ({got}, want {exp}; background {gc['bg']})")
             check(gc["stored"] == 0 and gc["cookie"] == "", f"[{tag}] {name}: nothing stored ({gc['stored']} keys, cookie {gc['cookie']!r})")
@@ -2767,19 +3085,19 @@ def run_theme(browser, base):
         g_.evaluate("() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
         dark = game_corner(page, g_, name, f"d1-switch-{name}-dark.png")
         mid = g_.evaluate(THEME_STATE_JS[name])
-        if name in ("bricks", "catch"):  # a fresh, paused opening draws the same in both runs: no colour left over from light
+        if name in ("bricks", "catch", "glide"):  # a fresh, paused opening draws the same in both runs: no colour left over from light
             from PIL import Image, ImageChops
             diff = ImageChops.difference(Image.open(OUT / f"d1-switch-{name}-dark.png").convert("RGB"),
                                          Image.open(OUT / f"d1-{name}-dark.png").convert("RGB")).getbbox()
             check(diff is None, f"[{tag}] switched to dark, the frame equals the same opening made in dark, pixel for pixel ({diff})")
-        exp = tok["dark"]["sand" if name == "putt" else "sky"]
+        exp = tok["dark"]["sand" if name in ("putt", "glide") else "sky"]
         check(dark == exp, f"[{tag}] switched to dark with the game open: dark within two frames ({dark}, want {exp})")
         check(mid == before, f"[{tag}] the switch moves nothing in the game (state kept)")
         page.emulate_media(color_scheme="light")
         g_.evaluate("() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
         light = game_corner(page, g_, name, f"d1-switch-{name}-light.png")
         after = g_.evaluate(THEME_STATE_JS[name])
-        check(light == tok["light"]["sand" if name == "putt" else "sky"] and after == before,
+        check(light == tok["light"]["sand" if name in ("putt", "glide") else "sky"] and after == before,
               f"[{tag}] and back to light: light again ({light}), state kept")
         if name != "stack":  # Stack's block slides on; the paused games draw the very frame they drew before
             from PIL import Image, ImageChops
@@ -2800,6 +3118,7 @@ THEME_FULL_JS = {
     "catch": "JSON.stringify(window.__catch.snapshot().game)",
     "putt": "(() => { const q = window.__putt.snapshot(); return JSON.stringify({ level: q.level, levelNo: q.levelNo, ball: q.ball, aiming: q.aiming, sliding: q.sliding, sinking: q.sinking }); })()",
     "stack": "(() => { const g = window.__stack.snapshot().game; const { x, dir, ...b } = g.block; return JSON.stringify({ ...g, block: b }); })()",
+    "glide": "(() => { const q = window.__glide.snapshot(); return JSON.stringify({ game: q.game, level: q.level, target: q.target }); })()",
 }
 
 
@@ -2852,6 +3171,20 @@ def theme_play(page, touch, name):
         b, b0 = s["ball"], s0["ball"]
         ok = s["levelNo"] == s0["levelNo"] and not b["moving"] and not b["sunk"] and (b["x"], b["y"]) != (b0["x"], b0["y"]) and not s["aiming"]
         return f"one shot, the ball at rest at ({b['x']:.1f}, {b['y']:.1f}) from ({b0['x']:.1f}, {b0['y']:.1f})" if ok else None
+    if name == "glide":
+        q0 = gsnap(page)
+        touch.down(180, 600)
+        time.sleep(0.35)
+        for i in range(30):  # the thumb wanders: the ring goes up and down the player's half
+            touch.move(180 + 40 * math.sin(i / 3), 600 - 30 * math.sin(i / 5))
+            time.sleep(0.05)
+        touch.up()
+        page.wait_for_function("window.__glide.snapshot().mode === 'paused' && !window.__glide.snapshot().raf", timeout=5000)
+        q = gsnap(page)
+        g = q["game"]
+        moved = (g["puck"]["x"], g["puck"]["y"]) != (q0["game"]["puck"]["x"], q0["game"]["puck"]["y"])
+        ok = moved and g["phase"] in ("play", "goal")
+        return f"the shell in play at ({g['puck']['x']:.1f}, {g['puck']['y']:.1f}), paused" if ok else None
     if name == "stack":
         for _ in range(3):
             stack_tap_at(page, touch, 0)
@@ -2899,7 +3232,7 @@ def run_theme_play(browser, base):
         dark = game_corner(page, g_, name, f"d1-play-{name}-dark.png")
         g_.wait_for_timeout(200)
         mid = (g_.evaluate(THEME_STATE_JS[name]), g_.evaluate(THEME_FULL_JS[name]))
-        exp = "sand" if name == "putt" else "sky"
+        exp = "sand" if name in ("putt", "glide") else "sky"
         check(light == tok["light"][exp] and dark == tok["dark"][exp],
               f"[{tag}] switched light to dark mid-game: dark within two frames ({light} -> {dark}, want {tok['dark'][exp]})")
         check(mid[0] == before[0], f"[{tag}] the switch moves nothing: the fields run_theme compares are unchanged")
@@ -3008,14 +3341,14 @@ def view_of(page):
       const c = document.getElementById('screen');
       const off = (scale, H) => ({ scale, H, ox: Math.floor((c.width - 135 * scale) / 2), oy: Math.floor((c.height - H * scale) / 2) });
       if (c.dataset.layout) { const l = JSON.parse(c.dataset.layout); return off(l.scale, l.H); }
-      for (const k of ['__bricks', '__catch']) if (window[k]) return window[k].snapshot().view;
+      for (const k of ['__bricks', '__catch', '__glide']) if (window[k]) return window[k].snapshot().view;
       if (window.__stack) { const g = window.__stack.snapshot().geo; return { scale: g.scale, H: g.H, ox: g.ox, oy: g.oy }; }
       if (window.__putt) { const g = window.__putt.snapshot().geo; return off(g.scale, g.H); }
       return null;
     }""")
 
 
-GAMES = ("bricks", "catch", "putt", "stack")
+GAMES = ("bricks", "catch", "putt", "stack", "glide")
 
 
 GAME_READY = {
@@ -3023,6 +3356,7 @@ GAME_READY = {
     "catch": "window.__catch && window.__catch.snapshot().game",
     "putt": "window.__putt && window.__putt.snapshot().level",
     "stack": "window.__stack && window.__stack.snapshot().game",
+    "glide": "window.__glide && window.__glide.snapshot().game",
 }
 
 
@@ -3122,7 +3456,7 @@ def main():
     only = set(sys.argv[sys.argv.index("--only") + 1].split(",")) if "--only" in sys.argv else None
     want = lambda name: only is None or name in only
     for name, fn in (("static", static_checks), ("android", android_checks), ("bricks-sim", run_node_sim), ("catch-sim", run_catch_sim),
-                     ("putt-sim", run_putt_sim), ("stack-sim", run_stack_sim), ("haptics-native", run_haptics_native)):
+                     ("putt-sim", run_putt_sim), ("stack-sim", run_stack_sim), ("glide-sim", run_glide_sim), ("haptics-native", run_haptics_native)):
         if want(name):
             fn()
     httpd, base = serve(ROOT)
@@ -3135,7 +3469,8 @@ def main():
             for w, h, dpr in LAYOUT_ONLY:
                 run_layout_only(browser, base, w, h, dpr)
         for name, fn in (("resize", run_resize), ("hub-grid", run_hub_grid), ("bricks", run_bricks), ("scene", run_scene), ("scene-dark", run_scene_dark),
-                         ("catch", run_catch), ("putt", run_putt), ("putt-open", run_putt_open), ("stack", run_stack), ("contrast-hub", run_contrast_hub),
+                         ("catch", run_catch), ("putt", run_putt), ("putt-open", run_putt_open), ("stack", run_stack),
+                         ("glide", run_glide), ("glide-layout", run_glide_layout), ("contrast-hub", run_contrast_hub),
                          ("contrast-pages", run_contrast_pages), ("contrast-stack", run_contrast_stack),
                          ("theme", run_theme), ("theme-play", run_theme_play), ("contrast-hub-dark", lambda b, u: run_contrast_hub(b, u, "dark")),
                          ("contrast-pages-dark", lambda b, u: run_contrast_pages(b, u, "dark")),

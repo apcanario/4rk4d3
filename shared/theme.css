@@ -21,6 +21,8 @@
   --shallow: #84C4DE;
   --deep: #3A5A8C;
   --trap-tint: #FFA38C;
+  --sand-wall: #F4A98C;
+  --court-line: #F4A98C;
   --sea-1: #96D0E6;
   --sea-2: #84C4DE;
   --sea-3: #74B8D6;
@@ -71,6 +73,8 @@
     --shallow: #24406B;
     --deep: #05060D;
     --trap-tint: #7A1E3A;
+    --sand-wall: #56437F;
+    --court-line: #CDD6FF;
     --sea-1: #24406B;
     --sea-2: #1F3760;
     --sea-3: #1C2F55;

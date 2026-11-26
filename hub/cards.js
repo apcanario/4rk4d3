@@ -1,15 +1,17 @@
-// RLX hub cards (row H2, PLAN §5a): four big framed cards in a 2x2 grid, each
-// a small window onto its game, drawn in the game's own scene colours at the
+// RLX hub cards (row H2, PLAN §5a; row A1, §6i): five big framed cards in a grid of
+// 2 columns by 3 rows (the sixth cell open), each a small window onto its game, drawn in the game's own scene colours at the
 // current step of the exit ramp. No text of any kind. No DOM: the layout and
 // the parts list also serve the headless checks (tests/check.py), which
 // measure every piece against the window colours behind it.
 
-import { LOGICAL_WIDTH, COLORS, BRICK_ROWS, mix, shade, highlight, edge, line, trapOn, scenePalette } from '../shared/tokens.js';
+import { LOGICAL_WIDTH, COLORS, BRICK_ROWS, mix, shade, highlight, edge, line, scenePalette, puttGround } from '../shared/tokens.js';
 import { pixelBody, steppedRect, ditherRow, sunRuns, SUN_RADIUS } from '../shared/pixel.js';
 import { SESSION } from '../shared/session.js';
 import { LOOK, spriteGrid, turnUp } from '../games/catch/sim.js';
+import { CRAB_MASK, RING_MASK, PUCK_MASK, tableColours, pieceColours } from '../games/glide/sim.js';
+import * as TOK from '../shared/tokens.js';
 
-/** The cards, in grid order: top left, top right, bottom left, bottom right. Each opens its
+/** The cards, in grid order: left to right, top to bottom (the sixth cell, bottom right, is open). Each opens its
  * game's index.html by name: the Android app's local server answers a folder URL with the
  * hub itself (PLAN §6f). */
 export const CARDS = Object.freeze([
@@ -17,63 +19,93 @@ export const CARDS = Object.freeze([
   Object.freeze({ id: 'catch', name: 'Catch', href: 'games/catch/index.html' }),
   Object.freeze({ id: 'putt', name: 'Putt', href: 'games/putt/index.html' }),
   Object.freeze({ id: 'stack', name: 'Stack', href: 'games/stack/index.html' }),
+  Object.freeze({ id: 'glide', name: 'Glide', href: 'games/glide/index.html' }),
 ]);
 
-// Layout values (PLAN §5a).
+// Layout values (PLAN §5a; row A1: 2 columns by 3 rows).
 export const GRID = Object.freeze({
+  cols: 2,
+  rows: 3, // five cards; the sixth cell is left open (no blank card)
   gap: 5, // between the cards, across and down
   side: 4, // least margin at the screen's sides
   bottomMin: 8, // least margin above the bottom safe inset ...
   bottomFrac: 0.05, // ... or this fraction of the screen height, whichever is larger
   seaClear: 8, // the horizon is this far above the grid: the cards sit on the sea, clear of the sun
-  skyMin: SUN_RADIUS + 16, // the open sky above the horizon is at least this tall (below the top safe inset)
+  skyFloor: 0, // row A1: where three rows of full-size cards do not fit, the sky gives way first, down to this; only then do the cards shrink
   maxRatio: 1.3, // a card is never taller than this many times its width (the approved mockup is about 1.25)
   sunMax: 40, // the hub's sun radius grows with its sky up to this
   sunEdge: 4, // the whole sun stays at least this far from the right edge
+  sunTop: 8, // the whole sun stays at least this far below the top inset; a sky too short for a sun this far down shrinks it...
+  sunMin: 6, // ...and one that would leave a sun under this radius has none
   minCard: 40, // every card is at least this big in each direction (the tap target)
   frame: 4, // frame thickness at the top and sides; the bottom is one more (the drop shade)
 });
 
 /**
  * The hub's composition for a logical screen W x H with safe insets (logical
- * px) and the side band (logical px) where a touch is ignored. The grid sits
- * low, in the thumb's reach, a margin above the bottom; the cards are as wide
- * as the margins allow and at most maxRatio x their width tall. The horizon
- * is seaClear above the grid, so the cards sit on the sea and the whole sky
- * above them, with the sun on the horizon, is the picture. Returns { cards:
- * {id: rect}, x0, y0, cw, ch, gap, top, bottom, side, horizon, seaHeight }.
+ * px) and the side band (logical px) where a touch is ignored. The grid, 2
+ * columns by 3 rows, sits low, in the thumb's reach, a margin above the
+ * bottom; the cards are as wide as the margins allow and maxRatio x their
+ * width tall. Where three rows of that size do not fit below the top inset,
+ * the sky gives way first (down to skyFloor); only then do the cards shrink,
+ * never under minCard. The horizon is seaClear above the grid, so the cards
+ * sit on the sea and the sky above them, with the sun on the horizon, is the
+ * picture. Returns { cards: {id: rect}, open: rect (the sixth cell), x0, y0,
+ * cw, ch, gap, rows, top, bottom, side, horizon, seaHeight }.
  */
 export function gridLayout(W, H, safe, edgeBand = 0) {
   const side = Math.max(GRID.side, edgeBand, safe.left + 2, safe.right + 2);
-  const cw = Math.floor((W - side * 2 - GRID.gap) / 2);
-  const x0 = Math.floor((W - (cw * 2 + GRID.gap)) / 2);
+  const cw = Math.floor((W - side * 2 - GRID.gap * (GRID.cols - 1)) / GRID.cols);
+  const x0 = Math.floor((W - (cw * GRID.cols + GRID.gap * (GRID.cols - 1))) / 2);
   const bottom = H - safe.bottom - Math.max(GRID.bottomMin, Math.round(H * GRID.bottomFrac));
-  const top = safe.top + GRID.skyMin + GRID.seaClear; // the highest the grid may start
-  const fit = Math.floor((bottom - top - GRID.gap) / 2);
+  const top = safe.top + GRID.skyFloor + GRID.seaClear; // the highest the grid may start, once the sky has given way
+  const fit = Math.floor((bottom - top - GRID.gap * (GRID.rows - 1)) / GRID.rows);
   const ch = Math.max(GRID.minCard, Math.min(fit, Math.floor(cw * GRID.maxRatio)));
-  const y0 = bottom - (ch * 2 + GRID.gap);
+  const y0 = bottom - (ch * GRID.rows + GRID.gap * (GRID.rows - 1));
   const horizon = y0 - GRID.seaClear;
+  const cell = (i) => ({ x: x0 + (i % GRID.cols) * (cw + GRID.gap), y: y0 + Math.floor(i / GRID.cols) * (ch + GRID.gap), w: cw, h: ch });
   const cards = {};
-  CARDS.forEach((c, i) => {
-    cards[c.id] = { x: x0 + (i % 2) * (cw + GRID.gap), y: y0 + Math.floor(i / 2) * (ch + GRID.gap), w: cw, h: ch };
-  });
-  return { cards, x0, y0, cw, ch, gap: GRID.gap, top, bottom, side, horizon, seaHeight: H - horizon };
+  CARDS.forEach((c, i) => { cards[c.id] = cell(i); });
+  return { cards, open: cell(CARDS.length), x0, y0, cw, ch, gap: GRID.gap, rows: GRID.rows, top, bottom, side, horizon, seaHeight: H - horizon };
 }
+
+/** The hub's sun radius for a sky of this height (below the top inset): 0 if there is no room for one. */
+export function sunRadiusFor(sky) {
+  const r = Math.min(Math.max(SUN_RADIUS, Math.min(GRID.sunMax, Math.round(sky * 0.3))), sky - GRID.sunTop);
+  return r >= GRID.sunMin ? r : 0;
+}
+
+// A cloud's size (shared/pixel.js CLOUDS, by its index), for keeping the hub's clouds inside its sky.
+const CLOUD_BOX = [[20, 6], [16, 5], [14, 5]];
 
 /**
  * The hub's scene options for drawScene (shared/pixel.js): the raised horizon,
- * three clouds and the stars in the sky above it, clear of the sun.
+ * the clouds and the stars in the sky above it, clear of the sun. Row A1: the
+ * sky may be short (it gives way to three rows of cards); a cloud or a star
+ * that would not fit in it whole is left out, and a sky too short for a sun has none.
  */
 export function hubScene(grid, safe) {
   const sky = grid.horizon - safe.top;
   const at = (f) => safe.top + Math.round(sky * f);
   const H = grid.horizon + grid.seaHeight;
-  // The sun grows with the sky: 0.3 of it, from the games' radius up to GRID.sunMax.
-  const sunRadius = Math.max(SUN_RADIUS, Math.min(GRID.sunMax, Math.round(sky * 0.3)));
+  // The sun grows with the sky: 0.3 of it, from the games' radius up to GRID.sunMax, never closer than sunTop to the top inset.
+  const sunRadius = sunRadiusFor(sky);
   // x 96 as in the games, moved left when a big sun would reach within GRID.sunEdge of the right edge.
   const sunX = Math.min(96, LOGICAL_WIDTH - sunRadius - GRID.sunEdge);
-  const clouds = [[92, at(0.1)], [8, at(0.42)], [44, at(0.72)]];
-  if (H > 300) clouds.push([58, at(0.24)]); // a tall sky gets a fourth cloud, clear of the sun
+  const want = [[92, at(0.1)], [8, at(0.42)], [44, at(0.72)]];
+  if (H > 300) want.push([58, at(0.24)]); // a tall sky gets a fourth cloud, clear of the sun
+  // Keep a cloud only where it fits whole in the sky and clear of the sun; drawScene shapes clouds by their place in the list.
+  const clouds = [];
+  for (const c of want) {
+    const [cw, chh] = CLOUD_BOX[clouds.length % CLOUD_BOX.length];
+    const inSky = c[1] >= safe.top + 1 && c[1] + chh <= grid.horizon - 2;
+    // clear of the sun's disc: the nearest point of the cloud more than a pixel outside it
+    const nx = Math.max(c[0], Math.min(sunX, c[0] + cw));
+    const ny = Math.max(c[1], Math.min(grid.horizon, c[1] + chh));
+    const clearSun = !sunRadius || Math.hypot(nx - sunX, ny - grid.horizon) > sunRadius + 1;
+    if (inSky && clearSun) clouds.push(c);
+  }
+  const stars = [safe.top + 2, grid.horizon - sunRadius - 4];
   return {
     seaHeight: grid.seaHeight,
     sunRadius,
@@ -81,7 +113,8 @@ export function hubScene(grid, safe) {
     glintDepth: GRID.seaClear, // the scene's own glints only in the open strip between the horizon and the cards
     glints: seaGlints(grid),
     clouds,
-    stars: [safe.top + 2, grid.horizon - sunRadius - 4],
+    stars,
+    starCount: stars[1] - stars[0] >= 2 ? undefined : 0, // no room for a star: none (a 3 x 3 cross needs 2 rows of sky round it)
   };
 }
 
@@ -108,6 +141,12 @@ export function seaGlints(grid) {
     out.push([x0 + cw + 10, bottom + 3, 6]);
   }
   if (below >= 10) out.push([x0 + cw * 2 - 8, bottom + 7, 3]);
+  // Row A1: the open sixth cell is sea too, with two dashes of its own.
+  const o = grid.open;
+  if (o) {
+    out.push([o.x + 6, o.y + Math.round(o.h * 0.3), 5]);
+    out.push([o.x + o.w - 16, o.y + Math.round(o.h * 0.62), 6]);
+  }
   return out;
 }
 
@@ -329,9 +368,12 @@ function catchParts(win, pal, t) {
   return parts;
 }
 
-function puttParts(win, pal) {
+// Row U2c: the Putt card is the open course of row U2 (PLAN §6h): no frame, the window's edges are the walls, a
+// stub and a corner cut grow from them, on a sand level's colours (games/putt/putt.js palette and paintCourse).
+function puttParts(win, pal, t) {
   const { x, y, w, h } = win;
-  const sand = pal.sky[0]; // the course floor: the sky-top token at this step, as in putt.js
+  const look = puttGround('sand', t);
+  const sand = look.ground;
   const parts = [{ bg: true, what: 'sand', colour: sand, x, y, w, h }];
   // The hole and its flag (putt.js drawHole), near the top.
   const hx = x + w - 13;
@@ -359,35 +401,43 @@ function puttParts(win, pal) {
     what: 'flag', rule: 'de', fill: COLORS.coral, edge: null, x: px + 1, y: top, w: 4, h: 3, colours: [COLORS.coral],
     draw(ctx) { ctx.fillStyle = COLORS.coral; [4, 3, 1].forEach((fw, k) => ctx.fillRect(px + 1, top + k, fw, 1)); },
   });
-  // A peg, left of the hole.
+  // A peg, left of the hole (pink, as putt.js).
   parts.push(body('peg', 'de', x + 6, hy - 1, 5, 5, BRICK_ROWS[5], 1, null, true));
-  // The bar: a coral wall from the right edge most of the way across, highlight on top.
-  const barY = hy + 11;
-  const barX = x + 14;
+  // A stub from the right edge, below the hole: coral, its highlight row on top and shade row at the bottom, nothing
+  // drawn along the window's edge (the screen's edge is the wall); it casts the 0.2 drop shade on the sand below.
+  const stubY = hy + 10;
+  const stubH = 4;
+  const stubX = x + Math.round(w * 0.42);
+  const stubW = x + w - stubX;
+  const drop = mix(sand, COLORS.shadeTarget, 0.2);
   parts.push({
-    what: 'wall', rule: 'de', fill: COLORS.coral, edge: null, x: barX, y: barY, w: x + w - barX, h: 3, colours: [COLORS.coral, highlight(COLORS.coral)],
+    what: 'stub', rule: 'de', fill: COLORS.coral, edge: null, x: stubX, y: stubY, w: stubW, h: stubH,
+    colours: [COLORS.coral, highlight(COLORS.coral), shade(COLORS.coral)],
     draw(ctx) {
       ctx.fillStyle = COLORS.coral;
-      ctx.fillRect(barX, barY, x + w - barX, 3);
+      ctx.fillRect(stubX, stubY, stubW, stubH);
       ctx.fillStyle = highlight(COLORS.coral);
-      ctx.fillRect(barX, barY, x + w - barX, 1);
+      ctx.fillRect(stubX, stubY, stubW, 1);
+      ctx.fillStyle = shade(COLORS.coral);
+      ctx.fillRect(stubX, stubY + stubH - 1, stubW, 1);
     },
   });
-  // Water (left) and a sand trap (right), below the bar.
-  const midY = barY + 3 + Math.max(5, Math.round((h - (barY - y) - 3 - 24) * 0.25));
-  const water = pal.sea[1];
-  const wg = mix(COLORS.sun, water, 0.15);
-  const ww = Math.min(20, Math.floor(w * 0.42));
+  parts.push({ bg: true, what: 'drop shade', colour: drop, x: stubX, y: stubY + stubH, w: stubW, h: 1 });
+  // A pool (left) and a sand trap (right), below the stub.
+  const midY = stubY + stubH + Math.max(5, Math.round((h - (stubY - y) - stubH - 24) * 0.25));
+  const pool = look.pool;
+  const wg = mix(COLORS.sun, pool, 0.15);
+  const ww = Math.min(18, Math.floor(w * 0.38));
   parts.push({
-    what: 'water', rule: 'de', fill: water, edge: null, x: x + 3, y: midY, w: ww, h: 12, colours: [water, wg],
+    what: 'pool', rule: 'de', fill: pool, edge: null, x: x + 3, y: midY, w: ww, h: 12, colours: [pool, wg],
     draw(ctx) {
-      steppedRect(ctx, x + 3, midY, ww, 12, water, 2);
+      steppedRect(ctx, x + 3, midY, ww, 12, pool, 2);
       ctx.fillStyle = wg;
       ctx.fillRect(x + 7, midY + 3, Math.min(7, ww - 8), 1);
       ctx.fillRect(x + 3 + ww - 9, midY + 8, 5, 1);
     },
   });
-  const trap = trapOn(sand); // as putt.js
+  const trap = look.trap; // as putt.js on a sand level
   const dot = mix(trap, COLORS.shadeTarget, 0.15);
   const tw = 16;
   const tx = x + w - tw - 3;
@@ -400,12 +450,27 @@ function puttParts(win, pal) {
       for (const [dx, dy] of [[4, 2], [tw - 6, 3], [tw >> 1, 4], [3, 6], [tw - 4, 6]]) ctx.fillRect(tx + dx, ty + dy, 1, 1);
     },
   });
-  // A salmon block in the open course between the water and the ball, where the window is tall enough.
+  // A corner cut across the bottom-left corner: a stair-stepped triangle, coral, its slant lit.
+  const cc = 9;
+  const cy0 = y + h - cc;
+  parts.push({
+    what: 'corner cut', rule: 'de', fill: COLORS.coral, edge: null, x, y: cy0, w: cc, h: cc,
+    colours: [COLORS.coral, highlight(COLORS.coral)],
+    draw(ctx) {
+      for (let k = 0; k < cc; k++) {
+        ctx.fillStyle = COLORS.coral;
+        ctx.fillRect(x, cy0 + k, k + 1, 1);
+        ctx.fillStyle = highlight(COLORS.coral);
+        ctx.fillRect(x + k, cy0 + k, 1, 1);
+      }
+    },
+  });
+  // A salmon block in the open course between the pool and the ball, where the window is tall enough.
   const ballTop = y + h - 9 - 15; // the top of the aim guide
   const room = ballTop - (midY + 12);
   if (room >= 16) {
     const by = midY + 12 + Math.round((room - 6) * 0.5);
-    parts.push(body('block (salmon)', 'de', x + 5, by, 12, 6, BRICK_ROWS[2], 1, null, true));
+    parts.push(body('block (salmon)', 'de', x + 12, by, 12, 6, BRICK_ROWS[2], 1, null, true));
   }
   // The ball near the bottom, its dotted aim guide up and to the left (the last dot past the bend, as in the game).
   const ballX = x + w - 12;
@@ -447,7 +512,100 @@ function stackParts(win, pal) {
   return parts;
 }
 
-const BUILD = { bricks: bricksParts, catch: catchParts, putt: puttParts, stack: stackParts };
+// Row A1: the Glide card, a window onto the table (games/glide/glide.js): the sea strip with its inlet and buoys,
+// the sand, the side and bottom bands, the dashed centre line, the crab, the shell and the life ring, and the two
+// sandcastles at the player's goal. The pieces are the game's own masks (games/glide/sim.js) in its colours.
+function maskPiece(what, mask, keys, x, y, fill, edgeC) {
+  const used = new Set();
+  for (const row of mask) for (const k of row) if (k !== '.') used.add(keys[k]);
+  return {
+    what, rule: 'cr', fill, edge: edgeC, x, y, w: mask[0].length, h: mask.length, colours: [...used],
+    draw(ctx) {
+      mask.forEach((row, r) => {
+        for (let c = 0; c < row.length; c++) {
+          if (row[c] === '.') continue;
+          ctx.fillStyle = keys[row[c]];
+          ctx.fillRect(x + c, y + r, 1, 1);
+        }
+      });
+    },
+  };
+}
+
+function glideParts(win, pal, t) {
+  const { x, y, w, h } = win;
+  const col = tableColours(TOK, t); // the game's own table colours (games/glide/sim.js)
+  const ground = col.ground;
+  const sh = Math.max(4, Math.round(h * 0.08)); // the sea strip
+  const parts = [{ bg: true, what: 'sand', colour: ground, x, y: y + sh, w, h: h - sh }];
+  parts.push(...seaBands(x, y, w, sh, pal));
+  parts.push(glints(x, y, w, sh, col.glint));
+  const iw = 22; // the inlet, centred, 3 px into the sand
+  const ix = x + Math.round((w - iw) / 2);
+  parts.push({ bg: true, what: 'inlet', colour: pal.sea[2], x: ix, y: y + sh, w: iw, h: 3 });
+  parts.push({ bg: true, what: 'tide foam', colour: col.foam, x, y: y + sh, w: ix - x, h: 1 });
+  parts.push({ bg: true, what: 'tide foam', colour: col.foam, x: ix + iw, y: y + sh, w: x + w - ix - iw, h: 1 });
+  parts.push({ bg: true, what: 'side band', colour: col.wall, x, y: y + sh, w: 1, h: h - sh });
+  parts.push({ bg: true, what: 'side band', colour: col.wall, x: x + w - 1, y: y + sh, w: 1, h: h - sh });
+  parts.push({ bg: true, what: 'bottom band', colour: col.wall, x, y: y + h - 1, w, h: 1 });
+  const midY = y + sh + Math.round((h - sh) * 0.52);
+  const dashes = [];
+  for (let dx = 2; dx < w - 2; dx += 6) dashes.push({ x: x + dx, y: midY, w: Math.min(3, w - 2 - dx), h: 1 });
+  parts.push({ bg: true, what: 'centre line', colour: col.line, x, y: midY, w, h: 1, dashes });
+  // The buoys at the inlet's corners: coral with a white band, the edge all round.
+  const buoyEdge = col.buoyEdge;
+  for (const bx of [ix - 2, ix + iw - 2]) {
+    const by = y + sh + 1;
+    parts.push({
+      what: 'buoy', rule: 'de', fill: col.buoy, edge: buoyEdge, x: bx, y: by, w: 4, h: 4, colours: [col.buoy, col.buoyBand, buoyEdge],
+      draw(ctx) {
+        ctx.fillStyle = buoyEdge;
+        ctx.fillRect(bx + 1, by, 2, 1); ctx.fillRect(bx + 1, by + 3, 2, 1); ctx.fillRect(bx, by + 1, 1, 2); ctx.fillRect(bx + 3, by + 1, 1, 2);
+        ctx.fillStyle = col.buoy; ctx.fillRect(bx + 1, by + 1, 2, 1);
+        ctx.fillStyle = col.buoyBand; ctx.fillRect(bx + 1, by + 2, 2, 1);
+      },
+    });
+  }
+  const keys = pieceColours(TOK);
+  // The crab in front of its goal, the shell coming down the right, the ring low on the left.
+  const room = h - sh - 3; // below the inlet
+  const crabY = y + sh + 6;
+  parts.push(maskPiece('crab', CRAB_MASK, keys.crab, x + Math.round((w - CRAB_MASK[0].length) / 2), crabY, keys.crab['#'], keys.crab.o));
+  const ringY = Math.min(y + h - 10 - RING_MASK.length, crabY + CRAB_MASK.length + Math.round(room * 0.28));
+  parts.push(maskPiece('ring', RING_MASK, keys.ring, x + 3, ringY, keys.ring['#'], keys.ring.o));
+  const puckY = crabY + CRAB_MASK.length + Math.max(2, Math.round((ringY - crabY - CRAB_MASK.length - PUCK_MASK.length) * 0.5));
+  parts.push(maskPiece('shell', PUCK_MASK, keys.puck, x + w - PUCK_MASK[0].length - 5, puckY, keys.puck.p, keys.puck.o));
+  // The sandcastles either side of the player's goal, on the bottom band, each with a pink flag.
+  const gw = 22;
+  const gx = x + Math.round((w - gw) / 2);
+  const castleHi = col.castleHi;
+  const pole = col.pole;
+  const flag = col.flag;
+  for (const cx of [gx - 2, gx + gw - 3]) {
+    const cy = y + h - 6;
+    parts.push({
+      what: 'sandcastle', rule: 'de', fill: col.castle, edge: null, x: cx, y: cy, w: 5, h: 5, colours: [col.castle, castleHi],
+      draw(ctx) {
+        ctx.fillStyle = col.castle;
+        ctx.fillRect(cx, cy + 1, 5, 4);
+        ctx.fillRect(cx, cy, 1, 1); ctx.fillRect(cx + 2, cy, 1, 1); ctx.fillRect(cx + 4, cy, 1, 1);
+        ctx.fillStyle = castleHi;
+        ctx.fillRect(cx + 1, cy + 2, 3, 1);
+      },
+    });
+    parts.push({
+      what: 'sandcastle flag', rule: 'de', fill: flag, edge: null, x: cx + 2, y: cy - 4, w: 3, h: 4, colours: [pole, flag],
+      draw(ctx) {
+        ctx.fillStyle = pole; ctx.fillRect(cx + 2, cy - 4, 1, 4);
+        ctx.fillStyle = flag; ctx.fillRect(cx + 3, cy - 4, 2, 1); ctx.fillRect(cx + 3, cy - 3, 1, 1);
+      },
+    });
+  }
+  parts.push({ bg: true, what: 'goal gap', colour: col.gap, x: gx + 3, y: y + h - 1, w: gw - 5, h: 1 });
+  return parts;
+}
+
+const BUILD = { bricks: bricksParts, catch: catchParts, putt: puttParts, stack: stackParts, glide: glideParts };
 
 /**
  * Every part of a card's window at a scene step (0 sunset .. sceneSteps

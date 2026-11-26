@@ -4,9 +4,9 @@ Rows are defined in docs/PLAN.md. Nothing is built that is not a row here. A don
 
 ## Queue
 
-- A1 Glide: beach air hockey against a crab, the table edge to edge, nothing counted; fifth hub card, grid 2 by 3 (PLAN §6i)
-
 ## Done
+
+- A1 Glide and U2c (2026-11-26): games/glide/ (sim.js, bot.js, glide.js, index.html) per PLAN §6i, beach air hockey against a crab, table edge to edge, nothing counted or stored, dark theme live; hub grid 2 x 3 with Glide fifth and the sixth cell open, the sky giving way at logical height 240; the hub's Putt card redrawn as the open course (U2c); new tokens sandWall, courtLine and the decor amounts; sw.js rlx-v25; suites pass (check.py 1659 before the review, 1665 checks after it, the changed parts re-run; glide-sim 110, others unchanged); review fix: the castles' pole, pennant and dark highlight recoloured to meet B4 under the ring and shell. Confirmed headless only. Not confirmed, on the phone only (A1a): thumb travel in two directions, puck speed, how hard the crab feels, haptics told apart, the look on the device; the crab scored in 23 of 24 scripted ten-minute runs, not in all
 
 - U2 Putt, open course (2026-11-26): no drawn frame, the screen edges are the walls; stubs, corner cuts and wedges grow from the edges; sand and sea looks alternate from a sand start; sw.js rlx-v24; suites pass (check.py 1411, putt-sim 88). Not confirmed, on the phone only: the ball bouncing off the glass on all four sides, how both looks read on the device, cutout and inset placement, level-3 build time
 - X35 shared/font.js removed; its glyph table lives on in tools/rlx_font.py for the two social-teaser scripts, which still regenerate byte for byte; sw.js rlx-v23 (2026-11-26)
@@ -44,10 +44,14 @@ Rows are defined in docs/PLAN.md. Nothing is built that is not a row here. A don
 
 - U2a Putt level variety: every level 3 is one or two near-full-width walls with a centred gap and a guard block (the old bars in all but name, close to the "prison" look); level 2 always has a shelf under the hole. Off-centre or wider gates (15 to about 30 px), staggered stubs, wedges or cuts as barriers, several level-2 patterns; re-measure the stroke ranges and reject rate. Judge after Pedro plays it
 - U2b Dark sea look: sandbanks read as dark slabs (fill #2B2142 on night sea, only the foam edge carries them), and the ball's edge is near black on navy; consider a lighter night-bank token and line(coral) for the ball edge; judge on the phone
-- U2c Hub Putt card still draws the old framed course (hub/cards.js); redraw it open, with the A1 grid work
 - X40 Android smoke: if the gesture-navigation overlay command fails on the API 36 image the failure reads as an app fault; make tools/android-smoke-check.py read back-mode.txt and fail on navigation_mode other than 2 with its own message
 - X41 Stack check "a landed drop" (tests/check.py run_stack): an offset tap landing within the 2 px snap distance gives a snap, not a landed drop, and fails the check; rare, not seen in 40 runs; make the check accept or avoid it
 - D1a Device check of dark mode on the phone (dark room, outdoors) and of a live mode switch inside the installed APK; if the WebView does not follow a live switch, decide between that and recreating the activity, which would lose game state. The Android changes were never built here; CI is their first build
 - D1b Pedro's look at the grey keel, the grey outer ring on hub cards and the pale grey Putt hole in dark (ball and hole differ by hue only, contrast 1.03); alternative: separate hole and card-rim tokens, same light values, dark ones
 
 - X34 Device check of the low grid hub (card size and tap comfort, keel card edge too heavy or not, sun and sky look), and of what Pedro's report did not cover (PLAN §8 list); in the browser or in the installed app; Pedro's first install (2026-11-26) confirmed only that it installs, runs and plays well
+- A1a Device check of Glide: thumb travel in two directions (28 percent of the width across, the same gain up and down), puck speed (top 220 px/s, drag about 36 px/s squared at 360 x 800), how hard the crab feels and whether it scores often enough (it scored in 23 of 24 scripted ten-minute runs), mallet, wall and goal haptics told apart and whether the crab's own hits should tick at all (built: both mallets tick), ten minutes with no stuck or pinned puck, light and dark on the phone
+- A1b Hub at logical height 240 (360 x 640 CSS px and similar short screens): three rows of cards leave no sky at all (0 to 1 px; no sun, clouds or stars), cards 70 tall (64 with insets); Pedro to judge whether that is acceptable or the cards should shrink to keep a strip of sky
+- A1c Outside the B4 standard in the build: Glide's shell over the inlet's sea in light, WCAG 2.48 at worst, only in the last 6 px before its centre crosses the goal line (PLAN §6i build choices); accept, or give the inlet a lighter colour
+- A1d Glide: the crab's top limit is 10 px below the goal line, so the top row of its outline can touch the bottom row of a buoy (1 to 3 px of the same edge(coral); the body never reaches one); fixing it moves the crab's play line (review nit, left as built)
+- A1e Glide serves the player first on every opening, where §6i says the first serve "of a session"; it fits §2 (every opening starts fresh), so either amend §6i or keep a session-level serve in memory only (review nit)

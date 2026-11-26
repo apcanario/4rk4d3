@@ -14,7 +14,7 @@
 <link rel="stylesheet" href="shared/theme.css">
 </head>
 <body>
-<canvas class="screen" id="screen" role="img" aria-label="Four games: Bricks, Catch, Putt and Stack. The Android back gesture returns from a game."></canvas>
+<canvas class="screen" id="screen" role="img" aria-label="Five games: Bricks, Catch, Putt, Stack and Glide. The Android back gesture returns from a game."></canvas>
 <script type="module">
 import { INPUT, createScreen, drawScene, initPage, hitTest, publishHits, atSideEdge } from './shared/pixel.js';
 import { sessionClock, phaseOf, sceneStep } from './shared/session.js';
@@ -23,8 +23,9 @@ import { onThemeChange } from './shared/tokens.js';
 
 initPage();
 
-// The hub is the four game cards and nothing else (PLAN §2, §5a): a 2x2 grid
-// of framed windows onto the games over the sunset scene. No text of any kind.
+// The hub is the five game cards and nothing else (PLAN §2, §5a, §6i): a grid of
+// 2 columns by 3 rows of framed windows onto the games over the sunset scene,
+// the sixth cell left open. No text of any kind.
 
 const clock = sessionClock(); // the one session clock: the hub holds it, the games it opens share it
 let pressed = null;
@@ -51,7 +52,7 @@ function draw(ctx, s) {
     drawCard(ctx, c.id, grid.cards[c.id], step, pressed === c.id);
     windows[c.id] = windowOf(grid.cards[c.id]);
   }
-  canvas.dataset.grid = JSON.stringify({ ...grid, windows, edge: edgeBand(s), safe: s.safe, stars: scene.stars, clouds: scene.clouds, sunX: scene.sunX, sunRadius: scene.sunRadius, glints: scene.glints });
+  canvas.dataset.grid = JSON.stringify({ ...grid, windows, edge: edgeBand(s), safe: s.safe, stars: scene.stars, starCount: scene.starCount ?? null, clouds: scene.clouds, sunX: scene.sunX, sunRadius: scene.sunRadius, glints: scene.glints });
   publishHits(canvas, s, grid.cards);
 }
 

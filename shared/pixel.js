@@ -343,11 +343,12 @@ export function sunRuns(cx, horizon, r, sink, top = -Infinity, night = isNight()
  * horizon, and white stars show in the last steps.
  * clouds: array of [x, y] in logical px. stars: [y0, y1], the open sky the
  * stars are spread over. glints: optional extra glint dashes [x, y, length]
- * in page px (the hub's). Returns { horizon, step }.
+ * in page px (the hub's). starCount: optional, at most this many stars (the
+ * hub's, when its sky is too short for them). Returns { horizon, step }.
  */
 export function drawScene(ctx, W, H, {
   clouds = defaultClouds(H), sunX = 96, phase = 0, stars: starSky = null, seaHeight = SEA_HEIGHT,
-  sunRadius = SUN_RADIUS, glintDepth = SEA_HEIGHT, glints: extraGlints = null,
+  sunRadius = SUN_RADIUS, glintDepth = SEA_HEIGHT, glints: extraGlints = null, starCount = undefined,
 } = {}) {
   // seaHeight, sunRadius, glintDepth: the games use the defaults; the hub (row H2)
   // raises the horizon so its cards sit on the sea (the sea bands keep the same
@@ -367,7 +368,8 @@ export function drawScene(ctx, W, H, {
   bands(ctx, 0, 0, W, skyH, pal.sky);
 
   const [s0, s1] = starSky || [Math.round(horizon * 0.1), Math.round(horizon * 0.6)];
-  const stars = starsAt(step);
+  // starCount: at most this many stars (row A1: the hub's sky can give way to its cards); the games pass none.
+  const stars = starCount === undefined ? starsAt(step) : Math.min(starsAt(step), starCount);
   for (let i = 0; i < stars; i++) drawStar(ctx, STARS[i][0], Math.round(s0 + STARS[i][1] * (s1 - s0)));
 
   for (let i = 0; i < clouds.length; i++) drawCloud(ctx, clouds[i][0], clouds[i][1], i);

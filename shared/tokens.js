@@ -36,6 +36,8 @@ const LIGHT_COLORS = Object.freeze({
   shallow: '#84C4DE', // U2: Putt's sea-level ground (the shallow sea), at sunset
   deep: '#3A5A8C', // U2: deep water on a sea level
   trapTint: '#FFA38C', // U2: a sand-level trap is the ground mixed SAND_TRAP_AMOUNT toward it (brick row 4's peach)
+  sandWall: '#F4A98C', // A1: Glide's darker sand band along the walls, and its sandcastles
+  courtLine: '#F4A98C', // A1: Glide's dashed centre line and circle
 });
 
 // The same beach at night (PLAN §3 Dark theme). Values moved from the §3
@@ -63,6 +65,8 @@ const DARK_COLORS = Object.freeze({
   shallow: '#24406B', // U2: sea band 1's night value
   deep: '#05060D', // U2: near black, so it clears the night sea by delta E 20 at dusk
   trapTint: '#7A1E3A', // U2: a deep rust, so the trap stays dark enough for the ball and hole yet differs from the night sand
+  sandWall: '#56437F', // A1: a lighter violet than the night sand (the band and the castles differ from it by delta E 20)
+  courtLine: '#CDD6FF', // A1: the night lines, as foam (PLAN §3: foam and lines #CDD6FF)
 });
 
 // Dusk (PLAN §2b): the end of the exit ramp. Bricks, paddle, ball and
@@ -106,17 +110,19 @@ export const SAND_TRAP_AMOUNT_DARK = 0.65; // U2: the same in dark
 export const POOL_LIFT_DARK = 0.3; // U2: in dark a sand-level pool is sea band 2 mixed this far toward foam, so it clears the night sand (light: 0)
 export const REEF_AMOUNT = 0.55; // U2: a reef on a sea level is the ground mixed this far toward brick row 7 (light)
 export const REEF_AMOUNT_DARK = 0.35; // U2: the same in dark
+export const DECOR_AMOUNT = 0.2; // A1: Glide's starfish are the sand mixed this far toward their pink or blue (light), so every tracked piece clears them
+export const DECOR_AMOUNT_DARK = 0.3; // A1: the same in dark
 export const INK_CLOUD_AMOUNT = 0.45; // B4 review: how far the ink cloud mixes each sea band toward COLORS.inkCloud (both themes)
 
 export const LIGHT = Object.freeze({
   name: 'light', COLORS: LIGHT_COLORS, DUSK: LIGHT_DUSK, BRICK_ROWS: LIGHT_BRICKS, SEA_BANDS: LIGHT_SEA,
   highlightAmount: HIGHLIGHT_AMOUNT, lineAmount: EDGE_AMOUNT, trapAmount: TRAP_AMOUNT,
-  sandTrapAmount: SAND_TRAP_AMOUNT, poolLift: 0, reefAmount: REEF_AMOUNT,
+  sandTrapAmount: SAND_TRAP_AMOUNT, poolLift: 0, reefAmount: REEF_AMOUNT, decorAmount: DECOR_AMOUNT,
 });
 export const DARK = Object.freeze({
   name: 'dark', COLORS: DARK_COLORS, DUSK: DARK_DUSK, BRICK_ROWS: DARK_BRICKS, SEA_BANDS: DARK_SEA,
   highlightAmount: HIGHLIGHT_AMOUNT_DARK, lineAmount: LINE_AMOUNT_DARK, trapAmount: TRAP_AMOUNT_DARK,
-  sandTrapAmount: SAND_TRAP_AMOUNT_DARK, poolLift: POOL_LIFT_DARK, reefAmount: REEF_AMOUNT_DARK,
+  sandTrapAmount: SAND_TRAP_AMOUNT_DARK, poolLift: POOL_LIFT_DARK, reefAmount: REEF_AMOUNT_DARK, decorAmount: DECOR_AMOUNT_DARK,
 });
 
 /* ---------- the active set: the phone's colour scheme ---------- */
