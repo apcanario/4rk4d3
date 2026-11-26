@@ -92,7 +92,8 @@ jobs:
           if [ -n "$others" ]; then echo "unexpected permissions: $others"; exit 1; fi
           grep -q "name='android.permission.VIBRATE'" /tmp/perms.txt
           # The web files in the APK are exactly sw.js FILES, and sw.js is not among them.
-          unzip -Z1 "$APK" | grep '^assets/public/' | grep -v '/$' | sed 's|^assets/public/||' | sort > /tmp/apk-files.txt
+          # (cap sync adds two empty Cordova stubs of its own, cordova.js and cordova_plugins.js; no page loads them.)
+          unzip -Z1 "$APK" | grep '^assets/public/' | grep -v '/$' | sed 's|^assets/public/||' | grep -vx 'cordova.js\|cordova_plugins.js' | sort > /tmp/apk-files.txt
           node -e "import('./tools/build-www.mjs').then(m => console.log(m.shippedFiles().sort().join('\n')))" | sort > /tmp/sw-files.txt
           diff /tmp/sw-files.txt /tmp/apk-files.txt
           echo "APK checks passed: $(wc -l < /tmp/apk-files.txt) web files, VIBRATE only, targetSdk 36" >> "$GITHUB_STEP_SUMMARY"
