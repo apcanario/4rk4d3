@@ -37,6 +37,7 @@ Screenshots go to tests/out/.
 import functools
 import http.server
 import json
+import math
 import pathlib
 import shutil
 import socketserver
@@ -139,6 +140,12 @@ def h2_bottom_margin(H):
     return max(8, round(H * 0.05))
 
 
+def mix_hex(a, b, t):
+    """shared/tokens.js mix(): a flat mix of two #RRGGBB colours."""
+    pa, pb = [[int(c[i:i + 2], 16) for i in (1, 3, 5)] for c in (a, b)]
+    return "#" + "".join("%02X" % math.floor(x + (y - x) * t + 0.5) for x, y in zip(pa, pb))
+
+
 def h2_sun_radius(sky):
     return max(24, min(40, round(sky * 0.3)))
 
@@ -192,12 +199,28 @@ def hub_scene_checks(page, shot, tag):
     C, pal = tok["C"], tok["pals"][0]
     hz, safe = g["horizon"], g["safe"]
     rad = h2_sun_radius(hz - safe["top"])
-    got = logical_pixels(page, shot, [(96, hz - 1), (96, hz - rad), (96, hz - rad - 1), (1, hz), (1, hz - 1),
-                                      (4, g["y0"] + g["ch"]), (2, g["bottom"] + 1)])
+    sx = g["sunX"]
+    got = logical_pixels(page, shot, [(sx, hz - 1), (sx, hz - rad), (sx, hz - rad - 1), (1, hz), (1, hz - 1),
+                                      (4, g["y0"] + g["ch"]), (2, g["bottom"] + 1), (sx - rad, hz - 1), (sx + rad - 1, hz - 1),
+                                      (sx + rad, hz - 1)])
     check(got[0] == C["sun"] and got[1] == C["sun"] and got[2] != C["sun"] and got[3] == pal["sea"][0] and got[4] in pal["sky"]
-          and got[5] in pal["sea"] and got[6] in pal["sea"] and hz - rad > safe["top"] + 8 and hz < g["y0"],
-          f"[{tag}] sunset: the whole sun (radius {rad}) on the horizon {hz} in the open sky, clear of the cards (top {g['y0']}); "
+          and got[5] in pal["sea"] and got[6] in pal["sea"] and got[7] == C["sun"] and got[8] == C["sun"] and got[9] != C["sun"]
+          and g["sunRadius"] == rad and hz - rad > safe["top"] + 8 and hz < g["y0"],
+          f"[{tag}] sunset: the whole sun (radius {rad}, x {sx}) on the horizon {hz} in the open sky, clear of the cards (top {g['y0']}); "
           f"the sea from the horizon down behind and below the cards ({got})")
+    check(sx <= 96 and sx + rad <= 135 - 4 and sx - rad >= 4,
+          f"[{tag}] the whole sun shows with a margin: x {sx} radius {rad} spans {sx - rad}..{sx + rad - 1} of 0..134 (at least 4 px clear of each edge)")
+    H = g["horizon"] + g["seaHeight"]
+    check(len(g["clouds"]) == (4 if H > 300 else 3), f"[{tag}] {len(g['clouds'])} clouds in the sky at logical height {H} (a fourth over 300)")
+    # The hub's extra sea glints: on the sea, round the cards, each at least 2 px clear of every card.
+    gl = g["glints"]
+    clear = all(gy >= hz and gy < H and gx >= 0 and gx + ln <= 135 and all(
+        gx + ln <= c["x"] - 2 or gx >= c["x"] + c["w"] + 2 or gy <= c["y"] - 2 or gy >= c["y"] + c["h"] + 1
+        for c in g["cards"].values()) for gx, gy, ln in gl)
+    glint_c = mix_hex(C["sun"], pal["sea"][0], 0.15)
+    drawn = logical_pixels(page, shot, [(gx, gy) for gx, gy, _ in gl])
+    check(len(gl) >= 2 and clear and all(d == glint_c for d in drawn),
+          f"[{tag}] {len(gl)} glints on the sea round the cards, each 2 px clear of every card, drawn in the glint colour ({gl}, {drawn})")
 
 
 def logical_to_css(page, x, y):
@@ -2404,30 +2427,30 @@ def main():
         MAX_AGE = int(sys.argv[sys.argv.index("--max-age") + 1])
         print(f"serving with Cache-Control: max-age={MAX_AGE}")
     OUT.mkdir(parents=True, exist_ok=True)
-    static_checks()
-    run_node_sim()
-    run_catch_sim()
-    run_putt_sim()
-    run_stack_sim()
+    # --only a,b runs just the named parts (for a quick look while working; the full run is the check).
+    only = set(sys.argv[sys.argv.index("--only") + 1].split(",")) if "--only" in sys.argv else None
+    want = lambda name: only is None or name in only
+    for name, fn in (("static", static_checks), ("bricks-sim", run_node_sim), ("catch-sim", run_catch_sim),
+                     ("putt-sim", run_putt_sim), ("stack-sim", run_stack_sim)):
+        if want(name):
+            fn()
     httpd, base = serve(ROOT)
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        for w, h, dpr in FULL:
-            run_viewport(browser, base, w, h)
-        for w, h, dpr in LAYOUT_ONLY:
-            run_layout_only(browser, base, w, h, dpr)
-        run_resize(browser, base)
-        run_hub_grid(browser, base)
-        run_bricks(browser, base)
-        run_scene(browser, base)
-        run_catch(browser, base)
-        run_putt(browser, base)
-        run_stack(browser, base)
-        run_contrast_hub(browser, base)
-        run_contrast_pages(browser, base)
-        run_contrast_stack(browser, base)
-        run_activation(browser, base)
-        run_version_bump(browser)
+        if want("viewport"):
+            for w, h, dpr in FULL:
+                run_viewport(browser, base, w, h)
+        if want("layout"):
+            for w, h, dpr in LAYOUT_ONLY:
+                run_layout_only(browser, base, w, h, dpr)
+        for name, fn in (("resize", run_resize), ("hub-grid", run_hub_grid), ("bricks", run_bricks), ("scene", run_scene),
+                         ("catch", run_catch), ("putt", run_putt), ("stack", run_stack), ("contrast-hub", run_contrast_hub),
+                         ("contrast-pages", run_contrast_pages), ("contrast-stack", run_contrast_stack),
+                         ("activation", run_activation)):
+            if want(name):
+                fn(browser, base)
+        if want("version-bump"):
+            run_version_bump(browser)
         browser.close()
     httpd.shutdown()
     print(f"\n{len(FAILS)} failure(s)")

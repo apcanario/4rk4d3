@@ -299,11 +299,12 @@ export function starsAt(step) {
  * sea bands are a flat mix toward the dusk tokens, the sun sinks below the
  * horizon, and white stars show in the last steps.
  * clouds: array of [x, y] in logical px. stars: [y0, y1], the open sky the
- * stars are spread over. Returns { horizon, step }.
+ * stars are spread over. glints: optional extra glint dashes [x, y, length]
+ * in page px (the hub's). Returns { horizon, step }.
  */
 export function drawScene(ctx, W, H, {
   clouds = defaultClouds(H), sunX = 96, phase = 0, stars: starSky = null, seaHeight = SEA_HEIGHT,
-  sunRadius = SUN_RADIUS, glintDepth = SEA_HEIGHT,
+  sunRadius = SUN_RADIUS, glintDepth = SEA_HEIGHT, glints: extraGlints = null,
 } = {}) {
   // seaHeight, sunRadius, glintDepth: the games use the defaults; the hub (row H2)
   // raises the horizon so its cards sit on the sea (the sea bands keep the same
@@ -344,6 +345,8 @@ export function drawScene(ctx, W, H, {
   for (const [gx, gy, len] of GLINTS) {
     if (gy < Math.min(glintDepth, seaHeight - 1)) ctx.fillRect(gx, horizon + gy, Math.min(len, W - gx), 1);
   }
+  // glints: extra dashes [x, y, length] at page positions (the hub's sea round its cards); the games pass none.
+  if (extraGlints) for (const [gx, gy, len] of extraGlints) ctx.fillRect(gx, gy, len, 1);
   return { horizon, step };
 }
 

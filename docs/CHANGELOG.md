@@ -302,7 +302,7 @@ X30: the Putt check "ticks: release 10 ms ..." passed in every run: 7 full runs 
 
 X16: accepted as built. PLAN §3 states the ball trail, a pop particle's highlight bit and the splash's white top are outside the B4 standard (accepted, 2026-11-26). No code change.
 
-X32: closed on Pedro's report. His report covered how the games feel, thumb travel and ball travel, and the pause marker. It did not cover, so this session does not confirm: installed-app fullscreen and offline, one edge swipe back to the hub, outdoors brightness, fps, safe-area insets with a display cutout, split screen and rotation. They carry into the APK work (P3) as its first device check (PLAN §8).
+X32: closed on Pedro's report. His report covered how the games feel, thumb travel and ball travel, and the pause marker. It did not cover, so this session does not confirm (list completed by the review of 7df2da1): tick strengths told apart, vibrate on a game opened from its card, the look at low brightness (edges, ink, keel too heavy or not), reduced motion, kill and reopen opening the hub, the first back after a reload, the hub's card size and tap comfort, Putt's first opening and the wait between holes, Stack's tap latency and camera slide, installed-app fullscreen and offline, one edge swipe back to the hub, outdoors brightness, fps, safe-area insets with a display cutout, split screen and rotation. They are row X34 (Proposed), PLAN §8.
 
 H2 review fixes, with Pedro's answer on the hub layout (it replaces the "grid 28 px above the horizon" rule of the first fix list):
 - The cards sit low, in the thumb's reach: the grid's bottom is max(8 px, 5 percent of the height) above the bottom safe inset. Cards at most 1.3 x as tall as wide (GRID.maxRatio; the approved mockup is about 1.25): 56 x 72 at 360 CSS px, 57 x 74 or 58 x 75 at 412, at logical heights 240, 300 and 400 (the H2 build drew 56 x 110 from y 5).
@@ -315,3 +315,22 @@ H2 review fixes, with Pedro's answer on the hub layout (it replaces the "grid 28
 sw.js cache rlx-v18 (no file added or removed). README updated. Tests: bricks-sim 219, catch-sim 181, putt-sim 71, stack-sim 109, 0 failures; tests/check.py 1024 checks, 0 failures.
 
 Not verifiable headless: how the low grid and the keel frame edge look and feel on the phone.
+
+## 2026-11-26: review fixes for 7df2da1 (hub sun, sky, sea glints; X32 honesty; X34)
+
+Models that ran: main chat Sonnet 5.5; reviewer Opus 5.5 (fresh agent, read-only, on 7df2da1); fixes applied by the P3 builder, Opus 5.5 (claude-opus-5-5).
+
+Review findings and fixes:
+- [should-fix] The hub's sun ran to the right edge at radius 40 (x 96, disc 56..135 on a 135 px canvas). hub/cards.js hubScene now puts it at x = min(96, 135 - radius - 4) (GRID.sunEdge 4): at logical height 300 it is x 93, radius 38. tests/check.py reads the sun's x from the hub and checks the whole disc, both side pixels on the horizon row and the 4 px margin on every tested view.
+- [should-fix] New Proposed row X34: device check of the low grid hub and of what Pedro's report did not cover. PLAN §5a Accept points at X34, not the closed X32.
+- [should-fix] X32's closure now lists everything the report did not confirm (BACKLOG Done, this log's X32 paragraph, PLAN §8). P3 moved from Parked to the Queue (Pedro's decision of 2026-11-26), so §8 parks nothing.
+- [nit] PLAN §5a: the card-size sentence is qualified with the tested insets (32 CSS px top, 16 bottom).
+- [nit] Hub sky and sea: a fourth cloud over logical height 300 (x 58, 0.24 of the sky, clear of the sun); hub-only sea glints in the side margins and under the grid (hub/cards.js seaGlints), each 2 px clear of every card. drawScene takes them as a new optional list; the games pass none and draw as before (their pixel checks against drawScene pass). Checks: cloud count by height; glints on the sea, 2 px clear of every card, drawn in the glint colour.
+- [nit] PLAN §6b, §6c, §6d and §6e: the hub-tile lines are marked superseded by H2.
+- Left as is, by the reviewer's note: the keel card edge (Pedro's question, X34).
+
+Also: tests/check.py takes --only a,b to run named parts while working (the full run is the check).
+
+sw.js cache bumped (hub/cards.js, shared/pixel.js and index.html changed). Test results are in the P3 entry below, which ran the full suite after both changes.
+
+Not verifiable headless: how the moved sun, the fourth cloud and the sea glints look on the phone (X34).

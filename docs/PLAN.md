@@ -6,7 +6,7 @@ A one-thumb arcade for Pedro's Android phone: a hub of small endless games to pi
 
 ## 2. Hard rules (every game, every screen)
 
-- Android only: Chrome now, an APK WebView later. No iOS or Safari work of any kind.
+- Android only: Chrome on the Pages URL, and the same files bundled in the Android app for Google Play (row P3, §6f). No iOS or Safari work of any kind.
 - Portrait, one thumb. Each game defines its own gesture and its own pause behaviour in its row.
 - Full screen. No game shows a title, a number, a button, a pause marker or any other HUD (X33: no pause marker anywhere; a paused game shows its frozen scene only). The manifest's display mode is fullscreen.
 - Going home: the Android back gesture (a swipe in from the side edge) returns from a game to the hub. There is no on-screen back control. Every game ignores a touch that begins within 24 CSS px of the left or right edge of the screen, so an edge swipe never moves anything in the game.
@@ -14,7 +14,7 @@ A one-thumb arcade for Pedro's Android phone: a hub of small endless games to pi
 - No saved game state. Nothing about a game is written to storage. Opening a game from the hub always starts it fresh. If Android kept the app alive in the background it carries on where it was; if not, it opens at the hub. Nothing at all is stored.
 - No fail state: no lives, no game over, no timers, no streaks, no daily goals, no notifications, no leaderboards, no accounts, no ads, no network calls.
 - No sound at all. Haptics are always on. There are no settings and no options anywhere: the hub is the four game cards and nothing else.
-- Vanilla HTML, CSS and JS, ES modules, no build step, no dependencies, no CDN. Static files on GitHub Pages.
+- Vanilla HTML, CSS and JS, ES modules, no build step, no dependencies, no CDN. Static files on GitHub Pages. The Android app (§6f) copies these same files unchanged into a Capacitor shell; the shell's npm packages and Gradle build are the app's packaging, and no page loads anything from them.
 - No text anywhere: no page draws a letter or a digit, the hub included (row H2). The app's name lives only in the manifest and the icons.
 
 ## 2a. Evidence
@@ -117,6 +117,9 @@ Brought in line with the hard rules of update 2 by row X1.
 - /games/stack/: index.html, stack.js, sim.js
 - /manifest.webmanifest, /sw.js, /icons/
 - /docs/: PLAN.md, BACKLOG.md, CHANGELOG.md, style-reference.jpg, style-reference-catch.jpg, style-reference-putt.jpg
+- /android-app/: the Android app for Google Play (row P3, §6f): capacitor.config.json, package.json and its lock, android/ (the Gradle project, the native haptics plugin and MainActivity). android-app/www is a copy made by tools/build-www.mjs and is not in git.
+- /docs/PLAY.md and /docs/play/: the release steps and the store listing, Data safety, content rating, privacy policy page source, icon, feature graphic and screenshots. /privacy-policy.html is served by GitHub Pages and not shipped in the app.
+- /.github/workflows/android.yml: the app's build (debug APK, and a signed bundle when the signing secrets exist).
 - /tools/, /tests/: helper scripts and the headless tests, not shipped. The games expose test hooks (canvas.dataset.scene, window.__bricks and the like) that the games never read.
 - README.md
 
@@ -157,9 +160,10 @@ What it is
 Layout rule (code: hub/cards.js GRID, gridLayout, hubScene)
 - Side margin: the larger of 4 px, the 24 CSS px side band in logical px, and each side's safe inset plus 2. The two columns share the rest equally, with a 5 px gap; the rows have the same 5 px gap.
 - The grid sits low, in the thumb's reach: its bottom is the larger of 8 px and 5 percent of the logical height above the bottom safe inset.
-- The cards are at most 1.3 times as tall as they are wide (the approved mockup is about 1.25) and that tall wherever it fits, which it does from logical height 240 up; they are never under 40 px either way. At 360 CSS px wide (device scale 2.625 or 3) they are 56 x 72; at 412 CSS px, 57 x 74 (2.625) or 58 x 75 (3), the same at logical heights 240, 300 and 400.
+- The cards are at most 1.3 times as tall as they are wide (the approved mockup is about 1.25) and that tall wherever it fits, which it does from logical height 240 up (with safe insets up to the tested 32 CSS px at the top and 16 at the bottom); they are never under 40 px either way. At 360 CSS px wide (device scale 2.625 or 3) they are 56 x 72; at 412 CSS px, 57 x 74 (2.625) or 58 x 75 (3), the same at logical heights 240, 300 and 400.
 - The horizon is 8 px above the grid: the cards sit on the sea, and the sea runs from the horizon to the bottom of the screen behind and below them, in the scene's three sea bands at the game's 13 : 14 : 15 proportions. Only the glints in the 8 px strip above the cards are drawn. The open sky above the horizon is at least 40 px below the top safe inset.
-- Everything above the horizon is the picture: the sky bands, the sun on the horizon at x 96 with a radius of 0.3 of the sky's height (24 to 40 px), sinking with the steps; three clouds at 0.1, 0.42 and 0.72 of the sky's height, clear of the sun; the stars of steps 8 to 10 spread over the sky above the sun. The sun never reaches a card: it sits wholly above the horizon, 8 px above the grid.
+- Everything above the horizon is the picture: the sky bands, the sun on the horizon with a radius of 0.3 of the sky's height (24 to 40 px), sinking with the steps, at x 96 as in the games or further left so the whole disc stays at least 4 px inside the right edge (x = min(96, 135 - radius - 4); review of 7df2da1: at radius 40 the disc ran to the edge); three clouds at 0.1, 0.42 and 0.72 of the sky's height, clear of the sun, and over logical height 300 a fourth at x 58, 0.24 of the sky; the stars of steps 8 to 10 spread over the sky above the sun. The sun never reaches a card: it sits wholly above the horizon, 8 px above the grid.
+- The sea round the cards has a few glint dashes of its own (hub/cards.js seaGlints): one in each side margin when the margin is 7 px or more, two 3 px below the grid and a third 7 px below where the sea allows, each at least 2 px clear of every card, so the 1 px ring round each frame stays bare sea. drawScene takes them as an optional list; the games pass none and draw exactly as before.
 - Integer logical pixels throughout, one integer scale.
 - Bricks card: its bricks are 13 px wide at these card widths (14 at 58 px), three columns in the window, a departure from the game's 15; the card is a picture, not the game.
 - Stack card: floor 0's bottom sits on the window's horizon, as in the game (games/stack/sim.js floorTop).
@@ -173,7 +177,8 @@ Accept
 - B4 standard: each card's frame (coral fill or keel edge) against every scene colour under it and in the 1 px ring round it, read from the hub's own scene, and every piece inside a card (fill or edge, by its game's rule) against the window colours behind it, at sunset and all 10 steps. The ball trail stays outside the standard as in the game (§3, X16).
 - Each window draws only its own scene colours and its pieces' colours; no two pieces in a card overlap (the parts of the boat and of the hole and flag aside); every piece lies inside its window.
 - The hub shows the phase of the session clock as before (sunset, step 5, dusk; the reset after 5 minutes hidden).
-- Crisp pixels, no scrolling. Not verifiable headless: how the cards look and feel on the phone (X32).
+- The whole sun at least 4 px clear of both side edges at every tested height; a fourth cloud over logical height 300; the hub's sea glints 2 px clear of every card.
+- Crisp pixels, no scrolling. Not verifiable headless: how the cards look and feel on the phone (X34).
 
 ## 6. Row B1: Bricks (session 2)
 
@@ -353,7 +358,7 @@ Catch follows the wind-down rules of section 2b. C1 is built after B2, so the se
 ### Files
 
 - /games/catch/: index.html, catch.js, sim.js. The simulation in sim.js must not touch the DOM.
-- The hub's CATCH tile becomes active.
+- (Superseded by row H2: the hub has no tiles; Catch has its card, §5a.) The hub's CATCH tile becomes active.
 - Pace gains and losses, fall-speed range, spawn-gap range, nasty interval, tap thresholds, pause grace, fish speed and haptic lengths sit in one config block at the top of catch.js. The thumb-travel fraction and the edge width are shared values in shared/pixel.js.
 
 ### Accept
@@ -485,7 +490,7 @@ Solvable, always
 ### Files
 
 - /games/putt/: index.html, putt.js, sim.js, gen.js. sim.js and gen.js must not touch the DOM.
-- The hub gets a PUTT tile.
+- (Superseded by row H2: the hub has no tiles; Putt has its card, §5a.) The hub gets a PUTT tile.
 - Launch speed, deceleration, bounce, capture speed, pull cap, every range in the table, solver sampling and the reject limit sit in config blocks: play values in putt.js, generator values in gen.js.
 
 ### Accept
@@ -551,7 +556,7 @@ Haptics
 
 Files
 - /games/stack/: index.html, stack.js, sim.js. sim.js must not touch the DOM.
-- The hub's STACK tile becomes active.
+- (Superseded by row H2: the hub has no tiles; Stack has its card, §5a.) The hub's STACK tile becomes active.
 - Block height, starting width, reset width, snap distance, width regained, speed range, gains and losses sit in one config block at the top of stack.js.
 - If shared code has no session clock and scene phase yet, build them as section 2b describes. If it has, reuse them.
 
@@ -583,19 +588,69 @@ Build
 - Opening a game from the hub starts it fresh, every time.
 - Set the manifest's display mode to fullscreen.
 - Going home is the Android back gesture only. Every game ignores touches that begin within 24 CSS px of the left or right edge.
-- Hub: one active tile for every game that exists. No SOON tile for a game that is built.
+- (Superseded by row H2: the hub is four cards, §5a.) Hub: one active tile for every game that exists. No SOON tile for a game that is built.
 - Update the README and sections 5 and 6 of PLAN.md so they describe what is now true.
 - Check on Pedro's phone, in the installed app: an edge swipe in fullscreen returns to the hub with one swipe. If Android needs two swipes in fullscreen, say so in the reply and switch the manifest to standalone; that is the one thing in this row that cannot be verified from a desktop browser.
 
 Accept
 - No game screen shows any text, number or button.
 - After play in every game, storage is empty.
-- The hub shows the game tiles and nothing else: no switch, no setting.
+- (Superseded by row H2: the hub shows the four cards and nothing else, §5a.) The hub shows the game tiles and nothing else: no switch, no setting.
 - Catch and Bricks use the shared thumb-travel fraction: 28 percent of the screen width moves the paddle or boat end to end (set from Pedro's feel reports, 2026-11-26; first 50, then 35).
 - Killing the app and reopening it opens the hub; opening a game starts it fresh.
 - From every game, the back gesture returns to the hub, and an edge swipe never moves a paddle, a boat or an aim.
 - Play itself is unchanged in every game: physics, pace, haptics and the exit ramp behave as before this row.
 - The headless tests of every game still pass, with their save and count checks removed.
+
+## 6f. Row P3: Android app for Google Play
+
+Pedro's decision (2026-11-26): ship RLX on the Google Play Store as an Android app. The web app on GitHub Pages stays as it is.
+
+What Google Play asks (Pedro's research, Google Play policy as of November 2026)
+- New apps and updates target Android 16, API level 36 (from 2026-08-31). Upload an Android App Bundle (.aab).
+- Store listing: app icon 512 x 512 32-bit PNG; feature graphic 1024 x 500 JPG or PNG; 2 to 8 phone screenshots; short description at most 80 characters; full description; a privacy policy URL; the Data safety form; the content rating questionnaire.
+- An app that is only a website in a frame risks rejection under the minimum functionality policy. RLX ships its game files inside the app, runs offline and vibrates through a native call, so it is not a framed website.
+
+Decisions
+- Capacitor (the latest stable, 8.6.3 at the build) in /android-app/. The game files are bundled in the app and served from the app's own origin (https://localhost/, root path). Nothing is loaded from the Pages site or any other host. Why Capacitor: it is a maintained WebView shell with a local file server, a plugin bridge and a Gradle project Pedro can build in CI; a hand-made WebView shell would need all of that rewritten.
+- Package id io.github.apcanario.rlx. App name rlx (lower case, the name on the launcher and in Play).
+- targetSdk 36, compileSdk 36, minSdk 24 (Capacitor's minimum).
+- Permissions: VIBRATE only (a normal permission, granted at install, no prompt). The INTERNET permission that Capacitor's template declares is removed from the merged manifest: the app loads only bundled files. Cleartext traffic is off. No analytics, no ads, no accounts, no network calls, nothing stored (§2 holds in the app as on the web).
+- Native haptics: a small Capacitor plugin, RlxHaptics, in the Android project (Java), with one method vibrate({ ms }) that runs VibrationEffect.createOneShot(ms, DEFAULT_AMPLITUDE) on the device vibrator. shared/haptics.js uses it when window.Capacitor.Plugins.RlxHaptics exists (the hub's, read from a game's frame, or the page's own), and navigator.vibrate exactly as before otherwise. The shared rules stay: always on, no settings, at most one call per 40 ms, the same tick lengths. Putt and Stack, which keep their own buzz(), send through the same function. Why: Chrome's tap-before-vibrate gate (§2b) does not apply to a native call, so a game vibrates from its first event in the app.
+- The service worker is not shipped in the app (sw.js is not in its own FILES list) and is not registered there: shared/pixel.js skips the registration when the page runs inside the app. The app's files are in the APK, so it is offline by construction.
+- Paths: every path in the pages is relative (README), so the same files work at /4rk4d3/ on Pages and at the root of the app. The hub's cards open games/<game>/index.html (until P3, games/<game>/): Capacitor's local server answers a folder URL with the app's index.html, so a folder URL would have opened the hub again inside the frame. The app's server runs with html5mode off, so a missing file is an error, never the hub.
+- Back: Android's back gesture or button. Inside a game the WebView has the hub's history entry (§5), so back goes back in the WebView, which removes the game frame exactly as on the web. At the hub there is no entry to go back to, so back falls through to Android, which closes the app (moves it to the background). It cannot trap: the only entries are the ones the hub pushes when a game opens, and each back removes one. Code: MainActivity (an OnBackPressedCallback; no extra plugin).
+- Full screen: immersive. Status and navigation bars hidden; they show for a moment on a swipe from the edge and hide again (transient bars). The window is edge to edge and the content runs into a display cutout (cutout mode shortEdges); the safe area reaches the pages as env(safe-area-inset-*) (Capacitor's SystemBars, insets in css mode) and the existing safe-area probe (§5) does the rest. On a WebView older than 140 Capacitor pads the window instead and the pages see insets of 0; the padding shows the window colour.
+- Portrait only (screenOrientation portrait). Android 16 may ignore this on large screens (600 dp and wider) for apps that target API 36; RLX is a phone app and does not handle landscape beyond the web app's own layout.
+- Launch: no splash text and no logo. The launch window and the Android 12+ splash screen are a flat sky-top colour (#FFF7EC, the manifest background) with a transparent icon.
+- Icon: Pedro's approved beach-sunset icon set (2026-11-26): the launcher mipmaps (legacy, round and adaptive with a monochrome layer) in the Android project, the 512 px icon and the feature graphic in docs/play/. The web icons (icons/) are redrawn from the same art by tools/make-icons.py (tools/rlx_art.py holds the art), no lettering; icons/icon-512.png equals docs/play/ic-play-512.png.
+- One source of truth for the shipped files: tools/build-www.mjs copies exactly the files in sw.js FILES (folders skipped) into android-app/www; npx cap sync puts them in the APK.
+
+Layout of /android-app/
+- package.json, package-lock.json: @capacitor/core, @capacitor/cli and @capacitor/android, pinned.
+- capacitor.config.json: app id, name, webDir www, server (https, localhost, html5mode off), android (no mixed content, no WebView debugging), SystemBars (hidden, css insets).
+- android/: the Gradle project from Capacitor's template. Changed: app/src/main/AndroidManifest.xml (permissions, portrait, no backup), app/src/main/java/io/github/apcanario/rlx/ (MainActivity, RlxHapticsPlugin), app/src/main/res/ (the icon set, the launch theme and colour; the template's splash images and FileProvider removed), app/build.gradle (version, release signing from the environment).
+
+Build and release
+1. node tools/build-www.mjs, then in android-app: npm ci, npx cap sync android, then ./gradlew assembleDebug (a debug APK) or bundleRelease (the .aab).
+2. CI does all of it (.github/workflows/android.yml) on every push to main that touches the app or the shipped files, and on demand: a debug APK as a run artifact; a signed release .aab as well when the four signing secrets exist (RLX_KEYSTORE_B64, RLX_KEYSTORE_PASSWORD, RLX_KEY_ALIAS, RLX_KEY_PASSWORD). A smoke job boots an Android emulator, installs the debug APK, opens the hub, a game and back, and saves screenshots.
+3. versionCode is the CI run number; versionName is 1.0.<run number>.
+4. Release: Pedro uploads the .aab to a closed test in the Play Console, then production (docs/PLAY.md).
+
+Accept
+- The app's package is io.github.apcanario.rlx, named rlx, targetSdk and compileSdk 36, minSdk 24, portrait, only the VIBRATE permission in the merged manifest, no cleartext traffic (static checks and the CI build).
+- android-app/www equals the files in sw.js FILES; sw.js is not in the app; no keystore, key or secret is in git (static checks).
+- The web app is unchanged on Pages: tests/check.py passes serving under /4rk4d3/, the card hrefs are games/<game>/index.html.
+- haptics.js: the native plugin when present (the hub's or the page's own), navigator.vibrate otherwise, the 40 ms limit and tick lengths unchanged (Node tests with a fake plugin and the stub).
+- CI builds a debug APK, green. The smoke job installs it on an emulator: the hub draws, a card opens its game, back returns to the hub, back again leaves the app.
+- docs/play/: listing, Data safety, content rating, privacy policy, 512 px icon, feature graphic, 4 to 6 screenshots 1080 x 2400.
+- Not verifiable headless (P3's device check, with X34): installing and playing the APK on Pedro's phone: immersive full screen and the transient bars, the cutout, one back from a game to the hub and one more out of the app, haptics in every game from the first event, offline, fps, outdoors brightness.
+
+Only Pedro can do
+- Create the Google Play developer account (one-off fee, identity check).
+- Make the upload key and add the four secrets to the repo (docs/PLAY.md); never paste a secret into a chat.
+- Install the debug APK on his phone and play it (P3's device check, with X34).
+- In the Play Console: create the app (rlx, game, free), fill the listing from docs/play/listing.md, the Data safety form from data-safety.md, the content rating questionnaire from content-rating.md, the privacy policy URL, the contact email; upload the .aab to a closed test with the testers Play asks for, run it as long as Play asks, then apply for production.
 
 ## 7. Process
 
@@ -612,4 +667,5 @@ The starter for every later session:
 
 ## 8. Parked
 
-- P3 APK wrapper, with a native haptics bridge if the web ticks feel mushy. Its first device check carries what X32 did not confirm (Pedro's 2026-11-26 report did not cover it): installed-app fullscreen and offline, one edge swipe back to the hub, outdoors brightness, fps, safe-area insets with a display cutout, split screen and rotation.
+- Nothing parked. P3 (an Android app with a native haptics bridge) moved to the Queue on Pedro's decision of 2026-11-26 (§6f).
+- What Pedro's 2026-11-26 report did not confirm (X32) is row X34, done on the phone in the browser or the app: tick strengths told apart, vibrate on a game opened from its card, the look at low brightness (are edges, ink and the keel card edge too heavy), reduced motion, kill and reopen opening the hub, the first back after a reload, the hub's card size and tap comfort, the sun and sky look, Putt's first opening and the wait between holes, Stack's tap latency and camera slide, installed-app fullscreen and offline, one edge swipe back to the hub, outdoors brightness, fps, safe-area insets with a display cutout, split screen and rotation.

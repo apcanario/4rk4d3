@@ -4,7 +4,7 @@
 // the parts list also serve the headless checks (tests/check.py), which
 // measure every piece against the window colours behind it.
 
-import { COLORS, BRICK_ROWS, mix, shade, highlight, edge, scenePalette } from '../shared/tokens.js';
+import { LOGICAL_WIDTH, COLORS, BRICK_ROWS, mix, shade, highlight, edge, scenePalette } from '../shared/tokens.js';
 import { pixelBody, steppedRect, ditherRow, SUN_RADIUS } from '../shared/pixel.js';
 import { SESSION } from '../shared/session.js';
 import { LOOK, spriteGrid, turnUp } from '../games/catch/sim.js';
@@ -27,6 +27,7 @@ export const GRID = Object.freeze({
   skyMin: SUN_RADIUS + 16, // the open sky above the horizon is at least this tall (below the top safe inset)
   maxRatio: 1.3, // a card is never taller than this many times its width (the approved mockup is about 1.25)
   sunMax: 40, // the hub's sun radius grows with its sky up to this
+  sunEdge: 4, // the whole sun stays at least this far from the right edge
   minCard: 40, // every card is at least this big in each direction (the tap target)
   frame: 4, // frame thickness at the top and sides; the bottom is one more (the drop shade)
 });
@@ -64,15 +65,48 @@ export function gridLayout(W, H, safe, edgeBand = 0) {
 export function hubScene(grid, safe) {
   const sky = grid.horizon - safe.top;
   const at = (f) => safe.top + Math.round(sky * f);
+  const H = grid.horizon + grid.seaHeight;
   // The sun grows with the sky: 0.3 of it, from the games' radius up to GRID.sunMax.
   const sunRadius = Math.max(SUN_RADIUS, Math.min(GRID.sunMax, Math.round(sky * 0.3)));
+  // x 96 as in the games, moved left when a big sun would reach within GRID.sunEdge of the right edge.
+  const sunX = Math.min(96, LOGICAL_WIDTH - sunRadius - GRID.sunEdge);
+  const clouds = [[92, at(0.1)], [8, at(0.42)], [44, at(0.72)]];
+  if (H > 300) clouds.push([58, at(0.24)]); // a tall sky gets a fourth cloud, clear of the sun
   return {
     seaHeight: grid.seaHeight,
     sunRadius,
-    glintDepth: GRID.seaClear, // only the glints in the open strip between the horizon and the cards
-    clouds: [[92, at(0.1)], [8, at(0.42)], [44, at(0.72)]],
+    sunX,
+    glintDepth: GRID.seaClear, // the scene's own glints only in the open strip between the horizon and the cards
+    glints: seaGlints(grid),
+    clouds,
     stars: [safe.top + 2, grid.horizon - sunRadius - 4],
   };
+}
+
+/**
+ * A few glint dashes on the sea round the cards, so the sea behind them is not
+ * flat: one in each side margin and two or three below the grid. [x, y, length]
+ * in logical px, every one at least 2 px clear of a card (the frame's 1 px ring
+ * stays bare sea).
+ */
+export function seaGlints(grid) {
+  const out = [];
+  const { x0, y0, cw, ch, gap, bottom } = grid;
+  const H = grid.horizon + grid.seaHeight;
+  const right = x0 + cw * 2 + gap; // first column right of the grid
+  const m = Math.min(x0, LOGICAL_WIDTH - right); // the narrower side margin
+  if (m >= 7) {
+    const len = Math.min(3, m - 4);
+    out.push([x0 - 2 - len, y0 + Math.round(ch * 0.35), len]);
+    out.push([right + 2, y0 + ch + gap + Math.round(ch * 0.6), len]);
+  }
+  const below = H - bottom; // rows of sea under the grid
+  if (below >= 6) {
+    out.push([x0 + 6, bottom + 3, 4]);
+    out.push([x0 + cw + 10, bottom + 3, 6]);
+  }
+  if (below >= 10) out.push([x0 + cw * 2 - 8, bottom + 7, 3]);
+  return out;
 }
 
 /** The inner window of a card rect (the game's scene shows through it). */

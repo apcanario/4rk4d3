@@ -49,7 +49,7 @@ function draw(ctx, s) {
     drawCard(ctx, c.id, grid.cards[c.id], step, pressed === c.id);
     windows[c.id] = windowOf(grid.cards[c.id]);
   }
-  canvas.dataset.grid = JSON.stringify({ ...grid, windows, edge: edgeBand(s), safe: s.safe, stars: scene.stars, clouds: scene.clouds });
+  canvas.dataset.grid = JSON.stringify({ ...grid, windows, edge: edgeBand(s), safe: s.safe, stars: scene.stars, clouds: scene.clouds, sunX: scene.sunX, sunRadius: scene.sunRadius, glints: scene.glints });
   publishHits(canvas, s, grid.cards);
 }
 

@@ -4,6 +4,8 @@ Rows are defined in docs/PLAN.md. Nothing is built that is not a row here. A don
 
 ## Queue
 
+- P3 Android app for Google Play: Capacitor shell with the game files bundled, native haptics, immersive portrait, back to the hub and out, targetSdk 36, only VIBRATE; CI debug APK and signed .aab; store docs and screenshots (PLAN §6f; Pedro's decision 2026-11-26)
+
 ## Done
 
 - H1 Shell and hub (2026-11-25)
@@ -25,10 +27,11 @@ Rows are defined in docs/PLAN.md. Nothing is built that is not a row here. A don
 - X33 Pause markers removed from Bricks (ring with chevrons) and Catch (ring with a square); pausing unchanged; Pedro: not needed (2026-11-26)
 - X30 Putt check "ticks: release 10 ms ..." not reproduced in 27 runs (7 full suites, 20 Putt browser runs); closed (2026-11-26)
 - X16 Effects outside the B4 standard (ball trail, pop particle highlight bit, splash white top) accepted as built; PLAN §3 says so (2026-11-26)
-- X32 Real-device pass closed on Pedro's report: games great, thumb travel and ball travel right, pause marker not needed. Not covered by the report, so not confirmed: installed-app fullscreen and offline, edge-swipe back, outdoors brightness, fps, safe area with a cutout, split screen and rotation; they are P3's first device check (2026-11-26)
+- X32 Real-device pass closed on Pedro's report (2026-11-26). The report covered: the games feel great, thumb travel and ball travel are right, the pause marker is not needed. It did not confirm, so they are not claimed: tick strengths told apart, vibrate on a game opened from its card, the look at low brightness (edges, ink, keel too heavy or not), reduced motion, kill and reopen opening the hub, the first back after a reload, the hub's card size and tap comfort, Putt's first opening and the wait between holes, Stack's tap latency and camera slide, installed-app fullscreen and offline, one edge swipe back, outdoors brightness, fps, safe area with a cutout, split screen and rotation; they are X34 (2026-11-26)
 
 ## Parked
 
-- P3 APK wrapper, with a native haptics bridge if the web ticks feel mushy.
 
 ## Proposed
+
+- X34 Device check of the low grid hub (card size and tap comfort, keel card edge too heavy or not, sun and sky look), and of what Pedro's report did not cover (PLAN §8 list); in the browser or in the P3 app
