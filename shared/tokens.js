@@ -10,7 +10,7 @@ export const COLORS = Object.freeze({
   coral: '#F05A68', // paddle, wordmark, hull, tiles (each with its edge all round)
   blue: '#436495', // ball, nasty ones (B4: was #4A6FA5)
   ink: '#30486B', // small lettering, control edges on the sea (B4: new, the blue deepened)
-  card: '#A0D0E8', // back control, SOON tag (the value of brick row 9)
+  card: '#A0D0E8', // the value of brick row 9; drew the back control and SOON tag, both gone since X1 (kept, unused)
   sail: '#A0D0E8', // the sail (B4: was the sun token, the same colour as the sun)
   keel: '#241E38', // the hull's rows below the horizon (B4 review: a deep plum that clears every sea band)
   glint: '#FFA2CE', // the sky-event glint and the spray under a leaping fish (B4 review: was white; brick row 7's pink)

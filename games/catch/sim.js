@@ -1,10 +1,12 @@
 // Catch simulation (PLAN §6b). A fixed 120 Hz step: falling things, the boat,
-// the nasty ones and the fish, the pace, the counts and the spawn timers.
+// the nasty ones and the fish, the pace, the spawn timers and the variety.
 // Pure data in, events out: this module never touches the DOM and imports
 // nothing, so tests/catch-sim.mjs runs it in Node.
 //
 // Coordinates are logical px (PLAN §3), y down; the renderer rounds them. The
-// state is a plain JSON-able object, saved as is. The session clock is not
+// state is a plain JSON-able object, held in memory only: nothing is saved
+// (PLAN §2). Its caught and eaten counts drive the variety only; they start
+// at 0 on every opening and are never shown or stored. The session clock is not
 // read here: callers pass ease, how far the dusk slowdown has gone (0 to 1,
 // shared/session.js slowdownOf), so tests drive it.
 //
@@ -17,7 +19,6 @@
 
 export const STEP_HZ = 120;
 export const DT = 1 / STEP_HZ;
-export const STATE_VERSION = 1;
 
 export const ITEM = 7; // things to catch, and the treat
 export const NASTY = 7;
@@ -66,7 +67,7 @@ function shuffled(s, n) {
 
 /* ---------- geometry ---------- */
 
-/** Play geometry: W wide, top of the open sky (under the HUD), horizon line. */
+/** Play geometry: W wide, top of the open sky, horizon line. */
 export function geometry(W, top, horizon) {
   return { W, top, horizon, deckY: horizon - DECK_ABOVE, fishY: horizon + FISH_DEPTH };
 }
@@ -99,31 +100,15 @@ export function resetPace(s, cfg) {
   s.pace = cfg.paceStart;
 }
 
-/** Skill signal (PLAN §6b): catches since the last miss. Not part of the state. */
-export function runAfter(n, events) {
-  let r = n;
-  for (const e of events) {
-    if (e.type === 'catch') r += 1;
-    else if (e.type === 'miss') r = 0;
-  }
-  return r;
-}
-
 /** Fish kinds in the mix: kindsStart, one more every fishKindEvery nasties eaten, up to fishKindsMax. */
 export function fishKinds(s, cfg) {
   return Math.min(cfg.fishKindsMax, cfg.fishKindsStart + Math.floor(s.eaten / cfg.fishKindEvery));
 }
 
-/** Kinds to catch unlocked by an all-time count: kindsStart, one more every kindEvery catches, up to KINDS. */
-export function unlockedKinds(caught, cfg) {
-  return Math.min(KINDS, cfg.kindsStart + Math.floor(caught / cfg.kindEvery));
-}
-
 /* ---------- state ---------- */
 
-export function create(geo, cfg, counts = {}, seed = 1) {
+export function create(geo, cfg, seed = 1) {
   const s = {
-    v: STATE_VERSION,
     geo: { ...geo },
     seed: (seed >>> 0) || 1,
     boatX: (geo.W - BOAT_W) / 2,
@@ -131,8 +116,8 @@ export function create(geo, cfg, counts = {}, seed = 1) {
     nasty: null, // { x, y, vy, k, low, hunted }
     treat: null, // { x, y, vy, ph, k, low }
     fish: [], // { m: 'leap' | 'arc' | 'hop', cx, y, vx, vy, k }
-    caught: Number.isSafeInteger(counts.caught) && counts.caught >= 0 ? counts.caught : 0,
-    eaten: Number.isSafeInteger(counts.eaten) && counts.eaten >= 0 ? counts.eaten : 0,
+    caught: 0, // things caught since this opening (drives the kinds; never shown)
+    eaten: 0, // nasties eaten since this opening (drives the fish kinds; never shown)
     pace: cfg.paceStart,
     spawnIn: 0,
     nastyIn: 0,
@@ -148,10 +133,6 @@ export function create(geo, cfg, counts = {}, seed = 1) {
     sky: null, // { k, t }
     time: 0,
   };
-  // Unlocked kinds come from the all-time count, as fish kinds come from eaten,
-  // so a fresh scene after a corrupt save keeps the kinds already earned.
-  s.unlocked = unlockedKinds(s.caught, cfg);
-  s.kindCatches = s.unlocked < KINDS ? s.caught % cfg.kindEvery : 0;
   s.order = shuffled(s, KINDS);
   s.spawnIn = spawnGap(cfg, s.pace);
   s.nastyIn = between(s, cfg.nastyMinS, cfg.nastyMaxS);
@@ -278,8 +259,7 @@ export function tap(s, cfg) {
     s.fish.push({ m: 'leap', cx: n.x + NASTY / 2, y: s.geo.fishY, vx: 0, vy: -cfg.fishSpeed, k });
     return [{ type: 'leap', x: n.x + NASTY / 2 }];
   }
-  // Hops stop one short of MAX_FISH, so a leap always has a slot and the state
-  // never holds more fish than restore() accepts.
+  // Hops stop one short of MAX_FISH, so a leap always has a slot.
   if (s.fish.length >= MAX_FISH - 1) return [];
   const right = s.boatX + BOAT_W + 6;
   const cx = right + FISH_W / 2 <= s.geo.W ? right : s.boatX - 6;
@@ -395,7 +375,7 @@ export function moveBoat(s, dx) {
   s.boatX = Math.max(0, Math.min(s.geo.W - BOAT_W, s.boatX + dx));
 }
 
-/* ---------- geometry change, save and restore ---------- */
+/* ---------- geometry change ---------- */
 
 /** Re-fit to a new screen geometry (same width): the sky is stretched, the sea moves with the horizon. */
 export function setGeometry(s, geo) {
@@ -414,62 +394,7 @@ export function setGeometry(s, geo) {
   for (const t of [...s.items, s.nasty, s.treat]) if (t) t.low = t.low && t.y + ITEM >= s.geo.deckY;
 }
 
-const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
-const isInt = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
-const isCount = (v) => Number.isSafeInteger(v) && v >= 0;
-
-/** The counts from any saved object, or null where one cannot be read. */
-export function readCounts(obj) {
-  const ok = obj && typeof obj === 'object';
-  return {
-    caught: ok && isCount(obj.caught) ? obj.caught : null,
-    eaten: ok && isCount(obj.eaten) ? obj.eaten : null,
-  };
-}
-
-function okFaller(o, g, cfg, sway) {
-  return o && typeof o === 'object' && [o.x, o.y, o.vy].every(isNum) && typeof o.low === 'boolean'
-    && o.x >= -1 && o.x <= g.W && o.y >= g.top - 1 && o.y <= g.horizon && o.vy > 0
-    && (!sway || (isNum(o.ph) && o.ph >= 0 && o.ph < TAU + EPS));
-}
-
-/**
- * Rebuild a saved state, fitted to the current geometry. Returns null for a
- * corrupt or old-version save (the caller then starts a fresh scene).
- */
-export function restore(obj, geo, cfg) {
-  if (!obj || typeof obj !== 'object' || obj.v !== STATE_VERSION) return null;
-  const g = obj.geo;
-  if (!g || ![g.W, g.top, g.horizon, g.deckY, g.fishY].every(isNum) || g.W !== geo.W || g.top >= g.horizon) return null;
-  if (!isInt(obj.seed, 1, 0xFFFFFFFF) || !isNum(obj.boatX)) return null;
-  if (!isCount(obj.caught) || !isCount(obj.eaten)) return null;
-  if (!isNum(obj.pace) || obj.pace < 0 || obj.pace > 1) return null;
-  if (![obj.spawnIn, obj.nastyIn, obj.treatIn, obj.lastX, obj.dip, obj.rock, obj.ink, obj.time].every(isNum)) return null;
-  if (obj.spawnIn < 0 || obj.spawnIn > cfg.gapMax + EPS || obj.nastyIn < 0 || obj.nastyIn > cfg.nastyMaxS + EPS
-    || obj.treatIn < 0 || obj.treatIn > cfg.treatMaxS + EPS) return null;
-  if (!Array.isArray(obj.order) || obj.order.length !== KINDS
-    || [...obj.order].sort((a, b) => a - b).some((v, i) => v !== i)) return null;
-  if (!isInt(obj.unlocked, 1, KINDS) || !isCount(obj.kindCatches) || !isCount(obj.spawnIdx)) return null;
-  if (!Array.isArray(obj.items) || obj.items.length > cfg.maxItems) return null;
-  for (const it of obj.items) if (!okFaller(it, g, cfg, true) || !isInt(it.k, 0, KINDS - 1)) return null;
-  const n = obj.nasty;
-  if (n !== null && (!okFaller(n, g, cfg, false) || !isInt(n.k, 0, NASTY_KINDS - 1) || typeof n.hunted !== 'boolean')) return null;
-  const t = obj.treat;
-  if (t !== null && (!okFaller(t, g, cfg, true) || !isInt(t.k, 0, KINDS - 1))) return null;
-  if (!Array.isArray(obj.fish) || obj.fish.length > MAX_FISH) return null;
-  for (const f of obj.fish) {
-    if (!f || !['leap', 'arc', 'hop'].includes(f.m) || ![f.cx, f.y, f.vx, f.vy].every(isNum) || !isInt(f.k, 0, 5)) return null;
-  }
-  const leaping = obj.fish.filter((f) => f.m === 'leap').length;
-  if (leaping !== (n && n.hunted ? 1 : 0)) return null;
-  if (!(obj.sky === null || (obj.sky && SKY_EVENTS.includes(obj.sky.k) && isNum(obj.sky.t) && obj.sky.t >= 0))) return null;
-  const s = JSON.parse(JSON.stringify(obj));
-  s.boatX = Math.max(0, Math.min(geo.W - BOAT_W, s.boatX));
-  setGeometry(s, geo);
-  return s;
-}
-
-/* ---------- input: tap, pause grace and resume (PLAN §6b The fish, Pause and save) ---------- */
+/* ---------- input: tap, pause grace and resume (PLAN §6b The fish, Pause) ---------- */
 
 /**
  * The input state machine. Times in ms (any monotonic clock), positions in

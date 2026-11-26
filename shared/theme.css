@@ -66,6 +66,25 @@ canvas.screen {
   outline: none;
 }
 
+/* The hub opens a game in a frame over itself (index.html): made on the
+   tile's touch, shown when the touch lifts on it, removed by the back gesture. */
+iframe.game {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: var(--sky-top);
+  opacity: 0;
+  pointer-events: none;
+}
+
+iframe.game.shown {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 /* Read by pixel.js to learn the safe-area insets. */
 .safe-probe {
   position: fixed;

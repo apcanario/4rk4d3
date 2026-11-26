@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// RLX row C1 headless checks: runs games/catch/sim.js and the shared session
+// RLX rows C1 and X1 headless checks: runs games/catch/sim.js and the shared session
 // clock in Node (PLAN §6b Accept). Not needed to run the app.
 // Run: node tests/catch-sim.mjs
 // Uses the tuning block from games/catch/catch.js, so it tests what ships.
@@ -33,7 +33,7 @@ check(CONFIG && CONFIG.paceStart === 0.3 && CONFIG.gainPerCatch === 0.02 && CONF
   && CONFIG.fallMin === 32 && CONFIG.fallMax === 48 && CONFIG.gapMax === 1.7 && CONFIG.gapMin === 1.1
   && CONFIG.nastyMinS === 20 && CONFIG.nastyMaxS === 30 && CONFIG.nastySpeed === 30 && CONFIG.tapMs === 200
   && CONFIG.tapMovePx === 4 && CONFIG.graceMs === 400 && CONFIG.fishSpeed === 220 && CONFIG.hapticCatchMs === 8
-  && CONFIG.hapticBiteMs === 16 && CONFIG.resumeDelayMs === 250 && CONFIG.sensitivity === 1.2 && CONFIG.maxItems === 3
+  && CONFIG.hapticBiteMs === 16 && CONFIG.resumeDelayMs === 250 && !('sensitivity' in CONFIG) && CONFIG.maxItems === 3
   && CONFIG.spawnSpreadPx === 70 && CONFIG.swayPx === 3 && CONFIG.treatMinS === 90 && CONFIG.treatMaxS === 150
   && CONFIG.kindsStart === 2 && CONFIG.kindEvery === 40 && CONFIG.fishKindsStart === 2 && CONFIG.fishKindEvery === 5
   && CONFIG.fishKindsMax === 6, `CONFIG holds the PLAN values ${JSON.stringify(CONFIG)}`);
@@ -49,8 +49,8 @@ check(S.STEP_HZ === 120, 'the simulation steps at a fixed 120 Hz');
 /* ---------- geometry ---------- */
 
 // Logical heights 240 (smallest design height, with and without a status-bar
-// inset), 300 (both test phones) and 400; the HUD ends at back.y + 13 + 5.
-const geoFor = (H, safeTop = 0) => S.geometry(135, 5 + safeTop + 13 + 5, H - PX.SEA_HEIGHT);
+// inset), 300 (both test phones) and 400. Row X1: no HUD; things start 5 px below the top (plus the inset).
+const geoFor = (H, safeTop = 0) => S.geometry(135, 5 + safeTop, H - PX.SEA_HEIGHT);
 const GEOS = [['H240', geoFor(240)], ['H240-safe', geoFor(240, 10)], ['H300', geoFor(300)], ['H400', geoFor(400)]];
 for (const [tag, g] of GEOS) {
   check(g.horizon - g.deckY === S.DECK_ABOVE && g.deckY + S.BOAT_H > g.horizon, `[${tag}] the boat floats on the horizon line (deck ${g.horizon - g.deckY} px above it)`);
@@ -86,7 +86,7 @@ function rng(seed) {
  */
 function longRun(tag, geo, seed, minutes) {
   const r = rng(seed);
-  const s = S.create(geo, CONFIG, {}, seed);
+  const s = S.create(geo, CONFIG, seed);
   const clock = SE.freshClock();
   const st = {
     steps: 0, nan: 0, maxItems: 0, maxNasty: 0, maxTreat: 0, spawned: 0, catches: 0, misses: 0, treatCatches: 0,
@@ -244,7 +244,7 @@ check(runs.some(([, st]) => st.sky > 0), 'a caught treat sets off a sky event');
 /* ---------- unit checks ---------- */
 
 const G = GEOS[2][1]; // H300
-const fresh = (seed = 7) => S.create(G, CONFIG, {}, seed);
+const fresh = (seed = 7) => S.create(G, CONFIG, seed);
 const stepN = (s, n, ease = 0) => { const out = []; for (let i = 0; i < n; i++) out.push(...S.step(s, CONFIG, ease)); return out; };
 const quiet = (s) => { s.spawnIn = 999; s.nastyIn = 999; s.treatIn = 999; s.items = []; s.nasty = null; s.treat = null; s.fish = []; };
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -268,7 +268,7 @@ function itemAt(s, x, y, vy = 40) {
 }
 
 {
-  // Caught: on the deck, count +1, dip, pace +0.02, run +1.
+  // Caught: on the deck, count +1 (the variety count, never shown), dip, pace +0.02.
   const s = fresh();
   quiet(s);
   itemAt(s, s.boatX + 8, G.deckY - S.ITEM - 2);
@@ -277,16 +277,14 @@ function itemAt(s, x, y, vy = 40) {
   const c = ev.filter((e) => e.type === 'catch');
   check(c.length === 1 && s.caught === 1 && s.items.length === 0 && Math.abs(s.pace - 0.32) < 1e-12 && s.dip > 0 && s.dip <= S.DIP_S,
     `caught on the deck: count +1, pace +0.02 (${s.pace.toFixed(3)}), the boat dips`);
-  check(S.runAfter(4, ev) === 5, 'the run goes up by one per catch');
   stepN(s, 13);
   check(s.dip === 0, 'the dip lasts 100 ms');
-  // Missed: the water, pace -0.15, no count change, run back to 0.
+  // Missed: the water, pace -0.15, no count change.
   s.boatX = 0;
   itemAt(s, 100, G.horizon - S.ITEM - 2);
   const ev2 = stepN(s, 30);
   check(ev2.some((e) => e.type === 'miss') && s.caught === 1 && Math.abs(s.pace - 0.17) < 1e-12,
     `missed: a splash in the water, count unchanged, pace -0.15 (${s.pace.toFixed(3)})`);
-  check(S.runAfter(9, ev2) === 0, 'the run resets silently on a miss');
   s.pace = 0.05;
   itemAt(s, 100, G.horizon - S.ITEM - 1);
   stepN(s, 30);
@@ -372,7 +370,7 @@ function itemAt(s, x, y, vy = 40) {
         const nx = 60;
         s.boatX = over === true ? nx - 8 : 0;
         const land = over === true ? g.deckY : g.horizon;
-        // Bottom from just under the HUD to a hair above where it would land.
+        // Bottom from the top of the open sky to a hair above where it would land.
         const f = k < 300 ? k / 300 : 1 - 10 ** -(1 + (k - 300) / 20);
         const bottom = g.top + S.NASTY + f * (land - 0.0001 - g.top - S.NASTY);
         s.nasty = { x: nx, y: bottom - S.NASTY, vy: 30, k: 0, low: over !== true && bottom >= g.deckY, hunted: false };
@@ -426,7 +424,7 @@ function itemAt(s, x, y, vy = 40) {
   S.tap(d, CONFIG);
   check(S.tap(d, CONFIG)[0].type === 'hop' && d.fish.filter((x) => x.m === 'leap').length === 1, 'a second tap while a fish is on its way is a hop');
   // Rapid taps fill the hops, then a nasty: the leap still happens and the
-  // fish stay within MAX_FISH, so the scene saves and restores the same.
+  // fish stay within MAX_FISH.
   {
     const q = fresh(31);
     quiet(q);
@@ -437,9 +435,6 @@ function itemAt(s, x, y, vy = 40) {
     const more = S.tap(q, CONFIG);
     check(leap.length === 1 && leap[0].type === 'leap' && q.nasty.hunted && q.fish.length <= S.MAX_FISH,
       `4 rapid taps, then a nasty: the tap still sends a leap, ${q.fish.length} fish up (at most ${S.MAX_FISH}; hops ${hops.filter((e) => e.length).length}, then ${more.length ? more[0].type : 'nothing'})`);
-    const saved = clone(q);
-    const r = S.restore(clone(saved), G, CONFIG);
-    check(r && JSON.stringify(r) === JSON.stringify(saved), 'that scene (hops, a leap and a tap more) saves and restores the same');
     const ev = stepN(q, 240);
     check(ev.filter((e) => e.type === 'bite').length === 1 && q.eaten === 1, 'and the leaping fish still eats the nasty');
   }
@@ -457,16 +452,16 @@ function itemAt(s, x, y, vy = 40) {
   const before = clone({ caught: s.caught, eaten: s.eaten, pace: s.pace });
   const ev = stepN(s, 60);
   check(ev.some((e) => e.type === 'nastyBoat') && s.rock > 0 && s.rock <= S.ROCK_S && s.ink === 0
-    && JSON.stringify({ caught: s.caught, eaten: s.eaten, pace: s.pace }) === JSON.stringify(before) && S.runAfter(7, ev) === 7,
-    'a nasty on the boat: the boat rocks for 1 s; count, pace and run unchanged');
+    && JSON.stringify({ caught: s.caught, eaten: s.eaten, pace: s.pace }) === JSON.stringify(before),
+    'a nasty on the boat: the boat rocks for 1 s; count and pace unchanged');
   stepN(s, 120);
   check(s.rock === 0, 'the rocking stops after a second');
   s.boatX = 0;
   s.nasty = { x: 100, y: G.horizon - S.NASTY - 1, vy: 30, k: 2, low: false, hunted: false };
   const ev2 = stepN(s, 60);
   check(ev2.some((e) => e.type === 'nastyWater') && s.ink > S.INK_S - 1 && s.rock === 0
-    && JSON.stringify({ caught: s.caught, eaten: s.eaten, pace: s.pace }) === JSON.stringify(before) && S.runAfter(7, ev2) === 7,
-    'a nasty in the water: the ink cloud darkens the sea; count, pace and run unchanged');
+    && JSON.stringify({ caught: s.caught, eaten: s.eaten, pace: s.pace }) === JSON.stringify(before),
+    'a nasty in the water: the ink cloud darkens the sea; count and pace unchanged');
   stepN(s, Math.ceil((S.INK_S + S.INK_FADE_S) * S.STEP_HZ));
   check(s.ink === 0, `the ink lasts ${S.INK_S} s, then fades over ${S.INK_FADE_S} s`);
 }
@@ -510,17 +505,17 @@ function itemAt(s, x, y, vy = 40) {
   const o1 = s.order.join();
   for (let i = 0; i < 40; i++) { itemAt(s, 58, G.deckY - S.ITEM - 0.2); stepN(s, 2); }
   check(s.order.join() !== o1 && [...s.order].sort().join() === '0,1,2,3,4,5,6,7', 'with all 8 in, the order reshuffles');
-  // A fresh or rebuilt scene takes its kinds from the all-time count, as fish kinds from eaten.
-  const u = [0, 39, 40, 79, 80, 239, 240, 500].map((c) => S.create(G, CONFIG, { caught: c }, 3).unlocked);
-  check(u.join() === '2,2,3,3,4,7,8,8', `a fresh scene unlocks 2 + one per 40 stored catches, up to 8 (${u.join()})`);
-  const mid = S.create(G, CONFIG, { caught: 50 }, 3);
-  check(mid.kindCatches === 10, 'and the next kind joins at the next multiple of 40 catches');
+  // Row X1: nothing is stored, so every opening starts with 2 kinds and 2 fish kinds.
+  const u = [3, 4, 5].map((seed) => S.create(G, CONFIG, seed));
+  check(u.every((q) => q.unlocked === 2 && q.caught === 0 && q.eaten === 0 && q.kindCatches === 0 && S.fishKinds(q, CONFIG) === 2),
+    'a fresh scene (every opening) starts with 2 kinds and 2 fish kinds, counts at 0');
 }
 
 /* ---------- input: taps, the pause grace, the resume ---------- */
 
 {
-  const C = CONFIG;
+  // catch.js passes CONFIG with the screen's sensitivity (the shared thumb travel); 1.2 here for round numbers.
+  const C = { ...CONFIG, sensitivity: 1.2 };
   const play = () => {
     const c = S.createControl();
     S.ctlDown(c, 1, 0, 50, 200, C);
@@ -648,46 +643,34 @@ function itemAt(s, x, y, vy = 40) {
   }
 }
 
-/* ---------- save and restore ---------- */
+/* ---------- row X1: nothing saved, no counts shown, the shared thumb travel ---------- */
 
 {
-  const s = fresh(21);
-  for (let i = 0; i < 120 * 40; i++) {
-    if (s.nasty && !s.nasty.hunted && s.nasty.y > 120) S.tap(s, CONFIG);
-    S.step(s, CONFIG);
+  check(S.restore === undefined && S.readCounts === undefined && S.runAfter === undefined && S.STATE_VERSION === undefined
+    && S.unlockedKinds === undefined, 'sim.js has no save, restore, stored counts or run (row X1)');
+  const s = fresh();
+  check(!('v' in s), 'the state carries no save version');
+  const code = catchSrc.replace(/\/\/.*$/gm, '');
+  check(!/font\.js|drawFitted|drawText|fillText|drawBackControl|publishHits|dataset\.(hits|hud|layout)|store\.js|settings\.js|localStorage|sessionStorage|goToHub/.test(code),
+    'catch.js draws no text, number or back control, publishes no hit areas and stores nothing');
+  check(/atSideEdge\(e\)\) return/.test(code), 'catch.js ignores a touch that begins at a side edge (shared rule)');
+  // Thumb travel: half the screen width carries the boat end to end, at 360 and 412 CSS px.
+  for (const [cssW, dpr] of [[360, 2.625], [412, 2.625], [360, 3]]) {
+    const devW = Math.round(cssW * dpr);
+    const scale = Math.floor(devW / 135);
+    const screenW = devW / scale; // logical px
+    const sens = PX.thumbSensitivity(135 - S.BOAT_W, screenW);
+    const k = S.createControl();
+    const cfg = { ...CONFIG, sensitivity: sens };
+    S.ctlDown(k, 1, 0, 0, 200, cfg);
+    S.ctlTick(k, 300);
+    const q = fresh();
+    S.moveBoat(q, -500);
+    S.moveBoat(q, S.ctlMove(k, 1, PX.INPUT.thumbTravel * screenW, 200, cfg));
+    check(PX.INPUT.thumbTravel === 0.5 && Math.abs(q.boatX - (135 - S.BOAT_W)) < 1e-9,
+      `[${cssW} CSS px] a drag across half the screen width moves the boat exactly end to end (sensitivity ${sens.toFixed(3)})`);
   }
-  s.nasty = { x: 40, y: 100, vy: 30, k: 1, low: false, hunted: false };
-  S.tap(s, CONFIG);
-  s.treat = { x: 60, y: 90, vy: 20, ph: 1, k: s.order[0], low: false };
-  s.sky = { k: 'gull', t: 1 };
-  const saved = clone(s);
-  const r = S.restore(clone(saved), G, CONFIG);
-  check(r && JSON.stringify(r) === JSON.stringify(saved), 'save and restore: items in the air, the hunting fish, boat, counts, timers, kinds, all the same');
-  stepN(s, 120 * 20);
-  stepN(r, 120 * 20);
-  check(JSON.stringify(r) === JSON.stringify(s), 'a restored game plays on exactly as the original (same seed, same 20 s)');
-  const bad = [
-    '{nope', null, 5, { ...saved, v: 0 }, { ...saved, v: 2 }, { ...saved, pace: 1.5 }, { ...saved, pace: NaN },
-    { ...saved, items: [...saved.items, ...saved.items, ...saved.items, ...saved.items] }, { ...saved, order: [0, 1, 2] },
-    { ...saved, boatX: 'x' }, { ...saved, nasty: { ...saved.nasty, hunted: false } }, { ...saved, fish: 'x' },
-    { ...saved, geo: { ...saved.geo, W: 200 } }, { ...saved, spawnIn: -1 }, { ...saved, unlocked: 9 },
-  ];
-  check(bad.every((b) => S.restore(typeof b === 'string' ? b : clone(b), G, CONFIG) === null),
-    `corrupt or old-version saves are refused (${bad.length} kinds)`);
-  {
-    // As catch.js loadGame(): a corrupt save is refused, a fresh scene built from its readable counts.
-    const corrupt = { ...clone(saved), caught: 500, pace: 'x' };
-    const rebuilt = S.restore(clone(corrupt), G, CONFIG) === null ? S.create(G, CONFIG, S.readCounts(corrupt), 5) : null;
-    check(rebuilt && rebuilt.caught === 500 && rebuilt.unlocked === 8,
-      `a corrupt save with 500 catches rebuilds a scene with all 8 kinds (${rebuilt && rebuilt.unlocked})`);
-  }
-  check(JSON.stringify(S.readCounts({ ...saved, v: 0 })) === JSON.stringify({ caught: saved.caught, eaten: saved.eaten })
-    && JSON.stringify(S.readCounts({ caught: -1, eaten: 'x' })) === JSON.stringify({ caught: null, eaten: null })
-    && JSON.stringify(S.readCounts('{nope')) === JSON.stringify({ caught: null, eaten: null }),
-    'the counts are read from an old or corrupt save where they can be');
-  const tall = S.restore(clone(saved), GEOS[3][1], CONFIG);
-  check(tall && tall.items.every((it) => it.y >= GEOS[3][1].top && it.y <= GEOS[3][1].horizon) && tall.fish.every((f) => f.y > -50),
-    'a save restored on a taller screen fits the new sky');
+  check(/thumbSensitivity\(geo\.W - S\.BOAT_W, canvas\.width \/ s\.scale\)/.test(code), 'catch.js sets the drag sensitivity from the shared thumb travel');
 }
 
 /* ---------- the look: shapes and readability ---------- */
@@ -728,7 +711,7 @@ function itemAt(s, x, y, vy = 40) {
 {
   // Readability, row B4 contrast pass (standard in tests/contrast.mjs and the
   // B4 changelog entry): the boat, the things to catch, the nasty ones, the
-  // fish, the HUD and the pause ring against every scene colour under them,
+  // fish and the pause ring (row X1: no HUD) against every scene colour under them,
   // at sunset and each of the 10 steps, on logical heights 240 (with and
   // without a 10 px top inset), 300 and 400. No exceptions. Outlined sprites
   // pass a background when the fill or the outline clears it. The hull's
@@ -737,7 +720,6 @@ function itemAt(s, x, y, vy = 40) {
   const C = T.COLORS;
   const edge = T.edge || T.shade; // tokens before B4 had no edge
   const ink = C.ink || C.blue;
-  const card = C.card || '#A0D0E8';
   const sail = C.sail || C.sun;
   const colour = (name) => (name.startsWith('row') ? T.BRICK_ROWS[Number(name.slice(3))] : C[name]);
   // Tokens before the B4 review had no keel, glint or ink cloud: fall back to what was drawn then.
@@ -761,7 +743,6 @@ function itemAt(s, x, y, vy = 40) {
     };
     const skyIx = bandsOver(g.top, horizon); // things fall through the whole open sky
     const boatSky = bandsOver(g.deckY - 11, g.deckY + 1); // mast, sails, hull top (dip included)
-    const hud = bandsOver(5 + safeTop, 5 + safeTop + 16);
     for (let k = 0; k <= 10; k++) {
       const pal = T.scenePalette(k / 10);
       const sun = k < 10 ? [['sun', C.sun]] : [];
@@ -783,8 +764,6 @@ function itemAt(s, x, y, vy = 40) {
       for (const it of S.LOOK.items) add(`item ${it.name}`, 'de', colour(it.colour), edge(colour(it.colour)), skyBg);
       for (const n of S.LOOK.nasties) add(`nasty ${n.name}`, 'de', colour(n.colour), null, skyBg);
       for (const name of S.LOOK.fish.colours) add(`fish ${name}`, 'de', colour(name), edge(colour(name)), [...skyBg, ...seaBg]);
-      add('count and run', 'cr-small', ink, null, sky(hud));
-      add('back control', 'cr', card, ink, sky(hud));
       add('pause ring', 'cr', C.cloud, ink, seaBg);
       // Effects (B4 review): the glint sits on the sun (on the sea's top band from step 8, where the sun is low);
       // the spray under a leaping fish over the open sky, the sun, a cloud or the sea's top band;
@@ -801,8 +780,7 @@ function itemAt(s, x, y, vy = 40) {
   for (const u of rows.filter((r) => !r.ok)) console.log(`  [readability] UNDER: ${CT.fmt(u)}`);
   for (const [tag] of screens) {
     const mine = rows.filter((r) => r.tag === tag);
-    for (const [rule, label] of [['cr', `boat hull, keel and mast, back control, pause ring: contrast >= ${CT.MIN_CR} (fill or edge)`],
-      ['cr-small', `count and run: contrast >= ${CT.MIN_CR_SMALL}`],
+    for (const [rule, label] of [['cr', `boat hull, keel and mast, pause ring: contrast >= ${CT.MIN_CR} (fill or edge)`],
       ['de', `sail (its fill too), jib, items, nasties, fish, glint, spray, ink cloud: delta E >= ${CT.MIN_DE} (fill or outline)`]]) {
       const r = mine.filter((x) => x.rule === rule);
       check(r.length > 0 && r.every((x) => x.ok), `[${tag}] sunset and all 10 steps, ${label} (weakest ${CT.worst(r).v.toFixed(2)}, ${r.filter((x) => !x.ok).length} under)`);
@@ -821,7 +799,6 @@ function itemAt(s, x, y, vy = 40) {
   check(/INK = COLORS\.inkCloud/.test(src) && /mix\(pal\.sea\[i\], INK, INK_CLOUD_AMOUNT\)/.test(src), 'catch.js mixes the ink cloud with its token and amount');
   check(/SAIL = COLORS\.sail/.test(src) && /SAIL_EDGE = edge\(COLORS\.sail\)/.test(src) && /JIB = BRICK_ROWS\[5\]/.test(src)
     && /JIB_EDGE = edge\(BRICK_ROWS\[5\]\)/.test(src), 'catch.js draws the sail in its token and the jib in brick row 6, each with its edge');
-  check((src.match(/rects\.(count|run), COLORS\.ink/g) || []).length === 2, 'catch.js draws the count and run in the ink');
   check(/disc\(RING_R \+ 1, COLORS\.ink\);\s*disc\(RING_R, COLORS\.cloud\);/.test(src), 'catch.js draws the pause ring white in an ink ring');
 }
 
@@ -830,18 +807,11 @@ function itemAt(s, x, y, vy = 40) {
 {
   let clockMs = 0;
   const calls = [];
-  const store = new Map();
-  globalThis.localStorage = {
-    getItem: (k) => (store.has(k) ? store.get(k) : null),
-    setItem: (k, v) => store.set(k, String(v)),
-    removeItem: (k) => store.delete(k),
-  };
   Object.defineProperty(globalThis, 'performance', { value: { now: () => clockMs }, configurable: true });
   Object.defineProperty(globalThis, 'navigator', {
     value: { vibrate: (ms) => { calls.push([clockMs, ms]); return true; } }, configurable: true,
   });
   const H = await import('../shared/haptics.js');
-  const { setHaptics } = await import('../shared/settings.js');
   // As catch.js handle(): catch 8 ms, bite 16 ms, nothing else.
   const feed = (events, t) => {
     clockMs = t * 1000;
@@ -866,7 +836,6 @@ function itemAt(s, x, y, vy = 40) {
     }
     return { n, s };
   };
-  setHaptics(true);
   const on = play(3, 5);
   const kinds = new Set(calls.map((c) => c[1]));
   let minGap = Infinity;
@@ -882,12 +851,7 @@ function itemAt(s, x, y, vy = 40) {
   feed([{ type: 'bite' }], (clockMs + 39) / 1000);
   feed([{ type: 'bite' }], (clockMs + 41) / 1000);
   check(calls.length === 2 && calls[0][1] === 8 && calls[1][1] === 16, `the 40 ms limiter drops ticks inside 40 ms (${JSON.stringify(calls.map((c) => c[1]))})`);
-  calls.length = 0;
-  setHaptics(false);
-  const off = play(3, 6);
-  check(calls.length === 0 && off.n > 0, `haptics off: zero vibrate calls over ${off.n} catches and bites`);
   // Missed items, hops, dives, uneaten nasties and sky events never vibrate.
-  setHaptics(true);
   calls.length = 0;
   clockMs += 1000;
   feed([{ type: 'miss' }, { type: 'hop' }, { type: 'leap' }, { type: 'dive' }, { type: 'nastyBoat' }, { type: 'nastyWater' }, { type: 'sky' }, { type: 'kinds' }], clockMs / 1000);

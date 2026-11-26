@@ -1,73 +1,98 @@
-// RLX session clock and scene phase (PLAN §2b rule 3): one clock for every
-// game. It counts active play only; paused time never advances it. It resets
-// when there has been no active play for resetGapMin minutes or more,
-// measured from the saved time of the last active play.
+// RLX session clock and scene phase (PLAN §2b rule 2): one clock for every
+// game, in memory only, never stored. It counts active play only; paused
+// time never advances it. It resets when the app starts and when the page
+// has been hidden for resetGapMin minutes or more.
+//
+// One clock across games: the hub holds it, and every game the hub opens
+// (in a frame of the hub's page, see index.html) uses the hub's clock. A
+// game page opened on its own holds its own clock, fresh at load.
 
-// Clock and scene values: one block (PLAN §6a).
+// Clock and scene values: one block (PLAN §6a shared config).
 export const SESSION = Object.freeze({
   rampMin: 10, // sunset to dusk over the first 10 minutes of active play
   slowdownMin: 2, // then the pace ceiling falls to its minimum over 2 minutes
-  resetGapMin: 5, // no active play for this long: the clock starts again
+  resetGapMin: 5, // the page hidden this long: the clock starts again
   sceneSteps: 10, // the scene is drawn in this many flat steps
   starsFromStep: 8, // white stars show from this step on
 });
 
-import { load, save } from './store.js';
-
-const NAME = 'session'; // rlx.v1.session
-const VERSION = 1;
 const RAMP_S = SESSION.rampMin * 60;
 const SLOW_S = SESSION.slowdownMin * 60;
 const GAP_MS = SESSION.resetGapMin * 60 * 1000;
+const HOLDER = '__rlxSession'; // the property on the hub's window that holds the clock
 
-/** A fresh clock: no active play yet. last is epoch ms of the last active play, or null. */
+/**
+ * A fresh clock. active: seconds of active play; hiddenAt: epoch ms when the
+ * page was hidden, or null while it is shown; resets: how many times the
+ * clock has started again (games compare it to restart their pace).
+ */
 export function freshClock() {
-  return { active: 0, last: null };
+  return { active: 0, hiddenAt: null, resets: 0 };
 }
 
-function valid(c) {
-  return !!c && typeof c === 'object' && typeof c.active === 'number' && Number.isFinite(c.active) && c.active >= 0
-    && (c.last === null || (typeof c.last === 'number' && Number.isFinite(c.last)));
-}
-
-/**
- * True when the gap since the last active play is resetGapMin or more, or the
- * device clock now reads earlier than the last active play (set backwards).
- */
-export function isStale(c, nowMs) {
-  return c.last !== null && (nowMs < c.last || nowMs - c.last >= GAP_MS);
+/** The page was hidden at nowMs. */
+export function noteHidden(c, nowMs) {
+  if (c.hiddenAt === null) c.hiddenAt = nowMs;
 }
 
 /**
- * The stored clock as of nowMs: a fresh one if none is stored, the stored one
- * is unreadable, or the reset gap has passed. reset tells which.
+ * The page is shown at nowMs. If it was hidden for resetGapMin or more (or
+ * the device clock now reads earlier than when it was hidden), the clock
+ * starts again. Returns true if it was reset. Safe to call more than once.
  */
-export function readClock(nowMs) {
-  const c = load(NAME, null, VERSION);
-  if (!valid(c)) return { clock: freshClock(), reset: c !== null };
-  if (isStale(c, nowMs)) return { clock: freshClock(), reset: true };
-  return { clock: { active: c.active, last: c.last }, reset: false };
+export function noteShown(c, nowMs) {
+  if (c.hiddenAt === null) return false;
+  const gone = nowMs < c.hiddenAt || nowMs - c.hiddenAt >= GAP_MS;
+  c.hiddenAt = null;
+  if (gone) {
+    c.active = 0;
+    c.resets += 1;
+  }
+  return gone;
 }
 
-export function saveClock(c) {
-  return save(NAME, { active: c.active, last: c.last }, VERSION);
+/** A check for one game: true once after each reset of c since the last call (or since the watch began). */
+export function watchReset(c) {
+  let seen = c.resets;
+  return () => {
+    if (c.resets === seen) return false;
+    seen = c.resets;
+    return true;
+  };
 }
 
-/**
- * Active play is about to start at nowMs: reset the clock in place if the gap
- * has passed. Returns true if it was reset.
- */
-export function beginPlay(c, nowMs) {
-  if (!isStale(c, nowMs)) return false;
-  c.active = 0;
-  c.last = null;
-  return true;
-}
-
-/** Add dt seconds of active play that ended at nowMs. Only called while playing. */
-export function addPlay(c, dt, nowMs) {
+/** Add dt seconds of active play. Only called while playing. */
+export function addPlay(c, dt) {
   c.active += dt;
-  c.last = nowMs;
+}
+
+function connect() {
+  if (typeof window === 'undefined') return freshClock(); // Node (the headless tests)
+  let hub = null;
+  try {
+    if (window.top !== window && window.top[HOLDER]) hub = window.top[HOLDER];
+  } catch (err) {
+    hub = null; // a frame of another origin: never the case in RLX
+  }
+  const c = hub || freshClock();
+  if (!hub) Object.defineProperty(window, HOLDER, { value: c, configurable: true });
+  // The holder's page notes hidden and shown. A game in the hub's frame notes
+  // shown too, first in its own page, so a reset is in place before the game
+  // sees the page come back; it never notes hidden (a frame being removed is
+  // hidden while the app is not).
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) noteShown(c, Date.now());
+    else if (!hub) noteHidden(c, Date.now());
+  });
+  return c;
+}
+
+let shared = null;
+
+/** The one session clock, in memory. */
+export function sessionClock() {
+  if (!shared) shared = connect();
+  return shared;
 }
 
 /** Scene phase, 0 (sunset) to 1 (dusk), over the ramp. */

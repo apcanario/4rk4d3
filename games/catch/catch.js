@@ -1,12 +1,18 @@
-// Catch (PLAN §6b): rendering, input, pause and save, haptics. The simulation
-// and the input rules live in sim.js (no DOM); this file draws the game and
-// feeds it the thumb. The input code is Catch's own: Bricks keeps its own
-// immediate pause in bricks.js, untouched.
+// Catch (PLAN §6b): rendering, input, pause, haptics. The simulation and the
+// input rules live in sim.js (no DOM); this file draws the game and feeds it
+// the thumb. The input code is Catch's own: Bricks keeps its own immediate
+// pause in bricks.js, untouched.
+//
+// Hard rules (PLAN §2, row X1): no text, number, button or HUD; the Android
+// back gesture goes home; touches that begin within 24 CSS px of the left or
+// right edge are ignored; nothing is stored; opening Catch always starts a
+// fresh scene; haptics are always on; no sound.
 
 // Tuning: one block (PLAN §6b Files). tests/catch-sim.mjs reads it from here.
-// The ramp, slowdown and reset-gap lengths are shared: SESSION in shared/session.js.
+// The ramp, slowdown and reset-gap lengths are shared: SESSION in shared/session.js;
+// the thumb travel and the edge rule are shared: INPUT in shared/pixel.js.
 export const CONFIG = Object.freeze({
-  paceStart: 0.3, // hidden pace, 0 to 1: a new launch or a session-clock reset starts here
+  paceStart: 0.3, // hidden pace, 0 to 1: opening Catch or a session-clock reset starts here
   gainPerCatch: 0.02,
   lossPerMiss: 0.15, // a missed item; a nasty landing uneaten changes nothing
   fallMin: 32, // fall speed at pace 0, logical px per second
@@ -23,38 +29,33 @@ export const CONFIG = Object.freeze({
   treatMaxS: 150,
   treatSpeed: 20,
   fishSpeed: 220, // a fish leaping at a nasty, px per second
-  kindsStart: 2, // kinds of things to catch at the start...
+  kindsStart: 2, // kinds of things to catch at the start of every opening...
   kindEvery: 40, // ...one more every 40 catches, then the order reshuffles
-  fishKindsStart: 2, // fish kinds at the start...
+  fishKindsStart: 2, // fish kinds at the start of every opening...
   fishKindEvery: 5, // ...one more every 5 nasties eaten...
   fishKindsMax: 6, // ...up to 6
   tapMs: 200, // a tap: down and up within this...
   tapMovePx: 4, // ...moving less than this, in logical px
   graceMs: 400, // play goes on this long after the last finger lifts, then pauses
   resumeDelayMs: 250, // finger down while paused: play starts after this
-  sensitivity: 1.2, // boat px per finger px, relative drag
   hapticCatchMs: 8,
   hapticBiteMs: 16,
 });
 
 import { COLORS, BRICK_ROWS, SEA_BANDS, mix, shade, highlight, edge, scenePalette, INK_CLOUD_AMOUNT } from '../../shared/tokens.js';
-import { drawFitted } from '../../shared/font.js';
 import {
-  createScreen, drawScene, drawBackControl, BACK_SIZE, initPage, hitTest, publishHits, goToHub,
-  pixelBody, steppedRect, SEA_HEIGHT, SUN_RADIUS, reducedMotion,
+  createScreen, drawScene, initPage, pixelBody, steppedRect, SEA_HEIGHT, SUN_RADIUS, reducedMotion,
+  atSideEdge, thumbSensitivity,
 } from '../../shared/pixel.js';
-import { load, save } from '../../shared/store.js';
 import { tick } from '../../shared/haptics.js';
 import {
-  readClock, saveClock, beginPlay, addPlay, isStale, phaseOf, sceneStep, slowdownOf, SESSION,
+  sessionClock, watchReset, addPlay, phaseOf, sceneStep, slowdownOf, SESSION,
 } from '../../shared/session.js';
 import * as S from './sim.js';
 
 initPage();
 
-const SAVE_NAME = 'catch'; // rlx.v<STATE_VERSION>.catch: the full state
-const COUNT_NAME = 'catch-count'; // rlx.v1.catch-count: { caught, eaten } alone
-const PAD = 6; // thumb-friendly hit area around the back control
+const TOP = 5; // things appear this far below the top of the screen (inside the safe area)
 const RING_R = 7;
 const SUN_X = 96; // drawScene's default
 const SEA_H = [13, 14, SEA_HEIGHT - 27]; // drawScene's sea bands
@@ -72,15 +73,13 @@ let rects = null;
 let layoutKey = '';
 let bg = null;
 let bgStep = -1;
-let clock = null;
-let clockReset = false;
-let run = 0; // catches since the last miss; never saved
+const clock = sessionClock(); // the one shared session clock, in memory (shared/session.js)
+const clockWasReset = watchReset(clock); // true once after each reset: the pace starts again
 const ctl = S.createControl();
+let ctlCfg = CONFIG; // CONFIG with the drag sensitivity for this screen (the shared thumb travel)
 let raf = 0;
 let last = 0;
 let acc = 0;
-let backPointer = null;
-let backPressed = false;
 const fx = { bits: [], splashes: [], landed: [] };
 
 /* ---------- colours and sprites ---------- */
@@ -135,61 +134,23 @@ const SPLASH_TOP = COLORS.cloud;
 const SPLASH_BODY = highlight(SEA_BANDS[0]);
 const RING_FILL = highlight(SEA_BANDS[1]);
 
-/* ---------- save and restore ---------- */
-
-function storedCounts() {
-  const c = S.readCounts(load(COUNT_NAME, null, 1));
-  return { caught: c.caught ?? 0, eaten: c.eaten ?? 0 };
-}
-
-function loadClock() {
-  const r = readClock(Date.now());
-  clock = r.clock;
-  clockReset = r.reset;
-}
-
 function newSeed() {
   return ((Date.now() ^ Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0) || 1;
-}
-
-function loadGame(geo) {
-  const raw = load(SAVE_NAME, null, S.STATE_VERSION);
-  const kept = storedCounts();
-  const s = S.restore(raw, geo, CONFIG);
-  if (s) {
-    s.caught = Math.max(s.caught, kept.caught);
-    s.eaten = Math.max(s.eaten, kept.eaten);
-    if (clockReset) S.resetPace(s, CONFIG); // a new session starts at paceStart
-    return s;
-  }
-  // No save, or a corrupt or old-version one: a fresh scene, the counts kept if readable.
-  const fromRaw = S.readCounts(raw);
-  return S.create(geo, CONFIG, {
-    caught: Math.max(kept.caught, fromRaw.caught ?? 0),
-    eaten: Math.max(kept.eaten, fromRaw.eaten ?? 0),
-  }, newSeed());
-}
-
-function persist() {
-  if (!game) return;
-  save(SAVE_NAME, game, S.STATE_VERSION);
-  save(COUNT_NAME, { caught: game.caught, eaten: game.eaten }, 1);
-  if (clock) saveClock(clock);
 }
 
 /* ---------- layout and drawing ---------- */
 
 function layout(s) {
-  const side = Math.max(s.safe.left, s.safe.right);
-  const back = { x: 4 + side, y: 5 + s.safe.top, w: BACK_SIZE.w, h: BACK_SIZE.h };
-  const sx = back.x + back.w + 6;
-  // Count on the back control's top line, the run under it (as in Bricks).
-  const count = { x: sx, y: back.y, w: s.W - 4 - side - sx, h: 7 };
-  const runBox = { x: sx, y: back.y + 9, w: count.w, h: 7 };
+  // No HUD: things fall from the top of the screen.
   const horizon = s.H - SEA_HEIGHT;
-  const geo = S.geometry(s.W, back.y + back.h + 5, horizon);
+  const geo = S.geometry(s.W, TOP + s.safe.top, horizon);
   const ring = { x: Math.floor(s.W / 2), y: Math.min(horizon + 21, s.H - s.safe.bottom - RING_R - 2) };
-  return { back, count, run: runBox, geo, ring };
+  // Thumb travel (PLAN §6a, §6e): a drag across INPUT.thumbTravel of the screen
+  // width carries the boat from one end of the field to the other. The finger
+  // is measured in logical px, so the screen width is too.
+  const sensitivity = thumbSensitivity(geo.W - S.BOAT_W, canvas.width / s.scale);
+  ctlCfg = Object.freeze({ ...CONFIG, sensitivity });
+  return { geo, ring, sensitivity };
 }
 
 function paintBackground(s, phase) {
@@ -358,11 +319,10 @@ function drawRing(ctx) {
 
 function draw(ctx, s) {
   const key = `${s.W}x${s.H}@${s.scale}:${s.safe.top},${s.safe.right},${s.safe.bottom},${s.safe.left}`;
-  if (!clock) loadClock();
-  const phase = isStale(clock, Date.now()) ? 0 : phaseOf(clock.active);
+  const phase = phaseOf(clock.active);
   if (key !== layoutKey || !rects) {
     rects = layout(s);
-    if (!game) game = loadGame(rects.geo);
+    if (!game) game = S.create(rects.geo, CONFIG, newSeed()); // a fresh scene on every opening
     else S.setGeometry(game, rects.geo);
     bgStep = -1;
   }
@@ -386,17 +346,7 @@ function draw(ctx, s) {
   drawBoat(ctx);
   for (const sp of fx.splashes) drawSplash(ctx, sp);
   if (ctl.mode === 'paused') drawRing(ctx);
-
-  const hud = {
-    count: drawFitted(ctx, String(game.caught), rects.count, COLORS.ink, { align: 'right', maxSize: 1 }),
-    run: drawFitted(ctx, String(run), rects.run, COLORS.ink, { align: 'right', maxSize: 1 }),
-  };
-  drawBackControl(ctx, rects.back.x, rects.back.y, backPressed);
-  if (key !== layoutKey) {
-    layoutKey = key;
-    publishHits(canvas, s, { back: rects.back, count: rects.count, run: rects.run });
-  }
-  canvas.dataset.hud = JSON.stringify(hud); // drawn text sizes (0: did not fit)
+  layoutKey = key;
 }
 
 /* ---------- effects, advanced with the simulation ---------- */
@@ -424,7 +374,6 @@ function fxStep(dt) {
 }
 
 function handle(events) {
-  run = S.runAfter(run, events);
   for (const e of events) {
     if (e.type === 'catch') {
       tick(CONFIG.hapticCatchMs);
@@ -449,8 +398,8 @@ function frame(now) {
   if (change === 'start') {
     last = now;
     acc = 0;
-    // Active play starts: after the reset gap the clock and the pace start again.
-    if (beginPlay(clock, Date.now())) S.resetPace(game, CONFIG);
+    // Active play starts: if the clock has started again since, so does the pace.
+    if (clockWasReset()) S.resetPace(game, CONFIG);
   } else if (change === 'pause') {
     pause();
     return;
@@ -458,10 +407,9 @@ function frame(now) {
   if (ctl.mode === 'running') {
     acc += Math.min(0.1, Math.max(0, (now - last) / 1000));
     last = now;
-    const wall = Date.now();
     while (acc >= S.DT) {
       acc -= S.DT;
-      addPlay(clock, S.DT, wall); // the grace is play too; paused time never counts
+      addPlay(clock, S.DT); // the grace is play too; paused time never counts
       handle(S.step(game, CONFIG, slowdownOf(clock.active)));
       fxStep(S.DT);
     }
@@ -476,60 +424,33 @@ function redraw() {
 
 function pause() {
   acc = 0;
-  persist();
   redraw();
 }
 
-/* ---------- input: relative drag anywhere, taps for the fish ---------- */
+/* ---------- input: relative drag anywhere but the side edges, taps for the fish ---------- */
 
 const screen = createScreen(canvas, draw);
 
 canvas.addEventListener('pointerdown', (e) => {
   e.preventDefault();
-  if (!rects || !game) return;
+  if (!rects || !game || atSideEdge(e)) return; // an edge swipe is the back gesture: it moves nothing
   const p = screen.toLogical(e.clientX, e.clientY);
-  if (ctl.pointers.size === 0 && backPointer === null && hitTest(p, rects.back, PAD)) {
-    backPointer = e.pointerId;
-    backPressed = true;
-    redraw();
-    return;
-  }
   try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
-  S.ctlDown(ctl, e.pointerId, performance.now(), p.x, p.y, CONFIG);
+  S.ctlDown(ctl, e.pointerId, performance.now(), p.x, p.y, ctlCfg);
   redraw();
 });
 
 canvas.addEventListener('pointermove', (e) => {
-  if (e.pointerId === backPointer) {
-    const on = hitTest(screen.toLogical(e.clientX, e.clientY), rects.back, PAD);
-    if (on !== backPressed) {
-      backPressed = on;
-      redraw();
-    }
-    return;
-  }
   if (!ctl.pointers.has(e.pointerId)) return;
   const p = screen.toLogical(e.clientX, e.clientY);
-  const dx = S.ctlMove(ctl, e.pointerId, p.x, p.y, CONFIG);
+  const dx = S.ctlMove(ctl, e.pointerId, p.x, p.y, ctlCfg);
   if (dx) S.moveBoat(game, dx);
 });
 
 function lift(e, cancelled) {
-  if (e.pointerId === backPointer) {
-    const hit = !cancelled && hitTest(screen.toLogical(e.clientX, e.clientY), rects.back, PAD);
-    backPointer = null;
-    backPressed = false;
-    if (hit) {
-      persist();
-      goToHub();
-      return;
-    }
-    redraw();
-    return;
-  }
   if (!ctl.pointers.has(e.pointerId)) return;
   const before = ctl.mode;
-  if (S.ctlUp(ctl, e.pointerId, performance.now(), CONFIG, cancelled)) handle(S.tap(game, CONFIG));
+  if (S.ctlUp(ctl, e.pointerId, performance.now(), ctlCfg, cancelled)) handle(S.tap(game, CONFIG));
   if (before !== 'paused' && ctl.mode === 'paused') pause(); // lifted before play resumed
   else redraw();
 }
@@ -537,16 +458,13 @@ function lift(e, cancelled) {
 canvas.addEventListener('pointerup', (e) => { e.preventDefault(); lift(e, false); });
 canvas.addEventListener('pointercancel', (e) => lift(e, true));
 
-/* ---------- lifecycle: hidden or closed means paused and saved ---------- */
+/* ---------- lifecycle: hidden or closed means paused; nothing is saved ---------- */
 
 function sleep() {
   S.ctlSleep(ctl);
-  backPointer = null;
-  backPressed = false;
   acc = 0;
   if (raf) cancelAnimationFrame(raf);
   raf = 0;
-  persist();
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -556,16 +474,19 @@ document.addEventListener('visibilitychange', () => {
 addEventListener('pagehide', sleep);
 addEventListener('pageshow', () => { S.ctlSleep(ctl); redraw(); });
 
-// Read-only hook for tests/check.py; the game never reads it.
+// Hook for tests/check.py; the game never reads it. snapshot() is a copy;
+// live() is the game state itself, so a test can set up a scene.
 Object.defineProperty(window, '__catch', {
   value: Object.freeze({
+    live: () => game,
     snapshot: () => ({
       mode: ctl.mode,
       grace: ctl.graceEnd !== null,
       raf: !!raf,
       fingers: ctl.pointers.size,
-      run,
-      clock: clock ? { ...clock } : null,
+      sensitivity: rects ? rects.sensitivity : null,
+      view: { W: screen.W, H: screen.H, scale: screen.scale, ox: screen.ox, oy: screen.oy },
+      clock: { ...clock },
       step: bgStep,
       bits: fx.bits.length,
       game: game ? JSON.parse(JSON.stringify(game)) : null,

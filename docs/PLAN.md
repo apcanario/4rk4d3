@@ -91,48 +91,52 @@ Motion
 
 ## 4. Repo layout
 
-Superseded in part by the hard rules of update 2; row X1 brings the build in line.
+Brought in line with the hard rules of update 2 by row X1.
 
-- /index.html: the hub
-- /shared/: tokens.js, theme.css, font.js, pixel.js (canvas setup, scaling, stepped-corner rect, dither, scene), haptics.js, store.js (localStorage in try/catch, versioned keys), settings.js
+- /index.html: the hub. It opens each game in a frame over itself and closes it on the back gesture.
+- /shared/: tokens.js, theme.css, font.js (used by the hub only), pixel.js (canvas setup, scaling, stepped-corner rect, dither, scene, the shared input values, clearing old stored keys), haptics.js, session.js (the session clock and scene phase, in memory)
 - /games/bricks/: index.html, bricks.js, physics.js
+- /games/catch/: index.html, catch.js, sim.js
+- /games/putt/: index.html, putt.js, sim.js, gen.js
+- /games/stack/: index.html, stack.js, sim.js
 - /manifest.webmanifest, /sw.js, /icons/
-- /docs/: PLAN.md, BACKLOG.md, CHANGELOG.md, style-reference.jpg
+- /docs/: PLAN.md, BACKLOG.md, CHANGELOG.md, style-reference.jpg, style-reference-catch.jpg, style-reference-putt.jpg
+- /tools/, /tests/: helper scripts and the headless tests, not shipped. The games expose test hooks (canvas.dataset.scene, window.__bricks and the like) that the games never read.
 - README.md
 
 ## 5. Row H1: shell and hub (session 1)
 
-Superseded in part by the hard rules of update 2; row X1 brings the build in line.
+Brought in line with the hard rules of update 2 by row X1.
 
 Build
 - The shared modules listed above.
-- Hub: the sunset scene full screen on the pixel canvas. Wordmark RLX at the top. Game tiles as rounded pixel cards in the lower, thumb-reachable half: BRICKS (active), CATCH and STACK (marked SOON, not tappable). One tap on BRICKS opens the game.
-- One setting on the hub: HAPTICS ON / OFF, stored. Switching it on fires one test tick.
-- A Bricks placeholder page at /games/bricks/ (scene, the word BRICKS, a back control) so navigation can be tested.
-- Back: a small control top-left in a game, and the Android back gesture, both return to the hub.
-- Installable app: manifest (name, standalone, portrait, colours from tokens, icons 192 and 512 plus a maskable one, drawn in the same pixel style) and a service worker, cache-first with a versioned cache, so it runs offline and updates on a new deploy.
+- Hub: the sunset scene full screen on the pixel canvas. Wordmark RLX at the top. Game tiles as rounded pixel cards in the lower, thumb-reachable half, one active tile for every built game: BRICKS, CATCH, PUTT and STACK. Tiles and nothing else: no switch, no setting. One tap on a tile opens its game.
+- Opening a game: the hub opens it full screen in a frame over itself, made fresh on every opening, and adds one history entry. The page never leaves the hub, so the session clock stays in memory across games.
+- Back: the Android back gesture returns from a game to the hub and removes the game. There is no on-screen back control.
+- Nothing is stored. At every start, any rlx.* key an earlier build left in localStorage or sessionStorage is removed.
+- Installable app: manifest (name, fullscreen, portrait, colours from tokens, icons 192 and 512 plus a maskable one, drawn in the same pixel style) and a service worker, cache-first with a versioned cache, so it runs offline and updates on a new deploy.
 - Page hygiene: touch-action none on the canvas, no pull-to-refresh or overscroll, no text selection, no long-press menu, no zoom, safe-area insets respected.
 - README: what it is, the hard rules, how to run it locally with any static server, how it deploys.
 
 Accept
 - On the Pages URL in Chrome for Android, at 360 to 412 CSS px wide: crisp pixels, no blur, no scrolling, no sideways overflow.
-- Installs to the home screen; opens standalone, in portrait, and offline after the first load.
-- Hub to Bricks placeholder and back works by tap and by back gesture.
-- The haptics setting survives a reload.
+- Installs to the home screen; opens fullscreen, in portrait, and offline after the first load.
+- Hub to each game and back works by tap and by back gesture.
+- Storage stays empty.
 - No console errors; no requests to any host but its own.
 
 ## 6. Row B1: Bricks (session 2)
 
-Superseded in part by the hard rules of update 2; row X1 brings the build in line.
+Brought in line with the hard rules of update 2 by row X1.
 
 Field
-- 7 columns of 15 x 7 bricks with 2 px gaps, centred. A HUD line above: back control on the left, quiet score on the right.
-- Score is the all-time count of bricks popped. Nothing ever resets it.
+- 7 columns of 15 x 7 bricks with 2 px gaps, centred. No HUD: the field starts 5 px below the top of the screen (inside the safe area).
+- No score and no count of any kind.
 - Start with 9 rows, coloured by the brick-row tokens from top to bottom.
 
 Endless refill
 - When fewer than 35 bricks remain, every row slides down one row height over 400 ms and a new full row enters at the top. Colours keep cycling through the tokens.
-- Bricks never go deeper than 12 rows. If a slide would push a row past that, the lowest row first fades out (no score, no haptic), then the slide happens. The field can never crowd the paddle and can never deadlock.
+- Bricks never go deeper than 12 rows. If a slide would push a row past that, the lowest row first fades out (no haptic), then the slide happens. The field can never crowd the paddle and can never deadlock.
 
 Ball
 - One ball, 5 x 5.
@@ -140,9 +144,8 @@ Ball
 - Each clean paddle return adds 1. Each miss takes off 12. The value is clamped to the range.
 - A speed change takes effect only at a paddle bounce, never in mid-flight.
 - In the dusk phase (minutes 10 to 12 of the session clock) the ceiling falls from 125 to 80, and the speed follows it down at paddle bounces.
-- A new launch of the app, or a reset of the session clock, starts the speed at 90.
-- Rally: the number of paddle returns since the last miss, shown small under the score in the same blue. It resets silently on a miss and is not stored between sessions.
-- Rows H1 and B1 were built before the pace, rally and dusk rules existed. Row B2 adds them.
+- Opening Bricks, or a reset of the session clock, starts the speed at 90.
+- Rows H1 and B1 were built before the pace and dusk rules existed. Row B2 adds them.
 - Physics on a fixed 120 Hz step in physics.js, which must not touch the DOM. Rendering on requestAnimationFrame.
 - Left, right and top walls bounce.
 - Paddle bounce sets the outgoing angle by where the ball lands: centre goes straight up, the edges go 60 degrees from vertical.
@@ -155,16 +158,15 @@ Miss
 
 Paddle and control
 - Paddle is 30 x 6 and sits 16 px above the horizon.
-- Relative drag anywhere on screen: the paddle moves by the finger's horizontal movement times a sensitivity of 1.2, clamped to the field. It is never absolute positioning, so the thumb rests in the sea and never covers the paddle.
+- Relative drag anywhere on screen: the paddle moves by the finger's horizontal movement times a sensitivity of 1.2, clamped to the field. It is never absolute positioning, so the thumb rests in the sea and never covers the paddle. A touch that begins within 24 CSS px of the left or right edge is ignored.
 
-Pause and save
+Pause
 - No finger on the screen means paused: ball and timers freeze within one frame, and a thumb ring with left and right chevrons shows in the sea.
-- Finger down resumes after 250 ms. The first launch starts in the same paused state.
-- Save the full state (bricks, ball position and velocity, paddle position, score, colour index) on pause, when the page is hidden and on pagehide. Restore it on load.
-- A corrupt or old-version save gives a fresh field and keeps the score if it can be read.
+- Finger down resumes after 250 ms. Every opening starts in the same paused state.
+- Nothing is saved. The page hidden or closed pauses at once. Opening Bricks always starts a fresh field.
 
 Haptics
-- If the setting is on and navigator.vibrate exists: brick 8 ms, paddle 16 ms. Nothing else vibrates.
+- Whenever navigator.vibrate exists: brick 8 ms, paddle 16 ms. Nothing else vibrates.
 - At most one vibrate call per 40 ms.
 
 Tuning and performance
@@ -173,9 +175,9 @@ Tuning and performance
 
 Accept
 - Ten minutes of play: no stuck ball, no flat loop, no tunnelling, and the refill never crowds the paddle.
-- Lifting the thumb freezes play within one frame. Killing the app mid-flight and reopening shows the same field and ball position, paused.
-- Brick and paddle ticks can be told apart by feel. With haptics off there are zero vibrate calls.
-- The score survives restarts.
+- Lifting the thumb freezes play within one frame. Killing the app and reopening opens the hub; opening Bricks starts a fresh field, paused.
+- Brick and paddle ticks can be told apart by feel.
+- No text, number or button is on screen. Nothing is written to storage.
 - A headless test runs physics.js in Node for 10 simulated minutes with a paddle that tracks the ball: no NaN, the ball stays in bounds, the brick count stays bounded.
 
 After B1, Pedro plays it and reports on feel. Tuning is a follow-up row.
@@ -209,10 +211,10 @@ Accept
 
 ## 6b. Row C1: Catch (session 4)
 
-Superseded in part by the hard rules of update 2; row X1 brings the build in line.
+Brought in line with the hard rules of update 2 by row X1.
 
 
-Sections 2, 2b, 3 and 7 apply unchanged. Catch reuses the shared kit from H1: tokens, pixel.js, font.js, haptics.js, store.js, settings.js.
+Sections 2, 2b, 3 and 7 apply unchanged. Catch reuses the shared kit: tokens, pixel.js, haptics.js, session.js.
 
 docs/style-reference-catch.jpg is the approved look for this game. Its lettering is a placeholder; use the shared pixel font.
 
@@ -224,22 +226,22 @@ A small boat on the sunset sea catches things that fall from the sky. Now and th
 
 - The shared sunset scene: banded sky, sun on the horizon, clouds, three-band sea.
 - The boat floats on the horizon line. The sea below it is the thumb zone and where the fish come from.
-- HUD line at the top: back control on the left, quiet count on the right.
+- No HUD: things fall from 5 px below the top of the screen (inside the safe area).
 
 ### Boat and control
 
 - Boat: a coral hull, 24 x 7, stepped corners, with a short mast and a cream sail about 9 px tall. Highlight and drop shade as on every shape.
 - The catch zone is the deck: the full hull width at its top edge.
-- Relative drag anywhere on screen, sensitivity 1.2, clamped to the field. Same as Bricks.
+- Relative drag anywhere on screen, clamped to the field, on the shared thumb travel: moving the thumb across 50 percent of the screen width carries the boat from one end of the field to the other (section 6a). A touch that begins within 24 CSS px of the left or right edge is ignored.
 
 ### Things to catch
 
 - Sprites of about 7 x 7 in the warm tokens (coral, salmon, pinks, cream), all rounded: shell, starfish, pearl, message bottle, coral sprig, sand dollar, seahorse, tiny sun.
 - They fall straight down at a speed set by the pace (32 to 48 logical px per second) with a gentle sway of 3 px either side.
 - One spawns every 1.1 to 1.7 seconds, as set by the pace, at a random x no more than 70 px from the previous spawn, so every item is reachable. Never more than 3 in the air.
-- Caught: it lands on the deck. The boat dips 1 px for 100 ms, haptic 8 ms, count plus one.
+- Caught: it lands on the deck. The boat dips 1 px for 100 ms, haptic 8 ms.
 - Missed: it reaches the water with a 3 px splash. No haptic, no message, nothing lost.
-- Variety: the game starts with 2 kinds in the mix. A new kind joins every 40 catches until all 8 are in, then the order reshuffles. Cosmetic only.
+- Variety: every opening starts with 2 kinds in the mix. A new kind joins every 40 catches since the opening until all 8 are in, then the order reshuffles. Cosmetic only.
 
 ### The nasty ones
 
@@ -252,11 +254,11 @@ A small boat on the sunset sea catches things that fall from the sky. Now and th
 - A tap is a touch that goes down and up within 200 ms and moves less than 4 logical px. It can land anywhere on screen.
 - Tap with a nasty in the air: a fish leaps from the sea directly below it at about 220 logical px per second, eats it where they meet, arcs over and dives back with a splash. Haptic 16 ms on the bite.
 - Tap with no nasty in the air: a fish does a small hop beside the boat. No haptic. A tap is never wrong.
-- Fish sprites of about 9 x 5, a random kind on each leap. The game starts with 2 kinds; a new one joins every 5 nasties eaten, up to 6.
+- Fish sprites of about 9 x 5, a random kind on each leap. Every opening starts with 2 kinds; a new one joins every 5 nasties eaten since the opening, up to 6.
 
 ### If a nasty lands uneaten
 
-- On the boat: the boat rocks 1 px side to side for one second. The count does not change.
+- On the boat: the boat rocks 1 px side to side for one second.
 - In the water: an ink cloud darkens the sea bands for 4 seconds, then fades.
 - No haptic for either. Nothing is lost.
 
@@ -265,48 +267,46 @@ A small boat on the sunset sea catches things that fall from the sky. Now and th
 - Every 90 to 150 seconds one slow item drifts down on a tiny parachute.
 - Catching it sets off one small sky event: a gull crossing, a dolphin arcing on the horizon, or the sun glinting. Missing it does nothing.
 
-### Pause and save
+### Pause
 
 - Catch needs a grace period so a tap is not read as a pause: play continues for 400 ms after the finger lifts, then pauses. The boat holds its position during the grace.
 - Finger down while paused resumes after 250 ms. That touch never counts as a tap.
 - Bricks keeps its immediate pause. If the input handling lives in shared code, the grace becomes a parameter that defaults to zero, and Bricks' behaviour is checked unchanged.
-- Save on pause, when the page is hidden and on pagehide: items in the air, boat position, counts, spawn timers, which kinds are unlocked. Restore on load. A corrupt or old-version save gives a fresh scene and keeps the counts if they can be read.
+- Nothing is saved. The page hidden or closed pauses at once, with no grace. Opening Catch always starts a fresh scene.
 
 ### Counts
 
-- The HUD shows the all-time number of things caught. Nothing resets it.
-- The number of nasties eaten is stored and drives the fish variety. It is not shown.
+- No count is shown or stored. The catches and the nasties eaten since the opening drive the variety only.
 
 ### Pace, skill signal and exit ramp
 
 Catch follows the wind-down rules of section 2b. C1 is built after B2, so the session clock, the scene phase and the dusk tokens already exist in shared code.
 
-- Pace is a hidden value from 0 to 1, starting at 0.3 on a new launch or after a session-clock reset.
+- Pace is a hidden value from 0 to 1, starting at 0.3 on every opening or after a session-clock reset.
 - Each catch adds 0.02. Each missed item takes off 0.15. A nasty landing uneaten does not change it. Clamped to 0 and 1.
 - Pace sets two things, both linearly: fall speed from 32 (pace 0) to 48 (pace 1) logical px per second, and the spawn gap from 1.7 down to 1.1 seconds. A new value applies to items spawned after the change, never to items already in the air.
 - The nasty ones do not follow the pace: 30 px per second, every 20 to 30 seconds, always.
-- Skill signal: the run of catches since the last miss, shown small under the count, reset silently on a miss, not stored between sessions.
 - Exit ramp: the shared sunset to dusk over 10 minutes of active play. From minute 10 to minute 12 the pace ceiling falls from 1 to 0 and the pace follows it down.
 - No sound.
 
 ### Haptics
 
-- Catch 8 ms, fish bite 16 ms, nothing else. At most one vibrate call per 40 ms. Only if the setting is on and navigator.vibrate exists.
+- Catch 8 ms, fish bite 16 ms, nothing else. At most one vibrate call per 40 ms. Whenever navigator.vibrate exists.
 
 ### Files
 
 - /games/catch/: index.html, catch.js, sim.js. The simulation in sim.js must not touch the DOM.
 - The hub's CATCH tile becomes active.
-- Pace gains and losses, fall-speed range, spawn-gap range, nasty interval, tap thresholds, pause grace, fish speed and haptic lengths sit in one config block at the top of catch.js.
+- Pace gains and losses, fall-speed range, spawn-gap range, nasty interval, tap thresholds, pause grace, fish speed and haptic lengths sit in one config block at the top of catch.js. The thumb-travel fraction and the edge width are shared values in shared/pixel.js.
 
 ### Accept
 
 - Ten minutes of play: every spawned item is reachable, never more than 3 items and 1 nasty in the air, no item stuck or lost off screen.
 - A tap with a nasty in the air always produces a bite before the nasty lands, wherever the nasty is.
 - A tap is never read as a pause, and a slow lift (over 200 ms) never fires a fish.
-- Lifting the thumb pauses after the grace period. Killing the app and reopening shows the same scene, paused.
+- Lifting the thumb pauses after the grace period. Killing the app and reopening opens the hub; opening Catch starts a fresh scene, paused.
 - A nasty landing uneaten changes nothing but the cosmetics described.
-- Catch and bite ticks can be told apart by feel. With haptics off there are zero vibrate calls.
+- Catch and bite ticks can be told apart by feel.
 - Bricks behaves exactly as before this row.
 - Pace stays between 0 and 1, never changes the speed of an item already falling, and reaches 0 by minute 12 of active play.
 - Boat, items, nasties and fish are readable in every one of the 10 scene steps.

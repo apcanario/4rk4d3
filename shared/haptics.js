@@ -1,10 +1,8 @@
 // RLX haptics (PLAN §2, §6): the only feedback besides pixels. No sound.
-// tick() honours the setting and allows at most one vibrate call per 40 ms.
-
-import { hapticsOn } from './settings.js';
+// Haptics are always on (there are no settings): tick() vibrates whenever
+// navigator.vibrate exists, at most once per 40 ms.
 
 export const MIN_GAP_MS = 40;
-export const TEST_TICK_MS = 16;
 
 let last = -Infinity;
 
@@ -13,7 +11,7 @@ function canVibrate() {
 }
 
 export function tick(ms) {
-  if (!canVibrate() || !hapticsOn()) return false;
+  if (!canVibrate()) return false;
   const now = performance.now();
   if (now - last < MIN_GAP_MS) return false;
   last = now;
@@ -22,9 +20,4 @@ export function tick(ms) {
   } catch (err) {
     return false;
   }
-}
-
-/** The one test tick fired when the setting is switched on. */
-export function testTick() {
-  return tick(TEST_TICK_MS);
 }

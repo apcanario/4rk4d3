@@ -1,5 +1,6 @@
 // RLX pixel layer (PLAN §3, §4): canvas setup, integer scaling, stepped-corner
-// shapes, dither, the sunset scene, and page hygiene shared by every page.
+// shapes, dither, the sunset scene, the shared input values, and page
+// hygiene shared by every page.
 
 import { LOGICAL_WIDTH, COLORS, SKY_BANDS, mix, shade, highlight, scenePalette } from './tokens.js';
 import { SESSION, sceneStep } from './session.js';
@@ -7,6 +8,27 @@ import { SESSION, sceneStep } from './session.js';
 export const SEA_HEIGHT = 42;
 export const SUN_RADIUS = 24;
 export const MIN_HEIGHT = 240; // design for a logical height of 240 and up
+
+// Shared input values (PLAN §2, §6a): one block for every game.
+export const INPUT = Object.freeze({
+  thumbTravel: 0.5, // a drag across this share of the screen width moves a paddle or boat end to end
+  edgeIgnoreCssPx: 24, // a touch that begins this close to the left or right edge is ignored (the back gesture)
+});
+
+/** True if a pointer event begins within INPUT.edgeIgnoreCssPx of the left or right edge of the screen. */
+export function atSideEdge(e) {
+  const w = document.documentElement.clientWidth || innerWidth;
+  return e.clientX < INPUT.edgeIgnoreCssPx || e.clientX > w - INPUT.edgeIgnoreCssPx;
+}
+
+/**
+ * The drag sensitivity that carries a thing across `travel` logical px for a
+ * thumb movement of INPUT.thumbTravel of the screen width (screenW, in the
+ * same logical px the finger is measured in).
+ */
+export function thumbSensitivity(travel, screenW) {
+  return travel / (INPUT.thumbTravel * screenW);
+}
 
 const motionQuery = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 export const reducedMotion = () => !!(motionQuery && motionQuery.matches);
@@ -42,7 +64,16 @@ export function createScreen(canvas, draw) {
   let devH = 0;
 
   function measureSafe() {
-    const cs = getComputedStyle(probe);
+    // A game in the hub's frame reads the hub's insets: the frame fills the
+    // screen, and the insets are only reported to the top page.
+    let p = probe;
+    try {
+      const hub = window.top !== window && window.top.document.querySelector('.safe-probe');
+      if (hub) p = hub;
+    } catch (err) {
+      p = probe;
+    }
+    const cs = p.ownerDocument.defaultView.getComputedStyle(p);
     const ratio = devW / Math.max(1, canvas.clientWidth); // device px per CSS px
     const conv = (v) => Math.ceil((parseFloat(v) || 0) * ratio / screen.scale);
     screen.safe = {
@@ -321,22 +352,7 @@ export function defaultClouds(H) {
   ];
 }
 
-/* ---------- shared controls ---------- */
-
-export const BACK_SIZE = { w: 15, h: 13 };
-
-/** The small back control used top-left in every game. */
-export function drawBackControl(ctx, x, y, pressed = false) {
-  const dy = pressed ? 1 : 0;
-  // A pale card with an ink edge all round (B4: the edge carries it on the sky).
-  pixelBody(ctx, x, y + dy, BACK_SIZE.w, BACK_SIZE.h, COLORS.card, 2, COLORS.ink);
-  // chevron, 4 x 7, drawn as pixels in the ink of the lettering
-  ctx.fillStyle = COLORS.ink;
-  const cx = Math.round(x) + 5;
-  const cy = Math.round(y) + 3 + dy;
-  const rows = [3, 2, 1, 0, 1, 2, 3];
-  rows.forEach((c, r) => ctx.fillRect(cx + c, cy + r, 2, 1));
-}
+/* ---------- hit areas (the hub's tiles) ---------- */
 
 /** Logical point inside a rect, with optional padding for the thumb. */
 export function hitTest(p, r, pad = 0) {
@@ -358,41 +374,30 @@ export function publishHits(canvas, screen, rects) {
   canvas.dataset.layout = JSON.stringify({ W: screen.W, H: screen.H, scale: screen.scale, rects });
 }
 
-/* ---------- navigation ---------- */
+/* ---------- page hygiene and install ---------- */
 
-const HUB_URL = new URL('../', import.meta.url);
-
-function sameHub(href) {
-  try {
-    const u = new URL(href);
-    u.hash = '';
-    u.search = '';
-    const p = u.pathname.replace(/index\.html$/, '');
-    return u.origin === HUB_URL.origin && p === HUB_URL.pathname;
-  } catch (err) {
-    return false;
+/**
+ * Nothing is stored (PLAN §2): remove every rlx.* key an earlier build left in
+ * localStorage or sessionStorage. Run at every start, since a first run cannot
+ * be told without storing something. Other apps on the same origin are left alone.
+ */
+export function clearStored() {
+  for (const name of ['localStorage', 'sessionStorage']) {
+    try {
+      const store = window[name];
+      for (let i = store.length - 1; i >= 0; i--) {
+        const k = store.key(i);
+        if (k && k.startsWith('rlx.')) store.removeItem(k);
+      }
+    } catch (err) {
+      /* storage unavailable: nothing to clear */
+    }
   }
 }
 
-/**
- * Return to the hub. If this page was opened from the hub, step back in
- * history, so the back control and the Android back gesture do the same thing
- * and history never grows. Otherwise replace this page with the hub.
- */
-export function goToHub() {
-  if (history.length > 1 && sameHub(document.referrer)) history.back();
-  else location.replace(HUB_URL.href);
-}
-
-/** Open a page given relative to the site root, e.g. 'games/bricks/'. */
-export function openPage(path) {
-  location.assign(new URL(path, HUB_URL).href);
-}
-
-/* ---------- page hygiene and install ---------- */
-
-/** No long-press menu, no zoom, no selection; register the service worker. */
+/** No long-press menu, no zoom, no selection; clear old keys; register the service worker. */
 export function initPage() {
+  clearStored();
   const stop = (e) => e.preventDefault();
   addEventListener('contextmenu', stop);
   addEventListener('selectstart', stop);

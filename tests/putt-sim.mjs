@@ -34,7 +34,7 @@ check(!!CONFIG, 'putt.js has one CONFIG block');
 check(puttSrc.indexOf('export const CONFIG') < puttSrc.indexOf('import '), 'CONFIG block sits at the top of putt.js');
 check(CONFIG && CONFIG.launchSpeed === 220 && CONFIG.decel === 55 && CONFIG.stopSpeed === 4 && CONFIG.bounce === 0.85
   && CONFIG.sandFactor === 3 && CONFIG.captureSpeed === 140 && CONFIG.pullCapPx === 60 && CONFIG.cancelPx === 4
-  && CONFIG.edgeIgnoreCssPx === 24 && CONFIG.hapticReleaseMs === 10 && CONFIG.hapticBounceMs === 6 && CONFIG.hapticSinkMs === 24
+  && CONFIG.hapticReleaseMs === 10 && CONFIG.hapticBounceMs === 6 && CONFIG.hapticSinkMs === 24
   && CONFIG.guideAfterPx === 12 && Math.abs(CONFIG.nextLevelMs - 800) <= 100,
   `CONFIG holds the PLAN values ${JSON.stringify(CONFIG)}`);
 const PLAY = CONFIG;
@@ -62,6 +62,8 @@ const puttCode = noComments(puttSrc);
 check(!/\b(localStorage|sessionStorage|indexedDB|document\.cookie|saveClock|caches)\b/.test(puttCode)
   && !/store\.js|settings\.js/.test(puttCode), 'putt.js writes nothing: no storage, no saveClock, no store.js or settings.js');
 check(!/font\.js|drawFitted|drawText|fillText|drawBackControl/.test(puttCode), 'putt.js draws no text, number or back control');
+check(/const clock = sessionClock\(\)/.test(puttCode) && /addPlay\(clock/.test(puttCode) && !/readClock|beginPlay|isStale/.test(puttCode),
+  'putt.js advances the one shared session clock in memory (row X1)');
 check(!/\btick\(|hapticsOn/.test(puttCode) && (puttCode.match(/navigator\.vibrate\(/g) || []).length === 1
   && /MIN_GAP_MS/.test(puttCode) && (puttCode.match(/\bbuzz\(CONFIG\.haptic/g) || []).length === 3,
   'putt.js vibrates in one place (buzz: whenever navigator.vibrate exists, the shared 40 ms limit, no setting read), for release, bounce and sink');

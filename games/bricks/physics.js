@@ -3,7 +3,8 @@
 // module never touches the DOM, so tests/bricks-sim.mjs runs it in Node.
 //
 // Coordinates are logical px (PLAN §3), y down. Positions may be fractional;
-// the renderer rounds them. The state is a plain JSON-able object, saved as is.
+// the renderer rounds them. The state is a plain JSON-able object, held in
+// memory only: nothing is saved (PLAN §2).
 //
 // Pace (PLAN §2b, §6 Ball): s.pace is the hidden pace, the speed the next
 // flight takes; s.speed is the speed of the ball in flight. The pace changes
@@ -15,7 +16,6 @@
 
 export const STEP_HZ = 120;
 export const DT = 1 / STEP_HZ;
-export const STATE_VERSION = 2; // 2: pace and speed (row B2)
 
 // Field (PLAN §6 Field, Endless refill)
 export const COLS = 7;
@@ -72,11 +72,10 @@ export function geometry(W, top, horizon) {
 
 /* ---------- state ---------- */
 
-export function create(geo, cfg, score = 0) {
+export function create(geo, cfg) {
   const rows = [];
   for (let r = 0; r < MAX_ROWS; r++) rows.push({ c: r % COLOURS, m: r < START_ROWS ? FULL : 0 });
   const s = {
-    v: STATE_VERSION,
     geo: { ...geo },
     rows,
     colour: COLOURS - 1, // colour index of the next row to enter at the top
@@ -85,7 +84,6 @@ export function create(geo, cfg, score = 0) {
     respawn: 0,
     slide: null, // seconds into the current slide, or null
     fade: null, // { row, t } while the lowest row fades out, or null
-    score,
     time: 0,
     serves: 0, // balls served so far: their parity picks the serve side
     idle: 0, // serves and paddle bounces since the last brick popped
@@ -269,16 +267,6 @@ export function resetPace(s, cfg) {
   s.pace = opt(cfg, 'speedStart');
 }
 
-/** Rally (PLAN §6 Ball): paddle returns since the last miss. Not part of the state. */
-export function rallyAfter(n, events) {
-  let r = n;
-  for (const e of events) {
-    if (e.type === 'paddle') r += 1;
-    else if (e.type === 'splash') r = 0;
-  }
-  return r;
-}
-
 function setAngle(b, speed, fromVertical) {
   b.vx = speed * Math.sin(fromVertical);
   b.vy = -speed * Math.cos(fromVertical);
@@ -341,7 +329,6 @@ function resolve(s, hits, cfg, events, ease) {
       const row = s.rows[h.row];
       if (!(row.m & (1 << h.col))) continue;
       row.m &= ~(1 << h.col);
-      s.score += 1;
       s.idle = 0;
       events.push({
         type: 'brick',
@@ -409,7 +396,7 @@ export function step(s, cfg, ease = 0) {
   if (s.fade) {
     s.fade.t += DT;
     if (s.fade.t >= FADE_S - EPS) {
-      s.rows[s.fade.row].m = 0; // no score, no haptic
+      s.rows[s.fade.row].m = 0; // no haptic
       s.fade = null;
       beginSlide(s);
     }
@@ -476,7 +463,7 @@ export function movePaddle(s, dx, cfg, live = true, ease = 0) {
   return events;
 }
 
-/* ---------- geometry change, save and restore ---------- */
+/* ---------- geometry change ---------- */
 
 /** Re-fit a running game to a new screen geometry (same width). */
 export function setGeometry(s, geo) {
@@ -501,67 +488,4 @@ export function setGeometry(s, geo) {
   }
   s.paddleX = Math.max(0, Math.min(geo.W - PADDLE_W, s.paddleX));
   s.geo = { ...geo };
-}
-
-const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
-const isInt = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
-
-/** The all-time score from any saved object, or null if it cannot be read. */
-export function readScore(obj) {
-  return obj && typeof obj === 'object' && Number.isSafeInteger(obj.score) && obj.score >= 0 ? obj.score : null;
-}
-
-/**
- * Rebuild a saved state, fitted to the current geometry. Returns null for a
- * corrupt or old-version save (the caller then starts a fresh field).
- */
-export function restore(obj, geo, cfg) {
-  if (!obj || typeof obj !== 'object' || obj.v !== STATE_VERSION) return null;
-  const g = obj.geo;
-  if (!g || ![g.W, g.top, g.horizon, g.paddleY, g.left].every(isNum) || g.W !== geo.W) return null;
-  if (!Array.isArray(obj.rows) || obj.rows.length !== MAX_ROWS) return null;
-  for (const r of obj.rows) if (!r || !isInt(r.c, 0, COLOURS - 1) || !isInt(r.m, 0, FULL)) return null;
-  if (!isInt(obj.colour, 0, COLOURS - 1) || !isNum(obj.paddleX) || readScore(obj) === null) return null;
-  if (!(obj.slide === null || (isNum(obj.slide) && obj.slide >= 0 && obj.slide < SLIDE_S))) return null;
-  if (!(obj.fade === null || (obj.fade && isInt(obj.fade.row, 0, MAX_ROWS - 1) && isNum(obj.fade.t)
-    && obj.fade.t >= 0 && obj.fade.t < FADE_S))) return null;
-  if (obj.slide !== null && obj.fade) return null;
-  if (!isNum(obj.time) || obj.time < 0) return null;
-  const counter = (v) => (v === undefined ? 0 : isInt(v, 0, Number.MAX_SAFE_INTEGER) ? v : -1);
-  const serves = counter(obj.serves);
-  const idle = counter(obj.idle);
-  const nudges = counter(obj.nudges);
-  if (serves < 0 || idle < 0 || nudges < 0) return null;
-  const inRange = (v) => isNum(v) && v >= opt(cfg, 'speedMin') && v <= opt(cfg, 'speedMax');
-  if (!inRange(obj.pace) || !inRange(obj.speed)) return null;
-  let ball = null;
-  if (obj.ball !== null) {
-    const b = obj.ball;
-    if (!b || ![b.x, b.y, b.vx, b.vy].every(isNum) || Math.hypot(b.vx, b.vy) < EPS) return null;
-    if (b.x < -1 || b.x > g.W - BALL + 1 || b.y < g.top - 1 || b.y > g.horizon + BALL) return null;
-    ball = { x: b.x, y: b.y, vx: b.vx, vy: b.vy };
-  } else if (!(isNum(obj.respawn) && obj.respawn > 0 && obj.respawn <= RESPAWN_S)) {
-    return null;
-  }
-  const s = {
-    v: STATE_VERSION,
-    geo: { W: g.W, top: g.top, horizon: g.horizon, paddleY: g.paddleY, left: g.left },
-    rows: obj.rows.map((r) => ({ c: r.c, m: r.m })),
-    colour: obj.colour,
-    paddleX: obj.paddleX,
-    ball,
-    respawn: ball ? 0 : obj.respawn,
-    slide: obj.slide,
-    fade: obj.fade ? { row: obj.fade.row, t: obj.fade.t } : null,
-    score: obj.score,
-    time: obj.time,
-    serves,
-    idle,
-    nudges,
-    pace: obj.pace,
-    speed: obj.speed,
-  };
-  if (ball) settle(ball, s.speed);
-  setGeometry(s, geo);
-  return s;
 }

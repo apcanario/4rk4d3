@@ -1,12 +1,17 @@
-// Bricks (PLAN §6): rendering, input, pause and save, haptics. The simulation
-// lives in physics.js (no DOM); this file draws it and feeds it the thumb.
+// Bricks (PLAN §6): rendering, input, pause, haptics. The simulation lives
+// in physics.js (no DOM); this file draws it and feeds it the thumb.
+//
+// Hard rules (PLAN §2, row X1): no text, number, button or HUD; the Android
+// back gesture goes home; touches that begin within 24 CSS px of the left or
+// right edge are ignored; nothing is stored; opening Bricks always starts a
+// fresh field; haptics are always on; no sound.
 
 // Tuning: one block (PLAN §6 Tuning, §6a). tests/bricks-sim.mjs reads it from
 // here. The ramp, slowdown and reset-gap lengths are shared: SESSION in
-// shared/session.js.
+// shared/session.js; the edge rule is shared: INPUT in shared/pixel.js.
 export const CONFIG = Object.freeze({
   speedMin: 80, // ball speed, logical px per second: the pace (PLAN §2b, §6 Ball)
-  speedStart: 90, // a new launch or a session-clock reset starts here
+  speedStart: 90, // opening Bricks or a session-clock reset starts here
   speedMax: 125, // the ceiling, which falls to speedMin in the dusk slowdown
   gainPerReturn: 1, // each clean paddle return
   lossPerMiss: 12, // each miss
@@ -21,23 +26,18 @@ export const CONFIG = Object.freeze({
 });
 
 import { COLORS, BRICK_ROWS, SEA_BANDS, highlight, edge } from '../../shared/tokens.js';
-import { drawFitted, drawTextOutlined, measure } from '../../shared/font.js';
 import {
-  createScreen, drawScene, drawBackControl, BACK_SIZE, initPage, hitTest, publishHits, goToHub,
-  pixelBody, SEA_HEIGHT, reducedMotion,
+  createScreen, drawScene, initPage, pixelBody, SEA_HEIGHT, reducedMotion, atSideEdge,
 } from '../../shared/pixel.js';
-import { load, save } from '../../shared/store.js';
 import { tick } from '../../shared/haptics.js';
 import {
-  readClock, saveClock, beginPlay, addPlay, isStale, phaseOf, sceneStep, slowdownOf,
+  sessionClock, watchReset, addPlay, phaseOf, sceneStep, slowdownOf,
 } from '../../shared/session.js';
 import * as P from './physics.js';
 
 initPage();
 
-const SAVE_NAME = 'bricks'; // rlx.v<STATE_VERSION>.bricks: the full state
-const SCORE_NAME = 'bricks-score'; // rlx.v1.bricks-score: the all-time score alone
-const PAD = 6; // thumb-friendly hit area around the back control
+const TOP = 5; // the field starts this far below the top of the screen (inside the safe area)
 const PARTICLES = 8;
 const PARTICLE_S = 0.3;
 const SPLASH_S = 0.3;
@@ -45,6 +45,9 @@ const TRAIL = 3;
 const TRAIL_SPACING = 4; // px of travel between trail squares
 const RING_R = 7;
 const SPLASH = ['#.....#', '.#.#.#.', '..###..'];
+// The pause ring's chevrons, drawn as pixels (the shapes of the font's < and >).
+const CHEVRON_L = ['...#', '..#.', '.#..', '#...', '.#..', '..#.', '...#'];
+const CHEVRON_R = CHEVRON_L.map((row) => [...row].reverse().join(''));
 
 const canvas = document.getElementById('screen');
 let game = null;
@@ -52,9 +55,8 @@ let rects = null;
 let layoutKey = '';
 let bg = null; // the scene for the current layout and scene step
 let bgStep = -1;
-let clock = null; // the shared session clock (shared/session.js)
-let clockReset = false; // the clock was reset on load: the pace starts again
-let rally = 0; // paddle returns since the last miss; never saved
+const clock = sessionClock(); // the one shared session clock, in memory (shared/session.js)
+const clockWasReset = watchReset(clock); // true once after each reset: the pace starts again
 let mode = 'paused'; // 'paused' | 'resuming' | 'running'
 let resumeAt = 0;
 let raf = 0;
@@ -62,8 +64,6 @@ let last = 0;
 let acc = 0;
 const pointers = new Map(); // pointerId -> last logical x, for every finger down
 let driver = null; // the one finger that moves the paddle: the first down
-let backPointer = null;
-let backPressed = false;
 const fx = { particles: [], trail: [], travel: 0, splash: null };
 
 /* ---------- sprites ---------- */
@@ -85,54 +85,14 @@ const SPLASH_TOP = COLORS.cloud;
 const SPLASH_BODY = highlight(SEA_BANDS[0]);
 const PADDLE_EDGE = edge(COLORS.coral); // B4: the paddle's 1 px edge all round
 
-/* ---------- save and restore ---------- */
-
-function storedScore() {
-  const n = load(SCORE_NAME, null, 1);
-  return Number.isSafeInteger(n) && n >= 0 ? n : 0;
-}
-
-function loadClock() {
-  const r = readClock(Date.now());
-  clock = r.clock;
-  clockReset = r.reset;
-}
-
-function loadGame(geo) {
-  const raw = load(SAVE_NAME, null, P.STATE_VERSION);
-  const s = P.restore(raw, geo, CONFIG);
-  const kept = storedScore();
-  if (s) {
-    s.score = Math.max(s.score, kept);
-    if (clockReset) P.resetPace(s, CONFIG); // a new session starts at speedStart
-    return s;
-  }
-  // Corrupt or old-version save: a fresh field, the score kept if readable.
-  let score = Math.max(kept, P.readScore(raw) ?? 0);
-  for (let v = 1; v < P.STATE_VERSION; v++) score = Math.max(score, P.readScore(load(SAVE_NAME, null, v)) ?? 0);
-  return P.create(geo, CONFIG, score);
-}
-
-function persist() {
-  if (!game) return;
-  save(SAVE_NAME, game, P.STATE_VERSION);
-  save(SCORE_NAME, game.score, 1);
-  if (clock) saveClock(clock);
-}
-
 /* ---------- layout and drawing ---------- */
 
 function layout(s) {
-  const side = Math.max(s.safe.left, s.safe.right);
-  const back = { x: 4 + side, y: 5 + s.safe.top, w: BACK_SIZE.w, h: BACK_SIZE.h };
-  const sx = back.x + back.w + 6;
-  // Score on the back control's top line, the rally number under it.
-  const score = { x: sx, y: back.y, w: s.W - 4 - side - sx, h: 7 };
-  const rallyBox = { x: sx, y: back.y + 9, w: score.w, h: 7 };
+  // No HUD: the field takes the whole screen down from the top.
   const horizon = s.H - SEA_HEIGHT;
-  const geo = P.geometry(s.W, back.y + back.h + 5, horizon);
+  const geo = P.geometry(s.W, TOP + s.safe.top, horizon);
   const ring = { x: Math.floor(s.W / 2), y: Math.min(horizon + 21, s.H - s.safe.bottom - RING_R - 2) };
-  return { back, score, rally: rallyBox, geo, ring };
+  return { geo, ring };
 }
 
 function paintBackground(s, phase) {
@@ -197,20 +157,32 @@ function drawRing(ctx) {
   disc(RING_R + 1, COLORS.ink);
   disc(RING_R, COLORS.cloud);
   disc(RING_R - 1, RING_FILL);
-  const cw = measure('<', 1);
-  drawTextOutlined(ctx, '<', x - RING_R - 8 - cw, y - 3, 1, COLORS.cloud, COLORS.ink);
-  drawTextOutlined(ctx, '>', x + RING_R + 9, y - 3, 1, COLORS.cloud, COLORS.ink);
+  chevron(ctx, CHEVRON_L, x - RING_R - 8 - CHEVRON_L[0].length, y - 3);
+  chevron(ctx, CHEVRON_R, x + RING_R + 9, y - 3);
+}
+
+/** A white chevron in a 1 px ink outline. */
+function chevron(ctx, rows, x0, y0) {
+  const ink = (c, r) => r >= 0 && r < rows.length && c >= 0 && c < rows[r].length && rows[r][c] === '#';
+  ctx.fillStyle = COLORS.ink;
+  for (let r = -1; r <= rows.length; r++) {
+    for (let c = -1; c <= rows[0].length; c++) {
+      if (ink(c, r)) continue;
+      let near = false;
+      for (let dr = -1; dr <= 1 && !near; dr++) for (let dc = -1; dc <= 1; dc++) if (ink(c + dc, r + dr)) near = true;
+      if (near) ctx.fillRect(x0 + c, y0 + r, 1, 1);
+    }
+  }
+  ctx.fillStyle = COLORS.cloud;
+  rows.forEach((row, r) => { for (let c = 0; c < row.length; c++) if (row[c] === '#') ctx.fillRect(x0 + c, y0 + r, 1, 1); });
 }
 
 function draw(ctx, s) {
   const key = `${s.W}x${s.H}@${s.scale}:${s.safe.top},${s.safe.right},${s.safe.bottom},${s.safe.left}`;
-  if (!clock) loadClock();
-  // The phase of the clock as it stands: after the reset gap, sunset (the
-  // clock itself resets when play starts again).
-  const phase = isStale(clock, Date.now()) ? 0 : phaseOf(clock.active);
+  const phase = phaseOf(clock.active);
   if (key !== layoutKey || !rects) {
     rects = layout(s);
-    if (!game) game = loadGame(rects.geo);
+    if (!game) game = P.create(rects.geo, CONFIG); // a fresh field on every opening
     else P.setGeometry(game, rects.geo);
     bgStep = -1;
   }
@@ -250,18 +222,7 @@ function draw(ctx, s) {
     });
   }
   if (mode === 'paused') drawRing(ctx);
-
-  const hud = {
-    score: drawFitted(ctx, String(game.score), rects.score, COLORS.ink, { align: 'right', maxSize: 1 }),
-    rally: drawFitted(ctx, String(rally), rects.rally, COLORS.ink, { align: 'right', maxSize: 1 }),
-  };
-  drawBackControl(ctx, rects.back.x, rects.back.y, backPressed);
-
-  if (key !== layoutKey) {
-    layoutKey = key;
-    publishHits(canvas, s, { back: rects.back, score: rects.score, rally: rects.rally });
-  }
-  canvas.dataset.hud = JSON.stringify(hud); // drawn text sizes (0: did not fit)
+  layoutKey = key;
 }
 
 /* ---------- effects, advanced with the simulation ---------- */
@@ -306,7 +267,6 @@ function fxStep(dt) {
 }
 
 function handle(events) {
-  rally = P.rallyAfter(rally, events);
   for (const e of events) {
     if (e.type === 'brick') {
       tick(CONFIG.hapticBrickMs);
@@ -328,17 +288,16 @@ function frame(now) {
     mode = 'running';
     last = now;
     acc = 0;
-    // Active play starts: after the reset gap the clock and the pace start again.
-    if (beginPlay(clock, Date.now())) P.resetPace(game, CONFIG);
+    // Active play starts: if the clock has started again since, so does the pace.
+    if (clockWasReset()) P.resetPace(game, CONFIG);
   }
   if (mode === 'running') {
     acc += Math.min(0.1, Math.max(0, (now - last) / 1000));
     last = now;
-    const wall = Date.now();
     while (acc >= P.DT) {
       acc -= P.DT;
       // Only running steps advance the session clock: paused time never does.
-      addPlay(clock, P.DT, wall);
+      addPlay(clock, P.DT);
       handle(P.step(game, CONFIG, slowdownOf(clock.active)));
       fxStep(P.DT);
     }
@@ -357,24 +316,17 @@ function pause() {
     mode = 'paused';
     acc = 0;
   }
-  persist();
   redraw();
 }
 
-/* ---------- input: relative horizontal drag anywhere ---------- */
+/* ---------- input: relative horizontal drag anywhere but the side edges ---------- */
 
 const screen = createScreen(canvas, draw);
 
 canvas.addEventListener('pointerdown', (e) => {
   e.preventDefault();
-  if (!rects || !game) return;
+  if (!rects || !game || atSideEdge(e)) return; // an edge swipe is the back gesture: it moves nothing
   const p = screen.toLogical(e.clientX, e.clientY);
-  if (pointers.size === 0 && backPointer === null && hitTest(p, rects.back, PAD)) {
-    backPointer = e.pointerId;
-    backPressed = true;
-    redraw();
-    return;
-  }
   try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
   pointers.set(e.pointerId, p.x);
   if (driver === null) driver = e.pointerId;
@@ -386,14 +338,6 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 
 canvas.addEventListener('pointermove', (e) => {
-  if (e.pointerId === backPointer) {
-    const on = hitTest(screen.toLogical(e.clientX, e.clientY), rects.back, PAD);
-    if (on !== backPressed) {
-      backPressed = on;
-      redraw();
-    }
-    return;
-  }
   if (!pointers.has(e.pointerId)) return;
   const x = screen.toLogical(e.clientX, e.clientY).x;
   const dx = x - pointers.get(e.pointerId);
@@ -406,19 +350,7 @@ canvas.addEventListener('pointermove', (e) => {
   if (live) handle(ev);
 });
 
-function lift(e, cancelled) {
-  if (e.pointerId === backPointer) {
-    const hit = !cancelled && hitTest(screen.toLogical(e.clientX, e.clientY), rects.back, PAD);
-    backPointer = null;
-    backPressed = false;
-    if (hit) {
-      persist();
-      goToHub();
-      return;
-    }
-    redraw();
-    return;
-  }
+function lift(e) {
   if (!pointers.delete(e.pointerId)) return;
   if (e.pointerId === driver) {
     // The next finger still down, if any, takes over from where it is.
@@ -427,21 +359,18 @@ function lift(e, cancelled) {
   if (pointers.size === 0) pause();
 }
 
-canvas.addEventListener('pointerup', (e) => { e.preventDefault(); lift(e, false); });
-canvas.addEventListener('pointercancel', (e) => lift(e, true));
+canvas.addEventListener('pointerup', (e) => { e.preventDefault(); lift(e); });
+canvas.addEventListener('pointercancel', (e) => lift(e));
 
-/* ---------- lifecycle: hidden or closed means paused and saved ---------- */
+/* ---------- lifecycle: hidden or closed means paused; nothing is saved ---------- */
 
 function sleep() {
   pointers.clear();
   driver = null;
-  backPointer = null;
-  backPressed = false;
   mode = 'paused';
   acc = 0;
   if (raf) cancelAnimationFrame(raf);
   raf = 0;
-  persist();
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -451,16 +380,18 @@ document.addEventListener('visibilitychange', () => {
 addEventListener('pagehide', sleep);
 addEventListener('pageshow', () => { mode = 'paused'; redraw(); });
 
-// Read-only hook for tests/check.py; the game never reads it.
+// Hook for tests/check.py; the game never reads it. snapshot() is a copy;
+// live() is the game state itself, so a test can set up a scene.
 Object.defineProperty(window, '__bricks', {
   value: Object.freeze({
+    live: () => game,
     snapshot: () => ({
       mode,
       raf: !!raf,
       fingers: pointers.size,
       count: game ? P.brickCount(game) : 0,
-      rally,
-      clock: clock ? { ...clock } : null,
+      view: { W: screen.W, H: screen.H, scale: screen.scale, ox: screen.ox, oy: screen.oy },
+      clock: { ...clock },
       step: bgStep,
       particles: fx.particles.length,
       trail: fx.trail.length,

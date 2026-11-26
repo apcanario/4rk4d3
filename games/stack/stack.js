@@ -26,7 +26,6 @@ export const CONFIG = Object.freeze({
   loss: 8, // ...takes off this
   hapticLandMs: 8,
   hapticSnapMs: 16,
-  edgeIgnoreCssPx: 24, // a touch that begins this close to the left or right edge is ignored
   // Where PLAN §6d is silent (listed for a Proposed row):
   camSpeed: 64, // the camera slides the tower down one floor in 125 ms
   missGravity: 360, // a missed block falls into the sea, px per second squared
@@ -37,9 +36,9 @@ export const CONFIG = Object.freeze({
 });
 
 import { COLORS, BRICK_ROWS, edge } from '../../shared/tokens.js';
-import { createScreen, initPage, drawScene, pixelBody, steppedRect, reducedMotion, SEA_HEIGHT } from '../../shared/pixel.js';
+import { createScreen, initPage, atSideEdge, drawScene, pixelBody, steppedRect, reducedMotion, SEA_HEIGHT } from '../../shared/pixel.js';
 import { MIN_GAP_MS } from '../../shared/haptics.js';
-import { readClock, beginPlay, addPlay, phaseOf, sceneStep, slowdownOf, SESSION } from '../../shared/session.js';
+import { sessionClock, watchReset, addPlay, phaseOf, sceneStep, slowdownOf, SESSION } from '../../shared/session.js';
 import * as S from './sim.js';
 
 initPage();
@@ -63,11 +62,11 @@ let acc = 0;
 let lastBuzz = -Infinity;
 let sceneCache = { key: '', canvas: null };
 
-/* ---------- the session clock: read, advanced in memory, never written ---------- */
+/* ---------- the session clock: shared, in memory, never written to storage ---------- */
 
 // While the page is visible the block slides, so all visible time is active play.
-const clock = readClock(Date.now()).clock;
-beginPlay(clock, Date.now());
+const clock = sessionClock(); // the one shared clock (shared/session.js): the hub's, or this page's own
+const clockWasReset = watchReset(clock); // true once after each reset: the pace starts again
 
 const slow = () => slowdownOf(clock.active);
 const currentStep = () => sceneStep(phaseOf(clock.active));
@@ -178,7 +177,9 @@ function frame(now) {
   }
   const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
   last = now;
-  addPlay(clock, dt, Date.now());
+  // Made on the tile's touch but not yet shown: not play, so the clock waits.
+  const fe = window.frameElement;
+  if (!fe || fe.classList.contains('shown')) addPlay(clock, dt);
   const sl = slow();
   const instant = reducedMotion();
   acc += dt;
@@ -215,8 +216,7 @@ function pause() {
 const screen = createScreen(canvas, draw);
 
 function nearEdge(e) {
-  const w = document.documentElement.clientWidth || innerWidth;
-  return e.clientX < CONFIG.edgeIgnoreCssPx || e.clientX > w - CONFIG.edgeIgnoreCssPx;
+  return atSideEdge(e); // shared: shared/pixel.js INPUT.edgeIgnoreCssPx
 }
 
 canvas.addEventListener('pointerdown', (e) => {
@@ -253,8 +253,8 @@ canvas.addEventListener('pointerdown', (e) => {
 
 function show() {
   if (document.hidden) return;
-  // After the reset gap the clock starts again, and so does the pace.
-  if (beginPlay(clock, Date.now()) && game) S.resetPace(game, CONFIG);
+  // If the clock has started again (the page was hidden 5 minutes or more), so does the pace.
+  if (clockWasReset() && game) S.resetPace(game, CONFIG);
   run();
 }
 

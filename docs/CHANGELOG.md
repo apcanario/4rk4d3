@@ -234,3 +234,24 @@ Review findings and fixes (no blockers):
 Not verifiable headless: tap-to-drop latency and feel, the 8 and 16 ms ticks told apart by feel, Chrome's vibrate gate, fps, the camera slide, the back gesture, the look at dusk and outdoors, reduced motion on a device, split screen and rotation.
 
 Deferred: X22 (PLAN amendments), X23 (device pass).
+
+## 2026-11-26: X1 strip-down
+
+Models that ran: main chat Sonnet 5.5; builder Opus 5.5 (claude-opus-5-5); reviewer Opus 5.5 (claude-opus-5-5), which had not seen the build; fixes applied by the main chat, Sonnet 5.5.
+
+Built: PLAN §6e across the hub, Bricks, Catch, Putt and Stack. No HUD anywhere (no back control, score, count, rally or run, no font import in any game; the Bricks pause-ring chevrons are pixel masks). All saving, restoring and stored counts removed; shared/settings.js and shared/store.js deleted; haptics always on; stored rlx.* keys cleared on every start. Manifest display fullscreen. Shared INPUT {thumbTravel 0.5, edgeIgnoreCssPx 24}, atSideEdge() and thumbSensitivity() in shared/pixel.js; Catch's boat now moves end to end over 50 percent of the screen width; every game ignores touches beginning within 24 CSS px of a side edge. Hub: four active tiles, nothing else. Architecture (not in PLAN, proposed X24): the hub opens each game in a fullscreen iframe with one history entry, so the in-memory session clock survives across games and the back gesture is the only way home. README, PLAN §4, §5, §6 and §6b brought in line. Tests: bricks-sim 215, catch-sim 181, putt-sim 70, stack-sim 109 (the edge key checks removed), tests/check.py with new checks (storage empty after play, no text or button on any game, hub tiles only, fullscreen manifest, edge touches, back gesture, one clock across games, the 5-minute reset, the real-vibrate activation check). Service worker rlx-v14.
+
+Review findings and fixes:
+1. should-fix, Stack ran inside the not-yet-shown frame and advanced the session clock while the tile was held: Stack counts play only once its frame is shown. Fixed.
+2. should-fix (process), the frame architecture is the builder's choice, not PLAN's: kept, proposed as X24 for Pedro's veto.
+3. should-fix (process), PLAN §4 and §6b were edited beyond "sections 5 and 6", and the old Proposed row X1 clashed with the Queue row: the §4 edit closes that Proposed row (removed); stale rows marked in X19 and X29.
+4. note, Bricks still drags at 1.2 and PLAN §6 now says so: proposed as X26.
+5. nit, Putt and Stack kept their own 24 px edge code: both use atSideEdge from shared/pixel.js now, their CONFIG key and its test check removed. Fixed.
+6. note, a game opened by its direct URL has no way back: proposed as X31.
+7. note, one inert back after a reload on a game entry: the hub steps back one entry instead of replacing it. Fixed; reasoned from code, not run on a device (X25).
+8. nit, dead code: not changed. drawTextOutlined is in use (drawFitted calls it for the hub); COLORS.card is read by tests/check.py as a fallback; .sr-only predates X1. Left.
+9. note, the first launch after deploy mixes an old hub with new games for one session: harmless.
+
+Not verifiable headless: one edge swipe in the installed fullscreen app (if Android needs two, switch the manifest to standalone), vibrate in the frame on real Chrome for Android, display-cutout insets, a real kill and relaunch, feel and fps. Proposed as X25.
+
+Deferred: X18 (Putt idleS), X21 (§6c rule number), X24 to X31.

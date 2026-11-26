@@ -20,7 +20,6 @@ export const CONFIG = Object.freeze({
   captureSpeed: 140, // the ball drops if its centre is within the hole radius under this speed
   pullCapPx: 60, // power is the pull length, capped here (logical px)
   cancelPx: 4, // a pull this short or shorter is released as no shot
-  edgeIgnoreCssPx: 24, // a touch that begins this close to the left or right edge is ignored
   hapticReleaseMs: 10,
   hapticBounceMs: 6,
   hapticSinkMs: 24,
@@ -36,9 +35,9 @@ export const CONFIG = Object.freeze({
 });
 
 import { LOGICAL_WIDTH, COLORS, BRICK_ROWS, mix, shade, highlight, edge, scenePalette } from '../../shared/tokens.js';
-import { createScreen, initPage, pixelBody, ditherRow, reducedMotion, MIN_HEIGHT } from '../../shared/pixel.js';
+import { createScreen, initPage, atSideEdge, pixelBody, ditherRow, reducedMotion, MIN_HEIGHT } from '../../shared/pixel.js';
 import { MIN_GAP_MS } from '../../shared/haptics.js';
-import { readClock, beginPlay, addPlay, phaseOf, sceneStep, isStale, SESSION } from '../../shared/session.js';
+import { sessionClock, addPlay, phaseOf, sceneStep, SESSION } from '../../shared/session.js';
 import * as S from './sim.js';
 import * as G from './gen.js';
 
@@ -255,23 +254,22 @@ let last = 0;
 let acc = 0;
 let lastBuzz = -Infinity;
 
-/* ---------- the session clock: read, advanced in memory, never written ---------- */
+/* ---------- the session clock: shared, in memory, never written to storage ---------- */
 
-const clock = readClock(Date.now()).clock; // the shared clock as the other games left it (read only)
+const clock = sessionClock(); // the one shared clock (shared/session.js): the hub's, or this page's own
 let engagedUntil = 0; // performance.now() until which play counts as active
 let lastAccrue = performance.now();
 let stepTimer = 0;
 
 function accrue(now) {
   const end = Math.min(now, engagedUntil);
-  if (end > lastAccrue) addPlay(clock, (end - lastAccrue) / 1000, Date.now() - (now - end));
+  if (end > lastAccrue) addPlay(clock, (end - lastAccrue) / 1000);
   lastAccrue = now;
 }
 
 /** Something happened (a touch, a rolling ball): play is active for idleS more. */
 function engage(now) {
   accrue(now);
-  if (now >= engagedUntil) beginPlay(clock, Date.now()); // after the reset gap the clock starts again
   engagedUntil = Math.max(engagedUntil, now + CONFIG.idleS * 1000);
   if (!stepTimer) stepTimer = setTimeout(stepCheck, 2000);
 }
@@ -288,7 +286,7 @@ function stepCheck() {
 }
 
 function currentStep() {
-  return sceneStep(isStale(clock, Date.now()) ? 0 : phaseOf(clock.active));
+  return sceneStep(phaseOf(clock.active));
 }
 
 const dusk = () => clock.active >= SESSION.rampMin * 60;
@@ -692,8 +690,7 @@ if (opening.diff === 3) {
 const screen = createScreen(canvas, draw);
 
 function nearEdge(e) {
-  const w = document.documentElement.clientWidth || innerWidth;
-  return e.clientX < CONFIG.edgeIgnoreCssPx || e.clientX > w - CONFIG.edgeIgnoreCssPx;
+  return atSideEdge(e); // shared: shared/pixel.js INPUT.edgeIgnoreCssPx
 }
 
 canvas.addEventListener('pointerdown', (e) => {

@@ -33,7 +33,7 @@ check(stackSrc.indexOf('export const CONFIG') < stackSrc.indexOf('import '), 'CO
 check(CONFIG && CONFIG.blockH === 8 && CONFIG.startW === 60 && CONFIG.maxW === 60 && CONFIG.resetW === 60 && CONFIG.minFloorW === 12
   && CONFIG.snapPx === 2 && CONFIG.regainPx === 2 && CONFIG.speedMin === 40 && CONFIG.speedStart === 50 && CONFIG.speedMax === 80
   && CONFIG.gainOverlap === 0.8 && CONFIG.gain === 1 && CONFIG.lossOverlap === 0.5 && CONFIG.loss === 8
-  && CONFIG.hapticLandMs === 8 && CONFIG.hapticSnapMs === 16 && CONFIG.edgeIgnoreCssPx === 24,
+  && CONFIG.hapticLandMs === 8 && CONFIG.hapticSnapMs === 16,
   `CONFIG holds the PLAN values ${JSON.stringify(CONFIG)}`);
 const C = CONFIG;
 const noComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
@@ -55,7 +55,8 @@ check(/horizon: s\.H - SEA_HEIGHT/.test(code) && /SEA_HEIGHT \} from '\.\.\/\.\.
 const hexIn = (src) => (src.match(/#[0-9A-Fa-f]{6}\b/g) || []);
 check(hexIn(code).length === 0 && hexIn(simSrc).length === 0, 'no colour literals in the game: tokens only');
 check(/reducedMotion\(\)/.test(code) && /r\.cut\.length && !reducedMotion\(\)/.test(code), 'overhang bits only without reduced motion');
-check(/addPlay\(clock/.test(code) && /readClock\(/.test(code) && !/saveClock/.test(code), 'stack.js reads the shared clock and advances it in memory only');
+check(/addPlay\(clock/.test(code) && /sessionClock\(\)/.test(code) && !/saveClock|readClock/.test(code)
+  && /clockWasReset\(\) && game\) S\.resetPace/.test(code), 'stack.js uses the one shared clock in memory and restarts the pace when it resets (row X1)');
 
 /* ---------- helpers ---------- */
 

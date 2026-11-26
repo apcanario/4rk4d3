@@ -1,35 +1,36 @@
 #!/usr/bin/env python3
-"""RLX checks (rows H1, B1, B2, C1, B4, U1 and S1) in headless Chromium and Node. Not needed to run the app.
+"""RLX checks (rows H1, B1, B2, C1, B4, U1, S1 and X1) in headless Chromium and Node. Not needed to run the app.
 
 Needs Python Playwright with Chromium (pip install playwright;
 python -m playwright install chromium). Run: python3 tests/check.py
 Serves the repo under /4rk4d3/ (the GitHub Pages project subpath), then checks
-both phone widths: pixels crisp, no scroll, navigation by tap and by back,
-haptics setting persists, service worker offline, cache version bump, no
-console errors, no requests to another host. Row B1: runs tests/bricks-sim.mjs
-(physics in Node) and plays Bricks in the browser: pause and resume, relative
-drag, save on pause and on hide, restore after a kill, corrupt and old saves,
-haptics on and off, reduced motion, no loop while paused. Row B2: the session
-clock (paused time never advances it, saved with the game), the hub drawing
-the scene phase of the saved clock, Bricks at full dusk (colours kept and
-readable), the reset after the gap. Row C1: runs tests/catch-sim.mjs and plays
-Catch with real touch events (CDP): taps and fish, the pause grace, save and
-restore, haptics, dusk, one clock across games; the hub's CATCH tile. Row B4:
-the contrast standard on the hub (wordmark, tiles, toggle, tag) at sunset and
-all 10 steps on logical heights 240, 300 and 400, and the drawn colours of the
-hub, Bricks and Catch at sunset, step 5 and step 10 (see tests/contrast.mjs).
-Row U1: runs tests/putt-sim.mjs and plays Putt with real touch events: the
-PUTT tile, a level at once and the next built in a Web Worker, no HUD, edge
-touches ignored, a cancelled pull, real shots planned with the page's own
-sim.js until the ball drops (10, 6 and 24 ms ticks), the next level sliding
-in with no wait, level 1 only from minute 10, nothing written to storage, a
-new level on every opening, offline. Row S1: runs tests/stack-sim.mjs and plays
-Stack with real touch events: the STACK tile (now active), a new tower on every
-opening, no HUD, edge touches ignored, timed taps for a near-perfect drop (16
-ms), a landed drop with bits (8 ms), a complete miss (no tick, only the pace
-changes), a floor under 12 px followed by a 60 px block, hidden and pagehide
-pause, reduced motion, the clock in memory, dusk, nothing written to storage,
-offline, the drawn colours at sunset, step 5 and step 10.
+both phone widths: pixels crisp, no scroll, the hub's tiles and nothing else,
+each game opened over the hub by its tile and closed by the back gesture
+(history back), old rlx.* keys cleared at start, the manifest fullscreen, the
+service worker offline, cache version bump, no console errors, no requests to
+another host. Row X1 throughout: no text, number or button on any game screen,
+storage empty after play in every game, touches that begin within 24 CSS px
+of a side edge ignored in every game, a fresh game on every opening, haptics
+always on, one session clock in memory shared by the hub and every game it
+opens (reset when the app starts and after 5 minutes hidden), Catch's drag on
+the shared thumb travel, and a game opened by its tile allowed to vibrate at
+once (real vibrate, real touch). Rows B1 and B2: tests/bricks-sim.mjs (physics
+in Node) and Bricks in the browser: pause and resume, relative drag, haptics,
+reduced motion, no loop while paused, the clock, the hub drawing the scene
+phase, Bricks at full dusk. Row C1: tests/catch-sim.mjs and Catch with real
+touch events (CDP): taps and fish, the pause grace, haptics, dusk. Row B4: the
+contrast standard on the hub (wordmark, tiles) at sunset and all 10 steps on
+logical heights 240, 300 and 400, and the drawn colours of the hub, Bricks and
+Catch at sunset, step 5 and step 10 (see tests/contrast.mjs). Row U1:
+tests/putt-sim.mjs and Putt with real touch events: a level at once and the
+next built in a Web Worker, a cancelled pull, real shots planned with the
+page's own sim.js until the ball drops (10, 6 and 24 ms ticks), the next level
+sliding in with no wait, level 1 only from minute 10, a new level on every
+opening, offline. Row S1: tests/stack-sim.mjs and Stack with real touch
+events: a new tower on every opening, timed taps for a near-perfect drop (16
+ms), a landed drop with bits (8 ms), a complete miss, a floor under 12 px
+followed by a 60 px block, hidden and pagehide pause, reduced motion, dusk,
+the drawn colours at sunset, step 5 and step 10.
 Screenshots go to tests/out/.
 """
 import functools
@@ -121,7 +122,7 @@ def layout_of(page):
 
 
 def hub_layout_checks(page, tag, h):
-    """Tiles: top edge in the lower half, sun clear where room allows, one label size."""
+    """Tiles: top edge in the lower half, sun clear where room allows, one label size; tiles and nothing else."""
     lay = layout_of(page)
     H, r = lay["H"], lay["rects"]
     horizon = H - 42
@@ -134,7 +135,9 @@ def hub_layout_checks(page, tag, h):
         check(bottom <= horizon - 12, f"[{tag}] at least half the sun clear of the tiles (tiles end {bottom}, horizon {horizon})")
     labels = json.loads(page.eval_on_selector("#screen", "c => c.dataset.labels"))
     check(len(set(labels.values())) == 1 and 0 not in labels.values(), f"[{tag}] all tile labels drawn at one size {labels}")
-    check(r["haptics"]["y"] + r["haptics"]["h"] <= H, f"[{tag}] haptics control inside the screen")
+    # Row X1: the hub is the game tiles and nothing else: one active tile per built game, no switch, no setting.
+    check(sorted(hits(page)) == sorted(GAMES) and sorted(labels) == sorted(GAMES),
+          f"[{tag}] the hub has one tile per built game and nothing else {sorted(hits(page))}")
     return lay
 
 
@@ -144,7 +147,7 @@ def tap(page, name):
 
 
 def crisp(page, shot_path, scale=None):
-    """Every logical pixel must be a uniform scale x scale block in the screenshot (scale: given, or the page's layout)."""
+    """Every logical pixel must be a uniform scale x scale block in the screenshot (scale: given, or the page's view)."""
     from PIL import Image
 
     info = page.evaluate("""() => {
@@ -153,7 +156,7 @@ def crisp(page, shot_path, scale=None):
                sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight };
     }""")
     img = Image.open(shot_path).convert("RGB")
-    s = scale or layout_of(page)["scale"]
+    s = scale or view_of(page)["scale"]
     ox = (info["cw"] - 135 * s) // 2
     H = info["ch"] // s
     oy = (info["ch"] - H * s) // 2
@@ -186,6 +189,14 @@ def run_viewport(browser, base, w, h):
 
     page.goto(base)
     hits(page)
+    # Row X1: an earlier build's keys are cleared at start; another app's key on the same origin is kept.
+    page.evaluate(STALE_KEYS_JS)
+    page.reload()
+    hits(page)
+    st = page.evaluate(STORAGE_JS)
+    check(st["local"] == {"other-app": "kept"} and st["session"] == {},
+          f"[{tag}] at start every stored rlx.* key is cleared (localStorage and sessionStorage), other keys kept {st}")
+    page.evaluate("localStorage.removeItem('other-app')")
     page.wait_for_timeout(300)
     shot = OUT / f"hub-{tag}.png"
     page.screenshot(path=str(shot))
@@ -196,114 +207,48 @@ def run_viewport(browser, base, w, h):
     check(info["sw"] <= info["iw"] and info["sh"] <= info["ih"], f"[{tag}] no scrolling or sideways overflow (scroll {info['sw']}x{info['sh']} vs {info['iw']}x{info['ih']})")
     check(H >= 240, f"[{tag}] logical height {H} >= 240")
     hub_layout_checks(page, tag, h)
+    hub_dom = page.evaluate("() => ({ text: document.body.innerText.trim(), controls: document.querySelectorAll('button, a, input, select, [role=button]').length })")
+    check(hub_dom == {"text": "", "controls": 0}, f"[{tag}] the hub has no switch, setting or other control in the DOM {hub_dom}")
 
-    # Navigation: tap BRICKS, back gesture (history back), tap again, back control.
-    tap(page, "bricks")
-    page.wait_for_url("**/games/bricks/")
-    hits(page)
-    page.wait_for_timeout(200)
-    page.screenshot(path=str(OUT / f"bricks-{tag}.png"))
-    check(page.url.endswith("/4rk4d3/games/bricks/"), f"[{tag}] tap BRICKS opens the placeholder")
-    page.go_back()
-    page.wait_for_url(base)
-    hits(page)
-    check(page.url == base, f"[{tag}] back gesture (history back) returns to the hub")
-    tap(page, "bricks")
-    page.wait_for_url("**/games/bricks/")
+    # Navigation: each tile opens its game over the hub; the back gesture (history back) returns.
     hlen = page.evaluate("history.length")
-    tap(page, "back")
-    page.wait_for_url(base)
-    hits(page)
-    check(page.url == base, f"[{tag}] back control returns to the hub")
-    page.wait_for_timeout(100)
-    check(page.evaluate("history.length") == hlen, f"[{tag}] back control does not grow history")
-    # Direct open of the placeholder, then the back control: lands on the hub.
-    page.goto(base + "games/bricks/")
-    tap(page, "back")
-    page.wait_for_url(base)
-    check(page.url == base, f"[{tag}] back control from a directly opened game goes to the hub")
+    for game in GAMES:
+        g = open_tile(page, game)
+        page.wait_for_timeout(150)
+        page.screenshot(path=str(OUT / f"{game}-{tag}.png"))
+        shown = page.evaluate("(() => { const f = document.querySelector('iframe.game'); const r = f.getBoundingClientRect(); "
+                              "return { shown: f.classList.contains('shown'), w: r.width, h: r.height, n: document.querySelectorAll('iframe').length }; })()")
+        check(page.url == base and shown == {"shown": True, "w": w, "h": h, "n": 1},
+              f"[{tag}] tap {game.upper()} opens {game} full screen over the hub (the page stays the hub) {shown}")
+        no_hud(g, tag, game)
+        back_to_hub(page)
+        check(page.url == base and page.evaluate("document.querySelectorAll('iframe').length") == 0,
+              f"[{tag}] back gesture (history back) returns from {game} to the hub, the game gone")
+    check(page.evaluate("history.length") == hlen + 1, f"[{tag}] going in and out of games leaves one history entry above the hub")
 
-    # Only tiles open games: a tap on the open sky between the wordmark and the tiles opens nothing
-    # (row S1: STACK is active now, so no SOON tile is left to test this with).
-    sky_y = (hits(page)["bricks"]["y"] + 0) * 0.6
+    # Only tiles open games: a tap on the open sky between the wordmark and the tiles opens nothing.
+    sky_y = hits(page)["bricks"]["y"] * 0.6
     page.touchscreen.tap(180, sky_y)
     page.wait_for_timeout(300)
-    check(page.url == base, f"[{tag}] a tap on the hub's open sky ({sky_y:.0f} CSS px) opens nothing")
-    # Row S1: the STACK tile opens Stack with one tap; the back gesture (history back) returns.
-    tap(page, "stack")
-    page.wait_for_url("**/games/stack/")
-    page.wait_for_function("window.__stack && window.__stack.snapshot().game", timeout=10000)
-    page.wait_for_timeout(150)
-    page.screenshot(path=str(OUT / f"stack-{tag}.png"))
-    check(page.url.endswith("/4rk4d3/games/stack/"), f"[{tag}] tap STACK opens Stack")
-    page.go_back()
-    page.wait_for_url(base)
-    hits(page)
-    check(page.url == base, f"[{tag}] back gesture (history back) returns from Stack to the hub")
-    tap(page, "catch")
-    page.wait_for_url("**/games/catch/")
-    hits(page)
-    page.wait_for_timeout(150)
-    page.screenshot(path=str(OUT / f"catch-{tag}.png"))
-    check(page.url.endswith("/4rk4d3/games/catch/"), f"[{tag}] tap CATCH opens Catch")
-    page.go_back()
-    page.wait_for_url(base)
-    hits(page)
-    check(page.url == base, f"[{tag}] back gesture (history back) returns from Catch to the hub")
-    tap(page, "catch")
-    page.wait_for_url("**/games/catch/")
-    hlen = page.evaluate("history.length")
-    tap(page, "back")
-    page.wait_for_url(base)
-    hits(page)
-    page.wait_for_timeout(100)
-    check(page.url == base and page.evaluate("history.length") == hlen, f"[{tag}] Catch back control returns to the hub, history not grown")
-    # Row U1: the PUTT tile opens Putt; the back gesture (history back) returns.
-    tap(page, "putt")
-    page.wait_for_url("**/games/putt/")
-    page.wait_for_function("window.__putt && window.__putt.snapshot().level", timeout=20000)
-    page.wait_for_timeout(150)
-    page.screenshot(path=str(OUT / f"putt-{tag}.png"))
-    check(page.url.endswith("/4rk4d3/games/putt/"), f"[{tag}] tap PUTT opens Putt")
-    page.go_back()
-    page.wait_for_url(base)
-    hits(page)
-    check(page.url == base, f"[{tag}] back gesture (history back) returns from Putt to the hub")
-
-    # Haptics: default on; off persists; on fires one test tick and persists.
-    page.evaluate("localStorage.clear()")
-    page.reload()
-    hits(page)
-    tap(page, "haptics")
-    page.wait_for_timeout(100)
-    stored = page.evaluate("localStorage.getItem('rlx.v1.settings')")
-    check(stored == '{"haptics":false}', f"[{tag}] haptics OFF stored under a versioned key ({stored})")
-    check(page.evaluate("window.__vib.length") == 0, f"[{tag}] switching off does not vibrate")
-    page.reload()
-    hits(page)
+    check(page.url == base and page.evaluate("document.querySelectorAll('iframe').length") == 0,
+          f"[{tag}] a tap on the hub's open sky ({sky_y:.0f} CSS px) opens nothing")
+    # A touch that starts on a tile and slides off it opens nothing (the frame made on touch is dropped).
+    p0 = hits(page)["catch"]
+    cdp = ctx.new_cdp_session(page)
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": p0["x"], "y": p0["y"]}]})
+    page.wait_for_timeout(60)
+    made = page.evaluate("document.querySelectorAll('iframe').length")
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [{"x": p0["x"], "y": sky_y}]})
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
     page.wait_for_timeout(200)
-    page.screenshot(path=str(OUT / f"hub-off-{tag}.png"))
-    check(page.evaluate("localStorage.getItem('rlx.v1.settings')") == '{"haptics":false}', f"[{tag}] haptics OFF survives reload")
-    tap(page, "haptics")
-    page.wait_for_timeout(100)
-    vib = page.evaluate("window.__vib")
-    check(vib == [16], f"[{tag}] switching on fires exactly one test tick ({vib})")
+    check(made == 1 and page.evaluate("document.querySelectorAll('iframe').length") == 0 and not page.evaluate("document.body.dataset.game || ''"),
+          f"[{tag}] a touch that slides off its tile opens nothing")
+    # Reloading on a game's history entry (Chrome reopening the app) shows the hub.
+    open_tile(page, "bricks")
     page.reload()
     hits(page)
-    check(page.evaluate("localStorage.getItem('rlx.v1.settings')") == '{"haptics":true}', f"[{tag}] haptics ON survives reload")
-    # Broken storage value does not throw and falls back to the default (on).
-    n_err = len(errors)
-    page.evaluate("localStorage.setItem('rlx.v1.settings', '{nope')")
-    page.reload()
-    hits(page)
-    page.evaluate("window.__vib = []")
-    tap(page, "haptics")  # default on, so this switches off: no vibrate
-    page.wait_for_timeout(100)
-    check(len(errors) == n_err and page.evaluate("localStorage.getItem('rlx.v1.settings')") == '{"haptics":false}'
-          and page.evaluate("window.__vib.length") == 0,
-          f"[{tag}] corrupt stored setting: no error, read as the default ON")
-    tap(page, "haptics")
-    page.wait_for_timeout(100)
+    check(page.url == base and page.evaluate("document.querySelectorAll('iframe').length") == 0 and page.evaluate("history.state") is None,
+          f"[{tag}] reloaded while a game was open: it opens at the hub")
 
     # Service worker and offline.
     page.evaluate("navigator.serviceWorker.ready.then(() => true)")
@@ -314,8 +259,7 @@ def run_viewport(browser, base, w, h):
     check(controlled, f"[{tag}] service worker controls the page")
     check(keys == [SW_VERSION], f"[{tag}] one versioned cache {keys}")
     manifest = page.evaluate("fetch(document.querySelector('link[rel=manifest]').href).then(r => r.json())")
-    check(manifest["display"] == "standalone" and manifest["orientation"] == "portrait", f"[{tag}] manifest standalone, portrait")
-    cdp = ctx.new_cdp_session(page)
+    check(manifest["display"] == "fullscreen" and manifest["orientation"] == "portrait", f"[{tag}] manifest fullscreen, portrait")
     try:
         inst = cdp.send("Page.getInstallabilityErrors")
         errs = inst.get("installabilityErrors", [])
@@ -327,53 +271,27 @@ def run_viewport(browser, base, w, h):
     hits(page)
     page.screenshot(path=str(OUT / f"hub-offline-{tag}.png"))
     check(page.url == base, f"[{tag}] hub loads offline")
-    tap(page, "bricks")
-    page.wait_for_url("**/games/bricks/")
-    back_hit = hits(page).get("back")
-    check(page.url == base + "games/bricks/" and back_hit is not None, f"[{tag}] Bricks opens and draws offline")
-    page.go_back()
-    page.wait_for_url(base)
-    hits(page)
-    tap(page, "catch")
-    page.wait_for_url("**/games/catch/")
-    check(page.url == base + "games/catch/" and hits(page).get("back") is not None, f"[{tag}] Catch opens and draws offline")
-    page.go_back()
-    page.wait_for_url(base)
-    tap(page, "putt")
-    page.wait_for_url("**/games/putt/")
-    page.wait_for_function("window.__putt && window.__putt.snapshot().level", timeout=20000)
-    ps = page.evaluate("window.__putt.snapshot()")
-    check(page.url == base + "games/putt/" and ps["mode"] == "worker" and ps["level"]["fallback"] is False,
-          f"[{tag}] Putt opens offline and its worker builds the level ({ps['mode']})")
-    page.go_back()
-    page.wait_for_url(base)
-    hits(page)
-    tap(page, "stack")
-    page.wait_for_url("**/games/stack/")
-    page.wait_for_function("window.__stack && window.__stack.snapshot().game", timeout=10000)
-    check(page.url == base + "games/stack/" and page.evaluate("window.__stack.snapshot().raf"), f"[{tag}] Stack opens and runs offline")
-    page.go_back()
-    page.wait_for_url(base)
-    # Slash-less folder URL, offline then online, with the worker in control.
+    for game in GAMES:
+        g = open_tile(page, game)
+        if game == "putt":
+            ps = g.evaluate("window.__putt.snapshot()")
+            check(ps["mode"] == "worker" and ps["level"]["fallback"] is False,
+                  f"[{tag}] Putt opens offline and its worker builds the level ({ps['mode']})")
+        elif game == "stack":
+            check(g.evaluate("window.__stack.snapshot().raf"), f"[{tag}] Stack opens and runs offline")
+        else:
+            check(g.evaluate(GAME_READY[game]) is not None, f"[{tag}] {game} opens and draws offline")
+        back_to_hub(page)
+    # Slash-less folder URL, offline then online, with the worker in control (a game page opened on its own).
     for mode in ("offline", "online"):
         ctx.set_offline(mode == "offline")
-        page.goto(base + "games/putt")
-        page.wait_for_url("**/games/putt/")
-        page.wait_for_function("window.__putt && window.__putt.snapshot().level", timeout=20000)
-        check(page.url == base + "games/putt/", f"[{tag}] slash-less games/putt redirects and draws ({mode})")
-        page.goto(base + "games/stack")
-        page.wait_for_url("**/games/stack/")
-        page.wait_for_function("window.__stack && window.__stack.snapshot().game", timeout=10000)
-        check(page.url == base + "games/stack/", f"[{tag}] slash-less games/stack redirects and draws ({mode})")
-        page.goto(base)
-        hits(page)
-        for game in ("bricks", "catch"):
+        for game in GAMES:
             page.goto(base + "games/" + game)
             page.wait_for_url(f"**/games/{game}/")
-            ok = hits(page).get("back") is not None
-            check(page.url == base + f"games/{game}/" and ok, f"[{tag}] slash-less games/{game} redirects and draws ({mode})")
-            tap(page, "back")
-            page.wait_for_url(base)
+            page.wait_for_function(GAME_READY[game], timeout=20000)
+            check(page.url == base + f"games/{game}/", f"[{tag}] slash-less games/{game} redirects and draws ({mode})")
+        page.goto(base)
+        hits(page)
     ctx.set_offline(False)
 
     check(not errors, f"[{tag}] no console errors {errors}")
@@ -400,20 +318,24 @@ def run_layout_only(browser, base, w, h, dpr):
     check(info["sw"] <= info["iw"] and info["sh"] <= info["ih"], f"[{tag}] no scrolling or overflow")
     hub_layout_checks(page, tag, h)
     page.goto(base + "games/bricks/")
-    hits(page)
-    page.screenshot(path=str(OUT / f"bricks-{w}x{h}.png"))
+    page.wait_for_function(GAME_READY["bricks"])
+    page.wait_for_timeout(150)
+    shot = OUT / f"bricks-{w}x{h}.png"
+    page.screenshot(path=str(shot))
+    info, s, H, bad, total, ncol, size = crisp(page, shot)
+    geo = page.evaluate("window.__bricks.snapshot().game")["geo"]
+    check(bad == 0 and info["sw"] <= info["iw"] and info["sh"] <= info["ih"] and geo["top"] == 5 and geo["horizon"] == H - 42,
+          f"[{tag}] Bricks: crisp, no overflow, the field from 5 px below the top (no HUD) to the horizon (H {H})")
     page.goto(base + "games/catch/")
-    hits(page)
-    page.wait_for_function("window.__catch && window.__catch.snapshot().game")
+    page.wait_for_function(GAME_READY["catch"])
     page.wait_for_timeout(150)
     shot = OUT / f"catch-{w}x{h}.png"
     page.screenshot(path=str(shot))
     info, s, H, bad, total, ncol, size = crisp(page, shot)
-    hud = json.loads(page.eval_on_selector("#screen", "c => c.dataset.hud"))
     g = page.evaluate("window.__catch.snapshot().game")["geo"]
-    check(bad == 0 and info["sw"] <= info["iw"] and info["sh"] <= info["ih"] and hud == {"count": 1, "run": 1}
+    check(bad == 0 and info["sw"] <= info["iw"] and info["sh"] <= info["ih"] and g["top"] == 5
           and g["horizon"] == H - 42 and g["deckY"] == H - 47,
-          f"[{tag}] Catch: crisp, no overflow, count and run fit their boxes, boat on the horizon ({hud})")
+          f"[{tag}] Catch: crisp, no overflow, things fall from 5 px below the top (no HUD), boat on the horizon")
     page.goto(base + "games/putt/")
     page.wait_for_function("window.__putt && window.__putt.snapshot().level", timeout=20000)
     page.wait_for_timeout(150)
@@ -454,11 +376,9 @@ def run_resize(browser, base):
     check(wide["H"] >= 240 and bad == 0 and wide["scale"] < first["scale"],
           f"resize to 800x360: scale {first['scale']} -> {wide['scale']}, H {wide['H']}, crisp {total - bad}/{total}")
     hub_layout_checks(page, "resized 800x360", 360)
-    tap(page, "bricks")
-    page.wait_for_url("**/games/bricks/")
-    check(page.url == base + "games/bricks/", "resize: BRICKS still opens from the new layout")
-    page.go_back()
-    page.wait_for_url(base)
+    open_tile(page, "bricks")
+    check(page.evaluate("document.body.dataset.game") == "bricks", "resize: BRICKS still opens from the new layout")
+    back_to_hub(page)
     page.set_viewport_size({"width": 360, "height": 800})
     page.wait_for_timeout(300)
     check(layout_of(page) == first, "resize back restores the original layout")
@@ -493,8 +413,23 @@ def static_checks():
                 if ink(r, c) and ink(r, c - 1) + ink(r, c + 1) == 1 and ink(r - 1, c) + ink(r + 1, c) == 1:
                     bad.append((key, r, c))
     check(not bad, f"font: every outer corner is cut {bad}")
-    needed = set("RLXBRICKSCATCHPUTTSTACKSOONHAPTICSONOFF<>0123456789")
-    check(needed <= set(re.findall(r"'(.)':", body)), "font has every character the UI uses")
+    needed = set("RLXBRICKSCATCHPUTTSTACK")
+    check(needed <= set(re.findall(r"'(.)':", body)), "font has every character the UI uses (the wordmark and the tile labels)")
+
+    # Row X1: no settings, no storage module, fullscreen; text is drawn on the hub only.
+    check(not (ROOT / "shared" / "settings.js").exists() and not (ROOT / "shared" / "store.js").exists(),
+          "shared/settings.js and shared/store.js are gone (row X1)")
+    manifest = json.loads((ROOT / "manifest.webmanifest").read_text())
+    check(manifest["display"] == "fullscreen", f"manifest display is fullscreen ({manifest['display']})")
+    shipped_js = [p for p in list((ROOT / "shared").glob("*.js")) + list((ROOT / "games").rglob("*.js")) + [ROOT / "index.html"]]
+    uses = {p.relative_to(ROOT).as_posix() for p in shipped_js
+            if re.search(r"localStorage|sessionStorage|indexedDB|document\.cookie|settings\.js|store\.js|hapticsOn|setHaptics",
+                         re.sub(r"//.*", "", p.read_text()))}
+    check(uses == {"shared/pixel.js"}, f"only pixel.js touches storage (to clear old rlx.* keys); nothing else reads a setting {sorted(uses)}")
+    texty = {p.relative_to(ROOT).as_posix() for p in shipped_js if re.search(r"font\.js|drawFitted|drawText|fillText", re.sub(r"//.*", "", p.read_text()))}
+    check(texty == {"index.html", "shared/font.js"}, f"text is drawn on the hub only (no game imports the font) {sorted(texty)}")
+    hub = (ROOT / "index.html").read_text()
+    check(not re.search(r"SOON|HAPTICS|haptics|TOGGLE|TAG_", hub), "the hub has no SOON tile code and no haptics switch (row X1)")
 
 
 def snap(page):
@@ -502,15 +437,13 @@ def snap(page):
 
 
 def sea_point(page):
-    """A point in the sea (the thumb zone), in CSS px."""
-    lay = layout_of(page)
+    """A point in the sea (the thumb zone), in CSS px, and the scale and CSS px per device px."""
+    v = view_of(page)
     info = page.evaluate("() => { const r = document.getElementById('screen').getBoundingClientRect(); "
-                         "const c = document.getElementById('screen'); return { l: r.left, t: r.top, k: r.width / c.width, cw: c.width, ch: c.height }; }")
-    s, H = lay["scale"], lay["H"]
-    ox = (info["cw"] - 135 * s) // 2
-    oy = (info["ch"] - H * s) // 2
-    x = info["l"] + (ox + 67.5 * s) * info["k"]
-    y = info["t"] + (oy + (H - 20) * s) * info["k"]
+                         "const c = document.getElementById('screen'); return { l: r.left, t: r.top, k: r.width / c.width }; }")
+    s, H = v["scale"], v["H"]
+    x = info["l"] + (v["ox"] + 67.5 * s) * info["k"]
+    y = info["t"] + (v["oy"] + (H - 20) * s) * info["k"]
     return x, y, s, info["k"]
 
 
@@ -520,20 +453,15 @@ def open_bricks(ctx, base):
     page.on("console", lambda m: m.type == "error" and errors.append(m.text))
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto(base + "games/bricks/")
-    hits(page)
-    page.wait_for_function("window.__bricks && window.__bricks.snapshot().game")
+    page.wait_for_function(GAME_READY["bricks"])
     page.wait_for_timeout(150)
     return page, errors
 
 
-def reopen(page, base, js):
-    """Leave Bricks for the hub, run js there, open Bricks again."""
-    page.goto(base)
-    hits(page)
-    page.evaluate(js)
+def reopen(page, base):
+    """Open Bricks again (a fresh field: nothing is saved)."""
     page.goto(base + "games/bricks/")
-    hits(page)
-    page.wait_for_function("window.__bricks && window.__bricks.snapshot().game")
+    page.wait_for_function(GAME_READY["bricks"])
     page.wait_for_timeout(150)
 
 
@@ -548,42 +476,12 @@ def track(page, ms, x, y, scale, k):
         q = snap(page)["game"]
         if q["ball"]:
             d = q["ball"]["x"] + 2.5 - (q["paddleX"] + 15)
-            nxt = max(2, min(width - 2, cur + max(-12, min(12, d / 1.2 * scale * k))))
+            nxt = max(30, min(width - 30, cur + max(-12, min(12, d / 1.2 * scale * k))))
             if abs(nxt - cur) > 0.01:
                 page.mouse.move(nxt, y)
                 cur = nxt
         page.wait_for_timeout(15)
     page.mouse.up()
-
-
-def rally_watch(page, ms, x, y, scale, k, follow, until):
-    """Hold a finger and steer the paddle to (follow) or away from the ball,
-    polling the test hook; returns the rally transitions seen as
-    (before, after, ball_after, vy_after) until until(transitions) or ms pass."""
-    width = page.viewport_size["width"]
-    cur = x
-    page.mouse.move(cur, y)
-    page.mouse.down()
-    seen = []
-    prev = snap(page)["rally"]
-    end = time.time() + ms / 1000
-    while time.time() < end and not until(seen):
-        q = snap(page)
-        g = q["game"]
-        if q["rally"] != prev:
-            seen.append((prev, q["rally"], g["ball"] is not None, g["ball"]["vy"] if g["ball"] else None))
-            prev = q["rally"]
-        if g["ball"]:
-            d = g["ball"]["x"] + 2.5 - (g["paddleX"] + 15)
-            if not follow:
-                d = -40 if d >= 0 else 40
-            nxt = max(2, min(width - 2, cur + max(-12, min(12, d / 1.2 * scale * k))))
-            if abs(nxt - cur) > 0.01:
-                page.mouse.move(nxt, y)
-                cur = nxt
-        page.wait_for_timeout(10)
-    page.mouse.up()
-    return seen
 
 
 def two_touches(ctx, page, tag):
@@ -625,23 +523,22 @@ def two_touches(ctx, page, tag):
 
 
 def run_bricks(browser, base):
-    """Row B1 in the browser at 360x800."""
+    """Rows B1, B2 and X1: Bricks in the browser at 360x800."""
     tag = "bricks 360x800"
     ctx = new_context(browser, 360, 800)
     foreign = []
     origin = base.split("/4rk4d3/")[0]
     ctx.on("request", lambda r: (not r.url.startswith(origin) and not r.url.startswith("data:")) and foreign.append(r.url))
     page, errors = open_bricks(ctx, base)
-    page.evaluate("localStorage.clear()")
+    page.evaluate("localStorage.clear(); sessionStorage.clear()")
     page.reload()
-    hits(page)
-    page.wait_for_function("window.__bricks && window.__bricks.snapshot().game")
+    page.wait_for_function(GAME_READY["bricks"])
     page.wait_for_timeout(200)
 
     s0 = snap(page)
     g0 = s0["game"]
-    check(s0["mode"] == "paused" and s0["count"] == 63 and g0["score"] == 0,
-          f"[{tag}] first launch: 9 full rows, score 0, paused ({s0['mode']}, {s0['count']})")
+    check(s0["mode"] == "paused" and s0["count"] == 63 and "score" not in g0 and "v" not in g0,
+          f"[{tag}] opening: 9 full rows, paused, no score in the state ({s0['mode']}, {s0['count']})")
     check([r["c"] for r in g0["rows"][:9]] == list(range(9)), f"[{tag}] rows coloured by the brick tokens top to bottom")
     shot = OUT / "bricks-game-paused.png"
     page.screenshot(path=str(shot))
@@ -650,6 +547,8 @@ def run_bricks(browser, base):
     check(info["sw"] <= info["iw"] and info["sh"] <= info["ih"], f"[{tag}] no scrolling or overflow")
     geo = g0["geo"]
     check(geo["horizon"] == H - 42 and geo["paddleY"] + 6 == geo["horizon"] - 16, f"[{tag}] paddle 16 px above the horizon")
+    check(geo["top"] == 5, f"[{tag}] no HUD line: the field starts 5 px below the top ({geo['top']})")
+    no_hud(page, tag, "Bricks")
 
     # Paused: nothing moves and no animation loop runs.
     r0 = page.evaluate("window.__raf")
@@ -658,8 +557,19 @@ def run_bricks(browser, base):
     check(s1["game"] == g0 and page.evaluate("window.__raf") == r0 and not s1["raf"],
           f"[{tag}] paused: state frozen and no frame requested ({page.evaluate('window.__raf') - r0} rAF calls)")
 
-    # Finger down in the sea: resumes after 250 ms.
+    # Row X1: a touch that begins within 24 CSS px of either side edge (the back gesture) moves nothing.
     x, y, scale, k = sea_point(page)
+    for ex, to in ((5, 120), (23, 120), (337, 240), (355, 240)):
+        page.mouse.move(ex, y)
+        page.mouse.down()
+        page.mouse.move(to, y, steps=4)
+        page.wait_for_timeout(320)
+        page.mouse.up()
+    q = snap(page)
+    check(q["mode"] == "paused" and q["game"] == g0 and q["fingers"] == 0,
+          f"[{tag}] touches that begin within 24 CSS px of the left or right edge are ignored: no resume, the paddle still")
+
+    # Finger down in the sea (25 px in counts): resumes after 250 ms.
     page.mouse.move(x, y)
     nvib = page.evaluate("window.__vib.length")
     page.mouse.down()
@@ -688,23 +598,19 @@ def run_bricks(browser, base):
     check(abs(snap(page)["game"]["paddleX"] - (135 - 30)) < 1e-9, f"[{tag}] paddle clamped to the field")
     page.mouse.up()
     # Centre the paddle again: far left (clamped at 0), then right by 52.5 / 1.2.
-    page.mouse.move(350, y)
+    page.mouse.move(330, y)
     page.mouse.down()
-    page.mouse.move(10, y, steps=8)
+    page.mouse.move(30, y, steps=8)
     check(snap(page)["game"]["paddleX"] == 0, f"[{tag}] paddle clamped at the left edge")
-    page.mouse.move(10 + (52.5 / 1.2) * scale * k, y, steps=8)
+    page.mouse.move(30 + (52.5 / 1.2) * scale * k, y, steps=8)
     page.mouse.up()
-    # A thumb that follows the ball, so both bricks and the paddle get hit.
+    # A thumb that follows the ball, so both bricks and the paddle get hit: haptics always on.
     track(page, 5000, x, y, scale, k)
     vib = page.evaluate("window.__vib")
-    sc = snap(page)["game"]["score"]
-    check(sc > 0 and 8 in vib and 16 in vib and set(vib) <= {8, 16},
-          f"[{tag}] haptics on: brick 8 ms and paddle 16 ms ticks only ({vib}, score {sc})")
-    # The 40 ms rate limit is proven in tests/bricks-sim.mjs, which drives the
-    # real shared/haptics.js with dense brick and paddle events; real-time play
-    # here is too sparse to stress it, so no claim is made about it here.
+    check(8 in vib and 16 in vib and set(vib) <= {8, 16},
+          f"[{tag}] haptics always on: brick 8 ms and paddle 16 ms ticks only ({vib})")
 
-    # Lift: frozen within one frame, ring shown, state saved.
+    # Lift: frozen within one frame, ring shown.
     page.mouse.up()
     a = snap(page)
     page.wait_for_timeout(300)
@@ -715,123 +621,58 @@ def run_bricks(browser, base):
     page.wait_for_timeout(400)
     check(page.evaluate("window.__raf") == r1, f"[{tag}] no animation loop while paused")
     page.screenshot(path=str(OUT / "bricks-game-lifted.png"))
-    saved = json.loads(page.evaluate("localStorage.getItem('rlx.v2.bricks')"))
-    check(saved == b["game"], f"[{tag}] full state saved on pause")
-    check(page.evaluate("localStorage.getItem('rlx.v1.bricks-score')") == str(b["game"]["score"]), f"[{tag}] score saved on pause")
-    # Session clock (row B2): play advanced it, the pause does not; it is saved on pause.
+    no_hud(page, tag, "Bricks after play")
+    # Session clock (row B2, X1): play advanced it in memory, the pause does not.
     page.wait_for_timeout(1000)
     c2 = snap(page)
-    stored_clock = json.loads(page.evaluate("localStorage.getItem('rlx.v1.session')") or "null")
-    check(4 < b["clock"]["active"] < 30 and c2["clock"] == b["clock"] and stored_clock == b["clock"],
-          f"[{tag}] session clock: {b['clock']['active']:.2f} s of play counted, unchanged after 1.3 s paused, saved on pause")
-    check("rally" not in saved and "pace" in saved and "speed" in saved
-          and 80 <= saved["pace"] <= 125, f"[{tag}] pace and speed saved ({saved['pace']}, {saved['speed']}), rally {b['rally']} not saved")
-    # Rally: +1 at each paddle return (the ball leaves upwards), 0 at a miss (no ball until the serve).
-    ups = rally_watch(page, 15000, x, y, scale, k, True, lambda t: sum(1 for a, c, _, _ in t if c == a + 1) >= 2)
-    downs = rally_watch(page, 15000, x, y, scale, k, False, lambda t: any(c == 0 for _, c, _, _ in t))
-    inc = [t for t in ups + downs if t[1] != 0]
-    zero = [t for t in ups + downs if t[1] == 0]
-    check(len(inc) >= 2 and all(c == a + 1 and ball and vy < 0 for a, c, ball, vy in inc),
-          f"[{tag}] rally goes up by exactly 1 at each paddle return ({[(a, c) for a, c, _, _ in inc]})")
-    check(zero and all(a > 0 and not ball for a, _, ball, _ in zero) and snap(page)["rally"] == 0,
-          f"[{tag}] rally returns to 0 at a miss ({[(a, c) for a, c, _, _ in zero]})")
-    hud = json.loads(page.eval_on_selector("#screen", "c => c.dataset.hud"))
-    check(hud == {"score": 1, "rally": 1}, f"[{tag}] score and rally drawn small and fit their boxes {hud}")
+    check(4 < b["clock"]["active"] < 30 and c2["clock"] == b["clock"],
+          f"[{tag}] session clock: {b['clock']['active']:.2f} s of play counted, unchanged after 1.3 s paused")
+    st = page.evaluate(STORAGE_JS)
+    check(st == {"local": {}, "session": {}, "idb": [], "cookie": ""}, f"[{tag}] after play storage is empty {st}")
 
-    # Hidden mid-flight: pause, save, stop the loop.
+    # Hidden mid-flight: pause, stop the loop.
+    page.mouse.move(x, y)
     page.mouse.down()
     page.wait_for_timeout(700)
-    page.evaluate("""() => {
-      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
-      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
-      document.dispatchEvent(new Event('visibilitychange'));
-    }""")
+    set_hidden(page, True)
     h = snap(page)
-    saved = json.loads(page.evaluate("localStorage.getItem('rlx.v2.bricks')"))
     r2 = page.evaluate("window.__raf")
     page.wait_for_timeout(400)
-    check(h["mode"] == "paused" and not h["raf"] and saved == h["game"] and snap(page)["game"] == h["game"]
-          and page.evaluate("window.__raf") == r2, f"[{tag}] hidden: paused, saved, no loop")
-    page.evaluate("""() => {
-      delete document.visibilityState; delete document.hidden;
-      document.dispatchEvent(new Event('visibilitychange'));
-    }""")
+    check(h["mode"] == "paused" and not h["raf"] and snap(page)["game"] == h["game"]
+          and page.evaluate("window.__raf") == r2, f"[{tag}] hidden: paused, no loop")
+    set_hidden(page, False)
     page.mouse.up()
     page.mouse.down()
     page.wait_for_timeout(900)
     mid = snap(page)["game"]
     check(mid["ball"] is not None and mid["time"] > h["game"]["time"], f"[{tag}] plays on after coming back")
-    # Hidden for 3 s with the finger up: the saved clock does not move.
+    # Hidden for 3 s with the finger up: the clock does not move.
     page.mouse.up()
-    before_clock = page.evaluate("localStorage.getItem('rlx.v1.session')")
-    page.evaluate("""() => {
-      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
-      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
-      document.dispatchEvent(new Event('visibilitychange'));
-    }""")
+    before_clock = snap(page)["clock"]
+    set_hidden(page, True)
     page.wait_for_timeout(3000)
-    hidden_clock = page.evaluate("localStorage.getItem('rlx.v1.session')")
-    page.evaluate("""() => {
-      delete document.visibilityState; delete document.hidden;
-      document.dispatchEvent(new Event('visibilitychange'));
-    }""")
+    set_hidden(page, False)
     page.wait_for_timeout(500)
     shown = snap(page)
-    check(before_clock is not None and hidden_clock == before_clock
-          and page.evaluate("localStorage.getItem('rlx.v1.session')") == before_clock
-          and json.dumps(shown["clock"], sort_keys=True) == json.dumps(json.loads(before_clock), sort_keys=True)
-          and shown["mode"] == "paused",
-          f"[{tag}] hidden 3 s with the finger up, then shown: the saved clock stays the same ({before_clock})")
+    check(shown["clock"]["active"] == before_clock["active"] and shown["clock"]["resets"] == 0 and shown["mode"] == "paused",
+          f"[{tag}] hidden 3 s with the finger up, then shown: the clock stays the same ({before_clock['active']:.2f} s)")
     page.mouse.down()
     page.wait_for_timeout(900)
 
-    # Kill mid-flight (pagehide only, no lift) and reopen: same field and ball, paused.
+    # Kill mid-flight (pagehide, no lift) and reopen: a fresh field, paused; nothing was stored.
     page.evaluate("dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }))")
-    killed = json.loads(page.evaluate("localStorage.getItem('rlx.v2.bricks')"))
+    st = page.evaluate(STORAGE_JS)
     page.close()
     page, errors2 = open_bricks(ctx, base)
     r = snap(page)
-    check(r["mode"] == "paused" and r["game"] == killed and killed["ball"] is not None,
-          f"[{tag}] killed mid-flight and reopened: same field, ball and paddle, paused")
-    page.screenshot(path=str(OUT / "bricks-game-reopened.png"))
+    check(st == {"local": {}, "session": {}, "idb": [], "cookie": ""} and r["mode"] == "paused" and r["count"] == 63
+          and r["game"]["pace"] == 90 and r["clock"]["active"] == 0,
+          f"[{tag}] killed mid-flight: nothing stored; reopened: a fresh field at pace 90, paused, the clock at 0")
     errors += errors2
-
-    # Haptics off: zero vibrate calls. The score survives the restart.
-    page.evaluate("localStorage.setItem('rlx.v1.settings', JSON.stringify({ haptics: false }))")
-    page.reload()
-    page.wait_for_function("window.__bricks && window.__bricks.snapshot().game")
-    saved_score = int(page.evaluate("localStorage.getItem('rlx.v1.bricks-score')"))
-    before = snap(page)["game"]["score"]
-    check(before == saved_score and before > 0, f"[{tag}] the score survives a restart ({saved_score} saved, {before} shown)")
-    x, y, scale, k = sea_point(page)
-    track(page, 5000, x, y, scale, k)
-    after = snap(page)["game"]["score"]
-    check(page.evaluate("window.__vib.length") == 0 and after > before, f"[{tag}] haptics off: zero vibrate calls while {after - before} bricks popped")
-    page.evaluate("localStorage.setItem('rlx.v1.settings', JSON.stringify({ haptics: true }))")
-    saved_score = int(page.evaluate("localStorage.getItem('rlx.v1.bricks-score')"))
-    page.reload()
-    page.wait_for_function("window.__bricks && window.__bricks.snapshot().game")
-    check(saved_score == after and snap(page)["game"]["score"] == after,
-          f"[{tag}] the score survives a second restart ({after} saved, {snap(page)['game']['score']} shown)")
     two_touches(ctx, page, tag)
 
-    # Corrupt and old-version saves: fresh field, score kept.
-    # (Storage is edited from the hub: leaving Bricks saves over it.)
-    reopen(page, base, "localStorage.setItem('rlx.v2.bricks', '{nope'); localStorage.setItem('rlx.v1.bricks-score', '12')")
-    c = snap(page)
-    check(c["count"] == 63 and c["game"]["score"] == 12, f"[{tag}] corrupt save: fresh field, score kept ({c['count']}, {c['game']['score']})")
-    # A B1 save (state version 1, no pace or speed) left on the phone by the previous build.
-    old = {k: v for k, v in c["game"].items() if k not in ("pace", "speed")}
-    old.update(v=1, score=77)
-    n_err = len(errors2)
-    reopen(page, base, "localStorage.setItem('rlx.v1.bricks', %s); localStorage.removeItem('rlx.v2.bricks'); "
-           "localStorage.removeItem('rlx.v1.bricks-score')" % json.dumps(json.dumps(old)))
-    c = snap(page)
-    check(c["count"] == 63 and c["game"]["score"] == 77 and c["game"]["pace"] == 90 and len(errors2) == n_err,
-          f"[{tag}] B1 (old-version) save: no error, fresh field at pace 90, score read from it ({c['game']['score']})")
-
     # Motion: particles and trail appear; with reduced motion, never. Fresh field each time.
-    reopen(page, base, "localStorage.removeItem('rlx.v2.bricks')")
+    reopen(page, base)
     seen = {"particles": 0, "trail": 0}
     x, y, scale, k = sea_point(page)
     page.mouse.move(x, y)
@@ -847,9 +688,9 @@ def run_bricks(browser, base):
     page.mouse.up()
     check(seen["particles"] > 0 and seen["trail"] > 0, f"[{tag}] brick pop particles and ball trail shown {seen}")
     page.emulate_media(reduced_motion="reduce")
-    reopen(page, base, "localStorage.removeItem('rlx.v2.bricks')")
+    reopen(page, base)
     seen = {"particles": 0, "trail": 0}
-    pops0 = snap(page)["game"]["score"]
+    page.evaluate("window.__vib = []")
     page.mouse.move(x, y)
     page.mouse.down()
     for _ in range(30):
@@ -858,19 +699,9 @@ def run_bricks(browser, base):
         seen["particles"] = max(seen["particles"], q["particles"])
         seen["trail"] = max(seen["trail"], q["trail"])
     page.mouse.up()
-    pops = snap(page)["game"]["score"] - pops0
-    check(seen == {"particles": 0, "trail": 0} and pops > 0, f"[{tag}] reduced motion: no particles, no trail over {pops} pops {seen}")
+    pops = page.evaluate("window.__vib").count(8)
+    check(seen == {"particles": 0, "trail": 0} and pops > 0, f"[{tag}] reduced motion: no particles, no trail over {pops} pop ticks {seen}")
     page.emulate_media(reduced_motion="no-preference")
-
-    # Back control mid-game goes to the hub and keeps the state.
-    page.mouse.move(x, y)
-    page.mouse.down()
-    page.wait_for_timeout(500)
-    page.mouse.up()
-    held = snap(page)["game"]
-    tap(page, "back")
-    page.wait_for_url(base)
-    check(json.loads(page.evaluate("localStorage.getItem('rlx.v2.bricks')")) == held, f"[{tag}] back to the hub keeps the saved game")
 
     check(not errors and not errors2, f"[{tag}] no console errors {errors + errors2}")
     check(not foreign, f"[{tag}] no requests to another host {foreign}")
@@ -882,11 +713,9 @@ def logical_pixels(page, shot, points):
     from PIL import Image
 
     img = Image.open(shot).convert("RGB")
-    lay = layout_of(page)
-    s, H = lay["scale"], lay["H"]
-    cw, ch = page.evaluate("[document.getElementById('screen').width, document.getElementById('screen').height]")
-    ox, oy = (cw - 135 * s) // 2, (ch - H * s) // 2
-    return ["#%02X%02X%02X" % img.getpixel((ox + x * s + s // 2, oy + y * s + s // 2)) for x, y in points]
+    v = view_of(page)
+    s = v["scale"]
+    return ["#%02X%02X%02X" % img.getpixel((v["ox"] + x * s + s // 2, v["oy"] + y * s + s // 2)) for x, y in points]
 
 
 def delta_e(a, b):
@@ -922,7 +751,7 @@ MIN_CR, MIN_CR_SMALL, MIN_DE = 3, 4.5, 20
 
 
 def run_scene(browser, base):
-    """Row B2: the hub draws the phase of the saved clock; Bricks at full dusk."""
+    """Rows B2 and X1: the hub draws the phase of the one in-memory clock; Bricks at full dusk; the reset after 5 minutes hidden."""
     tag = "scene 360x800"
     ctx = new_context(browser, 360, 800)
     page = ctx.new_page()
@@ -931,19 +760,14 @@ def run_scene(browser, base):
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto(base)
     hits(page)
-    page.evaluate("localStorage.clear()")
     tok = page.evaluate("""async () => { const T = await import(new URL('shared/tokens.js', document.baseURI).href);
       return { pals: Array.from({ length: 11 }, (_, k) => T.scenePalette(k / 10)), bricks: T.BRICK_ROWS,
         c: { ...T.COLORS, ink: T.COLORS.ink || T.COLORS.blue } }; }""")
     pals, C = tok["pals"], tok["c"]
 
-    def set_clock(active, ago_ms):
-        page.evaluate("([a, ago]) => localStorage.setItem('rlx.v1.session', JSON.stringify({ active: a, last: Date.now() - ago }))",
-                      [active, ago_ms])
-
-    def hub(name):
-        page.reload()
-        hits(page)
+    def hub(name, active=None):
+        if active is not None:
+            page.evaluate(SET_CLOCK_JS, active)
         page.wait_for_timeout(150)
         shot = OUT / f"hub-scene-{name}.png"
         page.screenshot(path=str(shot))
@@ -954,18 +778,16 @@ def run_scene(browser, base):
 
     step, shot, lay, hz = hub("none")
     top, sea = logical_pixels(page, shot, [(1, 1), (1, hz + 2)])
-    check(step == 0 and top == pals[0]["sky"][0] and sea == pals[0]["sea"][0], f"[{tag}] hub, no clock yet: sunset (step {step}, {top}, {sea})")
-    set_clock(300, 1000)
-    step, shot, lay, hz = hub("step5")
+    check(step == 0 and top == pals[0]["sky"][0] and sea == pals[0]["sea"][0] and page.evaluate("window.__rlxSession.active") == 0,
+          f"[{tag}] hub at app start: the clock at 0, sunset (step {step}, {top}, {sea})")
+    step, shot, lay, hz = hub("step5", 300)
     top, sea = logical_pixels(page, shot, [(1, 1), (1, hz + 2)])
     check(step == 5 and top == pals[5]["sky"][0] and sea == pals[5]["sea"][0],
           f"[{tag}] hub after 5 minutes of play: step 5 drawn ({step}, sky {top}, sea {sea})")
-    stored = page.evaluate("localStorage.getItem('rlx.v1.session')")
     page.wait_for_timeout(1200)
-    check(page.evaluate("localStorage.getItem('rlx.v1.session')") == stored
-          and page.eval_on_selector("#screen", "c => c.dataset.scene") == "5", f"[{tag}] a hub left open does not advance the clock")
-    set_clock(720, 1000)
-    step, shot, lay, hz = hub("dusk")
+    check(page.evaluate("window.__rlxSession.active") == 300 and page.eval_on_selector("#screen", "c => c.dataset.scene") == "5",
+          f"[{tag}] a hub left open does not advance the clock")
+    step, shot, lay, hz = hub("dusk", 720)
     info, s, H, bad, total, _, _ = crisp(page, shot)
     r = lay["rects"]
     s1 = r["bricks"]["y"] - 3
@@ -975,50 +797,52 @@ def run_scene(browser, base):
           f"[{tag}] hub after 12 minutes of play: full dusk, crisp ({step}, sky {top}, sea {sea}, {total - bad}/{total})")
     check(sun != C["sun"] and st == "#FFFFFF" and tile == C["coral"],
           f"[{tag}] hub at dusk: sun below the horizon ({sun}), a white star ({st}), the BRICKS tile keeps its colour ({tile})")
-    set_clock(720, 5 * 60 * 1000)
-    step, shot, lay, hz = hub("after-gap")
+    # Hidden just under 5 minutes: the clock carries on; 5 minutes or more: it starts again, and the hub shows sunset.
+    set_hidden(page, True)
+    page.evaluate("window.__rlxSession.hiddenAt = Date.now() - (5 * 60 * 1000 - 5000)")
+    set_hidden(page, False)
+    step, *_ = hub("hidden-4m55")
+    check(step == 10 and page.evaluate("window.__rlxSession.active") == 720, f"[{tag}] hidden 4 min 55 s: the clock carries on (step {step})")
+    set_hidden(page, True)
+    page.evaluate("window.__rlxSession.hiddenAt = Date.now() - 5 * 60 * 1000")
+    set_hidden(page, False)
+    step, shot, *_ = hub("after-gap")
     top, = logical_pixels(page, shot, [(1, 1)])
-    check(step == 0 and top == "#FFF7EC", f"[{tag}] hub 5 minutes after the last play: sunset again ({step}, {top})")
-    set_clock(300, 5 * 60 * 1000 - 1500)
-    step, *_ = hub("left-open")
-    page.wait_for_timeout(2500)
-    later = page.eval_on_selector("#screen", "c => c.dataset.scene")
-    check(step == 5 and later == "0", f"[{tag}] a hub left open turns to sunset when the reset gap passes ({step} -> {later})")
-
-    # Bricks at full dusk: every colour kept, readable against the sky (dE >= 10).
-    set_clock(720, 1000)
-    page.goto(base + "games/bricks/")
+    check(step == 0 and top == "#FFF7EC" and page.evaluate("window.__rlxSession.active") == 0,
+          f"[{tag}] hidden 5 minutes: the clock starts again, the hub at sunset ({step}, {top})")
+    page.evaluate(SET_CLOCK_JS, 300)
+    page.reload()
     hits(page)
-    page.wait_for_function("window.__bricks && window.__bricks.snapshot().game")
+    check(page.evaluate("window.__rlxSession.active") == 0 and page.eval_on_selector("#screen", "c => c.dataset.scene") == "0",
+          f"[{tag}] the clock resets when the app starts (a reload of the hub)")
+
+    # Bricks opened from the hub at 12 minutes: it reads the hub's clock (one clock), full dusk, every colour kept.
+    page.evaluate(SET_CLOCK_JS, 720)
+    g_ = open_tile(page, "bricks")
     page.wait_for_timeout(200)
-    q = snap(page)
+    q = snap(g_)
     g = q["game"]
     geo = g["geo"]
     shot = OUT / "bricks-dusk.png"
     page.screenshot(path=str(shot))
-    info, s, H, bad, total, _, _ = crisp(page, shot)
-    check(q["step"] == 10 and q["clock"]["active"] == 720 and bad == 0, f"[{tag}] Bricks at 12 minutes: full dusk, crisp ({q['step']})")
-    lay = layout_of(page)
-    rr = lay["rects"]["rally"]
+    info, s, H, bad, total, _, _ = crisp(g_, shot)
+    check(q["step"] == 10 and q["clock"]["active"] == 720 and bad == 0, f"[{tag}] Bricks opened from the hub at 12 minutes: the hub's clock, full dusk, crisp ({q['step']})")
     pts = []
     for row in range(9):
         y = geo["top"] + row * 9 + 3
         pts += [(geo["left"] + 7, y), (geo["left"] - 4, y)]
     bx, by = round(g["ball"]["x"]), round(g["ball"]["y"])
     px, py = round(g["paddleX"]), geo["paddleY"]
-    pts += [(px + 15, py + 3), (px - 3, py + 3), (bx + 2, by + 2), (bx - 3, by + 2),
-            (rr["x"] + rr["w"] - 4, rr["y"]), (rr["x"] + rr["w"] - 8, rr["y"] + 3)]
-    got = logical_pixels(page, shot, pts)
+    pts += [(px + 15, py + 3), (px - 3, py + 3), (bx + 2, by + 2), (bx - 3, by + 2)]
+    got = logical_pixels(g_, shot, pts)
     sky = {c for p_ in pals for c in p_["sky"]}
     rows_ok = all(got[2 * i] == tok["bricks"][g["rows"][i]["c"]] for i in range(9))
     pairs = [(f"brick row {i + 1}", got[2 * i], got[2 * i + 1]) for i in range(9)]
-    pairs += [("paddle", got[18], got[19]), ("ball", got[20], got[21]), ("rally", got[22], got[23])]
-    kept = rows_ok and got[18] == C["coral"] and got[20] == C["blue"] and got[22] == C["ink"]
+    pairs += [("paddle", got[18], got[19]), ("ball", got[20], got[21])]
+    kept = rows_ok and got[18] == C["coral"] and got[20] == C["blue"]
     check(kept and all(bg in sky for _, _, bg in pairs),
-          f"[{tag}] at dusk bricks, paddle, ball and rally keep their token colours over dusk sky bands")
-    # B4 standard on the drawn pixels: bricks delta E >= 20 (fill), the ball 3, the rally (small) 4.5;
-    # the paddle by its edge (checked in run_contrast_pages), here its fill against the sky beside it for the record.
-    need = {"rally": ("cr", MIN_CR_SMALL), "ball": ("cr", MIN_CR), "paddle": None}
+          f"[{tag}] at dusk bricks, paddle and ball keep their token colours over dusk sky bands")
+    need = {"ball": ("cr", MIN_CR), "paddle": None}
     under = []
     for what, fg, bg in pairs:
         rule = need.get(what, ("de", MIN_DE))
@@ -1027,24 +851,30 @@ def run_scene(browser, base):
         v = contrast(fg, bg) if rule[0] == "cr" else delta_e(fg, bg)
         if v < rule[1]:
             under.append((what, fg, bg, round(v, 2)))
-    check(not under, f"[{tag}] at dusk the drawn bricks (dE >= 20), ball (3:1) and rally (4.5:1) meet the B4 standard against the sky beside them {under}")
+    check(not under, f"[{tag}] at dusk the drawn bricks (dE >= 20) and ball (3:1) meet the B4 standard against the sky beside them {under}")
 
-    # After the reset gap the next session starts at sunset with the pace at 90.
-    page.goto(base)  # leaving Bricks saves it
-    hits(page)
-    saved = dict(json.loads(page.evaluate("localStorage.getItem('rlx.v2.bricks')")), pace=80, speed=80)
-    page.evaluate("s => localStorage.setItem('rlx.v2.bricks', s)", json.dumps(saved))
-    set_clock(720, 5 * 60 * 1000)
-    page.goto(base + "games/bricks/")
-    hits(page)
-    page.wait_for_function("window.__bricks && window.__bricks.snapshot().game")
-    page.wait_for_timeout(150)
-    q = snap(page)
-    qb, sb = q["game"]["ball"], saved["ball"]
-    check(q["step"] == 0 and q["clock"]["active"] == 0 and q["game"]["pace"] == 90 and q["game"]["rows"] == saved["rows"]
-          and (qb["x"], qb["y"]) == (sb["x"], sb["y"]) and q["game"]["speed"] == 80,
-          f"[{tag}] Bricks 5 minutes after the last play: sunset, clock at 0, pace 90 (ball keeps 80 until its next bounce), "
-          f"same field and ball ({q['game']['pace']}, {q['game']['speed']})")
+    # Hidden 5 minutes while in Bricks: the clock starts again, and so does the pace at the next play; the ball keeps its speed.
+    g_.evaluate("() => { const s = window.__bricks.live(); s.pace = 80; s.speed = 80; }")
+    set_hidden(page, True)
+    set_hidden(g_.frame, True)
+    page.evaluate("window.__rlxSession.hiddenAt = Date.now() - 5 * 60 * 1000")
+    set_hidden(g_.frame, False)  # the game's page may see it first: the reset is in place before the game looks
+    set_hidden(page, False)
+    page.wait_for_timeout(200)
+    q = snap(g_)
+    check(q["clock"]["active"] == 0 and q["step"] == 0 and q["game"]["pace"] == 80,
+          f"[{tag}] Bricks hidden 5 minutes: shown again at sunset, the clock at 0; the pace waits for play ({q['game']['pace']})")
+    x, y, scale, k = sea_point(g_)
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.wait_for_timeout(320)
+    q = snap(g_)
+    page.mouse.up()
+    check(q["mode"] == "running" and q["game"]["pace"] == 90 and q["game"]["speed"] == 80,
+          f"[{tag}] play starts again: pace 90, the ball keeps 80 until its next bounce ({q['game']['pace']}, {q['game']['speed']})")
+    back_to_hub(page)
+    check(page.evaluate("window.__rlxSession.active") > 0 and page.eval_on_selector("#screen", "c => c.dataset.scene") == "0",
+          f"[{tag}] back at the hub: the play just made is on the hub's clock")
     check(not errors, f"[{tag}] no console errors {errors}")
     ctx.close()
 
@@ -1055,10 +885,11 @@ def csnap(page):
 
 class Touch:
     """Real touch input over CDP (Input.dispatchTouchEvent): Chrome turns it into
-    touch pointer events, as on the phone. One finger."""
+    touch pointer events, as on the phone. One finger. On a Hosted game the
+    touches go to the hub's page, over which the game's frame lies."""
 
     def __init__(self, ctx, page):
-        self.cdp = ctx.new_cdp_session(page)
+        self.cdp = ctx.new_cdp_session(getattr(page, "page", page))
         self.x = self.y = 0
 
     def down(self, x, y):
@@ -1084,27 +915,18 @@ def open_catch(ctx, base):
     page.on("console", lambda m: m.type == "error" and errors.append(m.text))
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.goto(base + "games/catch/")
-    hits(page)
-    page.wait_for_function("window.__catch && window.__catch.snapshot().game")
+    page.wait_for_function(GAME_READY["catch"])
     page.wait_for_timeout(150)
     return page, errors
-
-
-def reopen_catch(page, base, js, arg=None):
-    """Leave Catch for the hub (which saves it), run js there, open Catch again."""
-    page.goto(base)
-    hits(page)
-    page.evaluate(js, arg)
-    page.goto(base + "games/catch/")
-    hits(page)
-    page.wait_for_function("window.__catch && window.__catch.snapshot().game")
-    page.wait_for_timeout(150)
 
 
 def catch_track(page, touch, ms, x, y, per_px, until=None, max_ms=30000):
     """Hold a finger and steer the boat under the thing nearest to landing, for ms; with until (a test on
     the game state), go on past ms until it holds, at most max_ms (X13: a fixed window can see no catch)."""
+    import math
+
     width = page.viewport_size["width"]
+    sens = csnap(page)["sensitivity"]
     cur = x
     touch.down(cur, y)
     t0 = time.time()
@@ -1117,10 +939,9 @@ def catch_track(page, touch, ms, x, y, per_px, until=None, max_ms=30000):
         things = [o for o in g["items"] + ([g["treat"]] if g["treat"] else []) if not o["low"]]
         if things:
             o = max(things, key=lambda o: o["y"])
-            import math
             ox = o["x"] + 3 * math.sin(o["ph"]) + 3.5
             d = ox - (g["boatX"] + 12)
-            nxt = max(2, min(width - 2, cur + max(-12, min(12, d / 1.2 * per_px))))
+            nxt = max(30, min(width - 30, cur + max(-12, min(12, d / sens * per_px))))
             if abs(nxt - cur) > 0.01:
                 touch.move(nxt, y)
                 cur = nxt
@@ -1129,17 +950,16 @@ def catch_track(page, touch, ms, x, y, per_px, until=None, max_ms=30000):
 
 
 def run_catch(browser, base):
-    """Row C1 in the browser at 360x800, played with real touch events."""
+    """Rows C1 and X1: Catch in the browser at 360x800, played with real touch events."""
     tag = "catch 360x800"
     ctx = new_context(browser, 360, 800)
     foreign = []
     origin = base.split("/4rk4d3/")[0]
     ctx.on("request", lambda r: (not r.url.startswith(origin) and not r.url.startswith("data:")) and foreign.append(r.url))
     page, errors = open_catch(ctx, base)
-    page.evaluate("localStorage.clear()")
+    page.evaluate("localStorage.clear(); sessionStorage.clear()")
     page.reload()
-    hits(page)
-    page.wait_for_function("window.__catch && window.__catch.snapshot().game")
+    page.wait_for_function(GAME_READY["catch"])
     page.wait_for_timeout(200)
     touch = Touch(ctx, page)
     x, y, scale, k = sea_point(page)
@@ -1147,16 +967,30 @@ def run_catch(browser, base):
 
     s0 = csnap(page)
     g0 = s0["game"]
-    check(s0["mode"] == "paused" and g0["caught"] == 0 and g0["pace"] == 0.3 and g0["unlocked"] == 2 and not g0["items"],
-          f"[{tag}] first launch: paused, count 0, pace 0.3, 2 kinds")
+    check(s0["mode"] == "paused" and g0["caught"] == 0 and g0["eaten"] == 0 and g0["pace"] == 0.3 and g0["unlocked"] == 2
+          and not g0["items"] and "v" not in g0,
+          f"[{tag}] opening: paused, pace 0.3, 2 kinds, variety counts at 0")
     shot = OUT / "catch-game-paused.png"
     page.screenshot(path=str(shot))
     info, s, H, bad, total, _, _ = crisp(page, shot)
     check(bad == 0 and info["sw"] <= info["iw"] and info["sh"] <= info["ih"], f"[{tag}] crisp, no scrolling or overflow")
+    no_hud(page, tag, "Catch")
     r0 = page.evaluate("window.__raf")
     page.wait_for_timeout(500)
     s1 = csnap(page)
     check(s1["game"] == g0 and page.evaluate("window.__raf") == r0 and not s1["raf"], f"[{tag}] paused: frozen, no frame requested")
+
+    # Row X1: touches that begin within 24 CSS px of either side edge do nothing: no resume, no boat move, no fish.
+    for ex, to in ((5, 120), (23, 120), (337, 240), (355, 240)):
+        touch.down(ex, y)
+        touch.move(to, y)
+        page.wait_for_timeout(320)
+        touch.up()
+        touch.tap(ex, y - 200, 30)
+    page.wait_for_timeout(50)
+    q = csnap(page)
+    check(q["mode"] == "paused" and q["game"] == g0 and q["fingers"] == 0,
+          f"[{tag}] touches that begin within 24 CSS px of the left or right edge are ignored: no resume, the boat still, no fish")
 
     # A quick touch while paused is the resume touch: never a tap, no fish; lifted before 250 ms it stays paused.
     touch.tap(x, y, 40)
@@ -1164,30 +998,39 @@ def run_catch(browser, base):
     q = csnap(page)
     check(q["mode"] == "paused" and not q["game"]["fish"], f"[{tag}] a quick touch while paused: no fish, still paused ({q['mode']})")
 
-    # Finger down: resumes after 250 ms; drag moves the boat 1.2 x, clamped.
+    # Finger down: resumes after 250 ms; the drag follows the shared thumb travel, clamped.
     touch.down(x, y)
     page.wait_for_timeout(60)
     q = csnap(page)
     check(q["mode"] == "resuming" and q["game"]["items"] == g0["items"], f"[{tag}] finger down: waits before resuming")
     page.wait_for_timeout(300)
     check(csnap(page)["mode"] == "running", f"[{tag}] after 250 ms play runs")
+    sens = csnap(page)["sensitivity"]
     b0 = csnap(page)["game"]["boatX"]
     for i in range(1, 5):
         touch.move(x + 5 * i, y)
     page.wait_for_timeout(30)
     b1 = csnap(page)["game"]["boatX"]
-    want = 20 / per_px * 1.2
-    check(abs((b1 - b0) - want) < 0.05, f"[{tag}] relative drag: boat moved {b1 - b0:.2f} for {want:.2f}")
+    want = 20 / per_px * sens
+    check(abs((b1 - b0) - want) < 0.05, f"[{tag}] relative drag: boat moved {b1 - b0:.2f} for {want:.2f} (sensitivity {sens:.3f})")
     touch.move(x + 600, y)
     page.wait_for_timeout(30)
     check(abs(csnap(page)["game"]["boatX"] - (135 - 24)) < 1e-9, f"[{tag}] boat clamped to the field")
     touch.move(x - 600, y)
     page.wait_for_timeout(30)
     check(csnap(page)["game"]["boatX"] == 0, f"[{tag}] boat clamped at the left edge")
-    touch.move(x - 600 + 55.5 / 1.2 * per_px, y)
+    # Shared thumb travel (PLAN §6a, §6e): a drag across half the screen width moves the boat exactly end to end.
+    half = page.viewport_size["width"] * 0.5
+    start = x - 600
+    for i in range(1, 11):
+        touch.move(start + half * i / 10, y)
+    page.wait_for_timeout(30)
+    end_x = csnap(page)["game"]["boatX"]
+    check(abs(end_x - (135 - 24)) < 0.05, f"[{tag}] a drag across 50 percent of the screen width ({half:.0f} CSS px) moves the boat end to end ({end_x:.2f} of 111)")
+    touch.move(start + half * 0.5, y)
     touch.up()
 
-    # Lift: play goes on through the 400 ms grace, the boat holds, then it pauses and saves.
+    # Lift: play goes on through the 400 ms grace, the boat holds, then it pauses.
     a = csnap(page)
     page.wait_for_timeout(200)
     b = csnap(page)
@@ -1198,36 +1041,29 @@ def run_catch(browser, base):
     page.wait_for_timeout(300)
     d = csnap(page)
     check(c["mode"] == "paused" and d["game"] == c["game"] and not d["raf"], f"[{tag}] after the grace: paused and frozen")
-    saved = json.loads(page.evaluate("localStorage.getItem('rlx.v1.catch')"))
-    check(saved == c["game"], f"[{tag}] full state saved on pause")
-    check(json.loads(page.evaluate("localStorage.getItem('rlx.v1.catch-count')")) == {"caught": c["game"]["caught"], "eaten": c["game"]["eaten"]},
-          f"[{tag}] counts saved on pause")
-    clk = json.loads(page.evaluate("localStorage.getItem('rlx.v1.session')") or "null")
-    check(clk is not None and clk["active"] > 0.5 and clk == c["clock"], f"[{tag}] the shared session clock counts Catch play and is saved ({clk})")
+    check(c["clock"]["active"] > 0.5, f"[{tag}] the session clock counts Catch play, in memory ({c['clock']['active']:.2f} s)")
 
-    # Play: catches tick 8 ms; the run counts up (tracked until at least one catch, X13).
+    # Play: catches tick 8 ms (tracked until at least one catch, X13).
     page.evaluate("window.__vib = []")
     c_start = csnap(page)["game"]["caught"]
     catch_track(page, touch, 9000, x, y, per_px, until=lambda g: g["caught"] > c_start)
     page.wait_for_timeout(600)
     q = csnap(page)
     vib = page.evaluate("window.__vib")
-    check(q["game"]["caught"] > 0 and 8 in vib and set(vib) <= {8}, f"[{tag}] catches tick 8 ms ({q['game']['caught']} caught, {vib})")
-    hud = json.loads(page.eval_on_selector("#screen", "c => c.dataset.hud"))
-    check(hud == {"count": 1, "run": 1}, f"[{tag}] count and run drawn small and fit their boxes {hud}")
+    check(q["game"]["caught"] > 0 and 8 in vib and set(vib) <= {8}, f"[{tag}] catches tick 8 ms, haptics always on ({q['game']['caught']} caught, {vib})")
+    no_hud(page, tag, "Catch after play")
     page.screenshot(path=str(OUT / "catch-game-play.png"))
 
     def with_nasty(ny, nx=100, boat=0):
-        """Reopen with a nasty in the air (and nothing else due soon), then resume and lift (grace)."""
-        reopen_catch(page, base, """g => { const s = JSON.parse(localStorage.getItem('rlx.v1.catch'));
-          s.items = []; s.treat = null; s.fish = []; s.spawnIn = 1.7; s.nastyIn = 25; s.treatIn = 140; s.boatX = g.boat;
-          s.nasty = { x: g.nx, y: g.ny, vy: 30, k: 0, low: false, hunted: false };
-          localStorage.setItem('rlx.v1.catch', JSON.stringify(s)); }""", {"nx": nx, "ny": ny, "boat": boat})
+        """A nasty in the air (and nothing else due soon), then resume and lift (grace)."""
+        set_catch(page, """(s, g) => { s.items = []; s.treat = null; s.fish = []; s.spawnIn = 1.7; s.nastyIn = 25; s.treatIn = 140;
+          s.boatX = g.boat; s.nasty = { x: g.nx, y: g.ny, vy: 30, k: 0, low: false, hunted: false }; }""", {"nx": nx, "ny": ny, "boat": boat})
         touch.down(x, y)
         page.wait_for_timeout(400)
         touch.up()
 
     # A tap with a nasty in the air: a fish leaps, bites (16 ms), and the tap is not read as a pause.
+    page.wait_for_function("window.__catch.snapshot().mode === 'paused'")
     with_nasty(200)
     page.evaluate("window.__vib = []")
     e0 = csnap(page)["game"]["eaten"]
@@ -1247,10 +1083,8 @@ def run_catch(browser, base):
     # A nasty about to land in the water: the tap still bites first.
     hz = csnap(page)["game"]["geo"]["horizon"]
     page.evaluate("window.__vib = []")
-    reopen_catch(page, base, """h => { const s = JSON.parse(localStorage.getItem('rlx.v1.catch'));
-      s.nasty = { x: 100, y: h - 7 - 12, vy: 30, k: 1, low: true, hunted: false }; s.boatX = 0; s.fish = []; s.items = [];
-      s.ink = 0; s.nastyIn = 25; s.spawnIn = 1.7;
-      localStorage.setItem('rlx.v1.catch', JSON.stringify(s)); }""", hz)
+    set_catch(page, """(s, h) => { s.nasty = { x: 100, y: h - 7 - 12, vy: 30, k: 1, low: true, hunted: false }; s.boatX = 0; s.fish = []; s.items = [];
+      s.ink = 0; s.nastyIn = 25; s.spawnIn = 1.7; }""", hz)
     touch.down(x, y)
     page.wait_for_timeout(300)
     touch.up()
@@ -1262,6 +1096,7 @@ def run_catch(browser, base):
     check(q["game"]["nasty"] is None and q["game"]["ink"] == 0 and q["game"]["eaten"] == e0 + 2,
           f"[{tag}] a nasty tapped just above the water ({above if above is None else round(above, 2)} px) is eaten, no ink")
     # A slow lift (over 200 ms) with a nasty in the air never fires a fish.
+    page.wait_for_timeout(500)
     with_nasty(60)
     touch.down(x, y)
     page.wait_for_timeout(320)
@@ -1270,7 +1105,8 @@ def run_catch(browser, base):
     q = csnap(page)
     check(not q["game"]["fish"] and not q["game"]["nasty"]["hunted"], f"[{tag}] a slow lift (320 ms) fires no fish")
     # A tap with no nasty: a hop, no haptic.
-    reopen_catch(page, base, "() => { const s = JSON.parse(localStorage.getItem('rlx.v1.catch')); s.nasty = null; s.fish = []; localStorage.setItem('rlx.v1.catch', JSON.stringify(s)); }")
+    page.wait_for_timeout(500)
+    set_catch(page, "(s) => { s.nasty = null; s.fish = []; }")
     touch.down(x, y)
     page.wait_for_timeout(300)
     touch.up()
@@ -1281,9 +1117,9 @@ def run_catch(browser, base):
     check(any(f["m"] == "hop" for f in q["game"]["fish"]) and 16 not in page.evaluate("window.__vib"), f"[{tag}] a tap with no nasty: a hop, no bite tick")
 
     # A nasty landing uneaten: cosmetics only.
-    reopen_catch(page, base, """h => { const s = JSON.parse(localStorage.getItem('rlx.v1.catch'));
-      s.nasty = { x: 100, y: h - 7 - 1, vy: 30, k: 2, low: true, hunted: false }; s.boatX = 0; s.fish = []; s.items = []; s.pace = 0.5;
-      localStorage.setItem('rlx.v1.catch', JSON.stringify(s)); }""", hz)
+    page.wait_for_timeout(600)
+    set_catch(page, """(s, h) => { s.nasty = { x: 100, y: h - 7 - 1, vy: 30, k: 2, low: true, hunted: false }; s.boatX = 0; s.fish = []; s.items = [];
+      s.pace = 0.5; }""", hz)
     before = csnap(page)
     page.evaluate("window.__vib = []")
     touch.down(x, y)
@@ -1292,87 +1128,38 @@ def run_catch(browser, base):
     page.screenshot(path=str(OUT / "catch-ink.png"))
     touch.up()
     check(q["game"]["ink"] > 3 and q["game"]["caught"] == before["game"]["caught"] and q["game"]["pace"] == 0.5
-          and q["run"] == before["run"] and page.evaluate("window.__vib") == [],
-          f"[{tag}] a nasty landing in the water: ink, no count, pace or run change, no haptic")
+          and page.evaluate("window.__vib") == [],
+          f"[{tag}] a nasty landing in the water: ink, no count or pace change, no haptic")
     page.wait_for_timeout(600)
 
-    # Hidden mid-play: paused at once (no grace), saved, no loop.
+    # Hidden mid-play: paused at once (no grace), no loop.
     touch.down(x, y)
     page.wait_for_timeout(500)
-    page.evaluate("""() => {
-      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
-      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
-      document.dispatchEvent(new Event('visibilitychange'));
-    }""")
+    set_hidden(page, True)
     h = csnap(page)
-    saved = json.loads(page.evaluate("localStorage.getItem('rlx.v1.catch')"))
     r2 = page.evaluate("window.__raf")
     page.wait_for_timeout(400)
-    check(h["mode"] == "paused" and not h["raf"] and saved == h["game"] and csnap(page)["game"] == h["game"]
-          and page.evaluate("window.__raf") == r2, f"[{tag}] hidden: paused at once, saved, no loop")
-    page.evaluate("""() => { delete document.visibilityState; delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); }""")
+    check(h["mode"] == "paused" and not h["raf"] and csnap(page)["game"] == h["game"]
+          and page.evaluate("window.__raf") == r2, f"[{tag}] hidden: paused at once, no loop")
+    set_hidden(page, False)
     touch.up()
+    st = page.evaluate(STORAGE_JS)
+    check(st == {"local": {}, "session": {}, "idb": [], "cookie": ""}, f"[{tag}] after play storage is empty {st}")
 
-    # Kill mid-play (pagehide only) and reopen: the same scene, paused.
+    # Kill mid-play (pagehide only) and reopen: a fresh scene, paused; nothing was stored.
     touch.down(x, y)
     page.wait_for_timeout(1500)
     page.evaluate("dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }))")
-    killed = json.loads(page.evaluate("localStorage.getItem('rlx.v1.catch')"))
+    st = page.evaluate(STORAGE_JS)
     page.close()
     page, errors2 = open_catch(ctx, base)
     touch = Touch(ctx, page)
     r = csnap(page)
-    check(r["mode"] == "paused" and r["game"] == killed and killed["items"], f"[{tag}] killed mid-play and reopened: the same scene, paused")
+    check(st == {"local": {}, "session": {}, "idb": [], "cookie": ""} and r["mode"] == "paused" and not r["game"]["items"]
+          and r["game"]["caught"] == 0 and r["game"]["pace"] == 0.3 and r["clock"]["active"] == 0,
+          f"[{tag}] killed mid-play: nothing stored; reopened: a fresh scene, paused, the clock at 0")
     page.screenshot(path=str(OUT / "catch-game-reopened.png"))
     errors += errors2
-
-    # Haptics off: zero vibrate calls through a catch and a bite. Deterministic (X13): the save is seeded
-    # with a thing just above the deck over the boat's middle and a nasty high in the air; the finger holds
-    # until the catch, then a tap sends the fish; each wait polls with a generous timeout, and the check
-    # needs at least one catch and one bite, so it can never pass on zero events.
-    page.evaluate("localStorage.setItem('rlx.v1.settings', JSON.stringify({ haptics: false }))")
-    reopen_catch(page, base, """() => { const s = JSON.parse(localStorage.getItem('rlx.v1.catch'));
-      s.boatX = 50; s.fish = []; s.treat = null; s.ink = 0; s.spawnIn = 1.7; s.nastyIn = 25; s.treatIn = 140;
-      s.items = [{ x: 50 + 12 - 3.5, y: s.geo.deckY - 7 - 6, vy: 32, ph: 0, k: 0, low: false }];
-      s.nasty = { x: 100, y: 150, vy: 30, k: 0, low: false, hunted: false };
-      localStorage.setItem('rlx.v1.catch', JSON.stringify(s)); }""")
-    touch = Touch(ctx, page)
-    page.evaluate("window.__vib = []")
-    g0 = csnap(page)["game"]
-    c0, e0 = g0["caught"], g0["eaten"]
-    touch.down(x, y)
-    deadline = time.time() + 10
-    while csnap(page)["game"]["caught"] <= c0 and time.time() < deadline:
-        page.wait_for_timeout(20)
-    touch.up()
-    touch.tap(x, y, 30)
-    touch.down(x, y)  # held, so play runs on until the fish bites
-    deadline = time.time() + 10
-    while csnap(page)["game"]["eaten"] <= e0 and time.time() < deadline:
-        page.wait_for_timeout(20)
-    touch.up()
-    page.wait_for_timeout(100)
-    q = csnap(page)
-    nc, nb = q["game"]["caught"] - c0, q["game"]["eaten"] - e0
-    check(page.evaluate("window.__vib.length") == 0 and nc > 0 and nb > 0,
-          f"[{tag}] haptics off: zero vibrate calls ({page.evaluate('window.__vib.length')}) over {nc} catches and {nb} bites")
-    page.evaluate("localStorage.setItem('rlx.v1.settings', JSON.stringify({ haptics: true }))")
-    page.wait_for_timeout(500)
-
-    # The count survives restarts; corrupt and old-version saves give a fresh scene with the counts kept.
-    n = csnap(page)["game"]["caught"]
-    page.reload()
-    page.wait_for_function("window.__catch && window.__catch.snapshot().game")
-    check(csnap(page)["game"]["caught"] == n and n > 0, f"[{tag}] the count survives a restart ({n})")
-    reopen_catch(page, base, "() => { localStorage.setItem('rlx.v1.catch', '{nope'); localStorage.setItem('rlx.v1.catch-count', JSON.stringify({ caught: 12, eaten: 3 })); }")
-    q = csnap(page)["game"]
-    check(q["caught"] == 12 and q["eaten"] == 3 and not q["items"] and q["pace"] == 0.3, f"[{tag}] corrupt save: fresh scene, counts kept ({q['caught']}, {q['eaten']})")
-    n_err = len(errors2)
-    reopen_catch(page, base, """() => { const s = JSON.parse(localStorage.getItem('rlx.v1.catch')); s.v = 0; s.caught = 77; s.eaten = 9;
-      localStorage.setItem('rlx.v1.catch', JSON.stringify(s)); localStorage.removeItem('rlx.v1.catch-count'); }""")
-    q = csnap(page)["game"]
-    check(q["caught"] == 77 and q["eaten"] == 9 and q["v"] == 1 and len(errors2) == n_err,
-          f"[{tag}] old-version save: no error, fresh scene, counts read from it ({q['caught']}, {q['eaten']})")
 
     # Reduced motion: a bite shows no bits.
     page.emulate_media(reduced_motion="reduce")
@@ -1386,42 +1173,36 @@ def run_catch(browser, base):
     check(mx == 0 and q["game"]["nasty"] is None, f"[{tag}] reduced motion: a bite shows no bits")
     page.emulate_media(reduced_motion="no-preference")
 
-    # Full dusk: step 10, the boat and the nasty keep their colours.
+    # Full dusk, opened from the hub at 12 minutes: step 10, the hull keeps its colour.
     page.goto(base)
     hits(page)
-    page.evaluate("localStorage.setItem('rlx.v1.session', JSON.stringify({ active: 720, last: Date.now() - 1000 }))")
-    page.goto(base + "games/catch/")
-    hits(page)
-    page.wait_for_function("window.__catch && window.__catch.snapshot().game")
+    page.evaluate(SET_CLOCK_JS, 720)
+    g_ = open_tile(page, "catch")
     page.wait_for_timeout(200)
-    q = csnap(page)
+    q = csnap(g_)
     shot = OUT / "catch-dusk.png"
     page.screenshot(path=str(shot))
     gg = q["game"]
     hull = (round(gg["boatX"]) + 12, gg["geo"]["deckY"] + 3)
     sky_px = (2, gg["geo"]["top"] + 2)
-    got = logical_pixels(page, shot, [hull, sky_px])
-    check(q["step"] == 10 and got[0] == "#F05A68" and delta_e(got[0], got[1]) >= MIN_DE,
-          f"[{tag}] Catch at 12 minutes: full dusk, hull keeps coral ({got})")
-    # One clock across games: Bricks reads the same clock Catch saved.
-    page.goto(base + "games/bricks/")
-    hits(page)
-    page.wait_for_function("window.__bricks && window.__bricks.snapshot().game")
-    check(snap(page)["clock"]["active"] == 720 and snap(page)["step"] == 10, f"[{tag}] Bricks shows the same session clock (one clock across games)")
-    page.goto(base + "games/catch/")
-    hits(page)
-    page.wait_for_function("window.__catch && window.__catch.snapshot().game")
-
-    # Back control mid-game goes to the hub and keeps the state.
-    touch = Touch(ctx, page)
-    touch.down(x, y)
-    page.wait_for_timeout(500)
+    got = logical_pixels(g_, shot, [hull, sky_px])
+    check(q["step"] == 10 and q["clock"]["active"] == 720 and got[0] == "#F05A68" and delta_e(got[0], got[1]) >= MIN_DE,
+          f"[{tag}] Catch opened from the hub at 12 minutes: the hub's clock, full dusk, hull keeps coral ({got})")
+    # One clock across games: play Catch, go back, open Bricks: it shows the same clock.
+    xs, ys, *_ = sea_point(g_)
+    touch = Touch(ctx, g_)
+    touch.down(xs, ys)
+    page.wait_for_timeout(1500)
     touch.up()
     page.wait_for_timeout(600)
-    held = csnap(page)["game"]
-    tap(page, "back")
-    page.wait_for_url(base)
-    check(json.loads(page.evaluate("localStorage.getItem('rlx.v1.catch')")) == held, f"[{tag}] back to the hub keeps the saved game")
+    played = csnap(g_)["clock"]["active"]
+    back_to_hub(page)
+    hub_clock = page.evaluate("window.__rlxSession.active")
+    gb = open_tile(page, "bricks")
+    bq = snap(gb)
+    check(played > 720.5 and hub_clock == played and bq["clock"]["active"] == played and bq["step"] == 10,
+          f"[{tag}] one clock across games: Catch played it to {played:.2f} s, the hub and then Bricks read the same")
+    back_to_hub(page)
 
     check(not errors and not errors2, f"[{tag}] no console errors {errors + errors2}")
     check(not foreign, f"[{tag}] only same-origin requests {foreign}")
@@ -1447,7 +1228,7 @@ CONTRAST_VIEWS = [(360, 640, "H240"), (360, 800, "H300"), (360, 1067, "H400")]
 
 
 def run_contrast_hub(browser, base):
-    """Row B4: the hub's wordmark, tiles, toggle and tag against the scene at sunset and all 10 steps."""
+    """Row B4: the hub's wordmark and tiles against the scene at sunset and all 10 steps."""
     for w, h, tag in CONTRAST_VIEWS:
         tag = f"contrast hub {tag}"
         ctx = new_context(browser, w, h, 3)
@@ -1461,36 +1242,31 @@ def run_contrast_hub(browser, base):
         def bands(y0, y1):
             return [i for i in range(tok["bands"]) if round(i * horizon / 10) < y1 and round((i + 1) * horizon / 10) > y0]
 
-        sea_y = [(horizon, horizon + 13), (horizon + 13, horizon + 27), (horizon + 27, H)]
         rows = []
         for k in range(11):
             pal = tok["pals"][k]
             sun = [("sun", C["sun"])] if k < 10 else []
             sky = lambda ix: [(f"sky band {i + 1}", pal["sky"][i]) for i in ix]  # noqa: E731
-            hg = r["haptics"]
-            sea = [(f"sea band {i + 1}", pal["sea"][i]) for i, (a, b) in enumerate(sea_y) if a < hg["y"] + hg["h"] and b > hg["y"]]
             items = [("wordmark (large)", "cr", MIN_CR, C["coral"], tok["edgeCoral"], sky(bands(12, 40)))]
-            for t in ("bricks", "catch", "putt", "stack"):
+            for t in GAMES:
                 items.append((f"{t} tile", "cr", MIN_CR, C["coral"], tok["edgeCoral"], sky(bands(r[t]["y"], r[t]["y"] + r[t]["h"])) + sun))
-            items.append(("haptics on", "cr", MIN_CR, C["ink"], C["cloud"], sea))
-            items.append(("haptics off", "cr", MIN_CR, C["cloud"], C["ink"], sea))
             for what, rule, need, fill, edge_, bgs in items:
                 m = contrast if rule == "cr" else delta_e
                 for on, bg in bgs:
                     rows.append((what, need, max(m(fill, bg), m(edge_, bg)), on, bg, k))
         under = [x for x in rows if x[2] < x[1]]
         worst = min(rows, key=lambda x: x[2] / x[1])
-        check(rows and not under, f"[{tag}] sunset and all 10 steps: wordmark, tiles, toggle (fill or edge) meet the B4 standard "
+        check(rows and not under, f"[{tag}] sunset and all 10 steps: wordmark and tiles (fill or edge) meet the B4 standard "
               f"(weakest {worst[0]} on {worst[3]} {worst[4]} step {worst[5]}: {worst[2]:.2f}; {len(under)} under {under[:3]})")
         labels = json.loads(page.eval_on_selector("#screen", "c => c.dataset.labels"))
         size = min(labels.values())
-        # The active tile labels as drawn (B4 review): scan each row of the label's left half for the first
+        # The tile labels as drawn (B4 review): scan each row of the label's left half for the first
         # outline pixel and take the pixel just right of it; the commonest such colour is the glyph. The
         # label is measured against its outline (small lettering 4.5 at size 1, 3 at larger sizes).
         shot = OUT / f"b4-hub-labels-{tag.split()[-1]}.png"
         page.screenshot(path=str(shot))
         glyphs, outlines = {}, set()
-        for t in ("bricks", "catch", "putt", "stack"):
+        for t in GAMES:
             rt = r[t]
             ys = list(range(rt["y"] + 2, rt["y"] + rt["h"] - 2))
             xs = list(range(rt["x"] + 2, rt["x"] + rt["w"] // 2))
@@ -1508,18 +1284,13 @@ def run_contrast_hub(browser, base):
         label_cr = contrast(glyph, outline) if glyph and outline else 0
         check(glyph == C["cloud"] and outline == tok["edgeCoral"], f"[{tag}] tile labels drawn white in a 1 px outline of the coral's edge "
               f"(sampled glyph {glyph}, outline {outline}, {glyphs})")
-        fixed = [("tile label on its outline", label_cr, MIN_CR if size >= 2 else MIN_CR_SMALL),
-                 ("SOON on its tag", contrast(C["ink"], C["card"]), MIN_CR_SMALL),
-                 ("HAPTICS ON", contrast(C["cloud"], C["ink"]), MIN_CR_SMALL),
-                 ("HAPTICS OFF", contrast(C["ink"], C["cloud"]), MIN_CR_SMALL)]
-        bad = [(n, round(v, 2), need) for n, v, need in fixed if v < need]
-        check(not bad, f"[{tag}] lettering on its own fill: tile labels (size {size}) "
-              f"{', '.join(f'{n} {v:.2f}' for n, v, _ in fixed)} {bad}")
+        need = MIN_CR if size >= 2 else MIN_CR_SMALL
+        check(label_cr >= need, f"[{tag}] tile labels (size {size}) on their outline: contrast {label_cr:.2f} >= {need}")
         ctx.close()
 
 
 def run_contrast_pages(browser, base):
-    """Row B4: the drawn colours of the hub, Bricks and Catch at sunset, step 5 and step 10."""
+    """Row B4: the drawn colours of the hub, Bricks and Catch at sunset, step 5 and step 10 (games opened from the hub)."""
     for w, h, vtag in CONTRAST_VIEWS:
         ctx = new_context(browser, w, h, 3)
         page = ctx.new_page()
@@ -1531,76 +1302,61 @@ def run_contrast_pages(browser, base):
             tag = f"contrast {vtag} step {k}"
             page.goto(base)
             hits(page)
-            page.evaluate("localStorage.clear()")
-            if active:
-                page.evaluate("a => localStorage.setItem('rlx.v1.session', JSON.stringify({ active: a, last: Date.now() - 1000 }))", active)
-            page.reload()
+            page.evaluate(SET_CLOCK_JS, active)
             lay = layout_of(page)
             page.wait_for_timeout(150)
             shot = OUT / f"b4-hub-{vtag}-{k}.png"
             page.screenshot(path=str(shot))
             r = lay["rects"]
-            hg, bt = r["haptics"], r["bricks"]
+            bt = r["bricks"]
             word = [(x, y) for y in range(11, 42) for x in range(135)]
-            got = logical_pixels(page, shot, word + [(hg["x"] + 3, hg["y"]), (hg["x"] + 2, hg["y"] + 7), (bt["x"] + 3, bt["y"]), (bt["x"] + 3, bt["y"] + 6)])
+            got = logical_pixels(page, shot, word + [(bt["x"] + 3, bt["y"]), (bt["x"] + 3, bt["y"] + 6)])
             wm, rest = set(got[:len(word)]), got[len(word):]
             check(page.eval_on_selector("#screen", "c => c.dataset.scene") == str(k) and C["coral"] in wm and tok["edgeCoral"] in wm
-                  and rest == [C["cloud"], C["ink"], tok["edgeCoral"], C["coral"]],
-                  f"[{tag}] hub: wordmark coral in its edge, toggle ink in a white rim, tile coral in its edge ({rest})")
-            # Bricks: paddle edge and fill, score in the ink, the pause ring in its ink ring.
-            page.goto(base + "games/bricks/")
-            hits(page)
-            page.wait_for_function("window.__bricks && window.__bricks.snapshot().game")
+                  and rest == [tok["edgeCoral"], C["coral"]],
+                  f"[{tag}] hub: wordmark coral in its edge, tile coral in its edge ({rest})")
+            # Bricks: paddle edge and fill, the pause ring in its ink ring.
+            g_ = open_tile(page, "bricks")
             page.wait_for_timeout(150)
-            q = snap(page)
+            q = snap(g_)
             g = q["game"]
             geo = g["geo"]
             shot = OUT / f"b4-bricks-{vtag}-{k}.png"
             page.screenshot(path=str(shot))
-            blay = layout_of(page)
-            sc, ring = blay["rects"]["score"], None
             px, py = round(g["paddleX"]), geo["paddleY"]
-            ring_y = min(geo["horizon"] + 21, blay["H"] - 7 - 2)
-            hud = [(x, y) for y in range(sc["y"], sc["y"] + sc["h"]) for x in range(sc["x"], sc["x"] + sc["w"])]
-            got = logical_pixels(page, shot, hud + [(px + 15, py), (px + 15, py + 3), (67, ring_y - 8), (67, ring_y - 7)])
-            score_cols, rest = set(got[:len(hud)]), got[len(hud):]
-            check(q["step"] == k and q["mode"] == "paused" and C["ink"] in score_cols and C["blue"] not in score_cols
-                  and rest == [tok["edgeCoral"], C["coral"], C["ink"], C["cloud"]],
-                  f"[{tag}] Bricks: score in the ink, paddle coral in its edge, pause ring white in an ink ring ({rest})")
+            ring_y = min(geo["horizon"] + 21, q["view"]["H"] - 7 - 2)
+            got = logical_pixels(g_, shot, [(px + 15, py), (px + 15, py + 3), (67, ring_y - 8), (67, ring_y - 7)])
+            check(q["step"] == k and q["mode"] == "paused" and got == [tok["edgeCoral"], C["coral"], C["ink"], C["cloud"]],
+                  f"[{tag}] Bricks: paddle coral in its edge, pause ring white in an ink ring ({got})")
+            back_to_hub(page)
             # Catch: hull edge and fill, sail in its token.
-            page.goto(base + "games/catch/")
-            hits(page)
-            page.wait_for_function("window.__catch && window.__catch.snapshot().game")
+            g_ = open_tile(page, "catch")
             page.wait_for_timeout(150)
-            q = csnap(page)
+            q = csnap(g_)
             gg = q["game"]
             shot = OUT / f"b4-catch-{vtag}-{k}.png"
             page.screenshot(path=str(shot))
             bx, deck = round(gg["boatX"]), gg["geo"]["deckY"]
-            got = logical_pixels(page, shot, [(bx + 12, deck), (bx + 12, deck + 3), (bx + 12, deck - 3), (bx + 11, deck - 6)])
+            got = logical_pixels(g_, shot, [(bx + 12, deck), (bx + 12, deck + 3), (bx + 12, deck - 3), (bx + 11, deck - 6)])
             check(q["step"] == k and got == [tok["edgeCoral"], C["coral"], C["sail"], tok["edgeCoral"]],
                   f"[{tag}] Catch: hull coral in its edge, sail in its own colour, mast in the edge ({got})")
             # B4 review: the hull's rows at and below the horizon in the keel; with an ink cloud and a
-            # glint seeded into the save, the inked sea and the glint as drawn.
+            # glint set in the live state, the inked sea and the glint as drawn.
             hz = gg["geo"]["horizon"]
-            got = logical_pixels(page, shot, [(bx + 12, hz), (bx + 12, hz + 1), (bx + 12, hz - 1)])
+            got = logical_pixels(g_, shot, [(bx + 12, hz), (bx + 12, hz + 1), (bx + 12, hz - 1)])
             check(tok["keel"] is not None and got == [tok["keel"], tok["keel"], C["coral"]],
                   f"[{tag}] Catch: the hull's rows below the horizon in the keel {tok['keel']}, the row above in coral ({got})")
-            page.goto(base)
-            hits(page)
-            page.evaluate("""() => { const s = JSON.parse(localStorage.getItem('rlx.v1.catch'));
-              s.ink = 3; s.sky = { k: 'glint', t: 0 }; localStorage.setItem('rlx.v1.catch', JSON.stringify(s)); }""")
-            page.goto(base + "games/catch/")
-            hits(page)
-            page.wait_for_function("window.__catch && window.__catch.snapshot().game")
+            set_catch(g_, "(s) => { s.ink = 3; s.sky = { k: 'glint', t: 0 }; }")
+            # A redraw while paused: a resize event re-lays out and paints.
+            g_.evaluate("() => dispatchEvent(new PageTransitionEvent('pageshow', { persisted: false }))")
             page.wait_for_timeout(150)
-            q = csnap(page)
+            q = csnap(g_)
             shot = OUT / f"b4-catch-fx-{vtag}-{k}.png"
             page.screenshot(path=str(shot))
             sink = round(k / 10 * 24)
             gy = hz - (24 - sink) + 3 if k < 10 else hz + 4
-            sea_row = logical_pixels(page, shot, [(x, hz + 9) for x in range(135)])
-            got = logical_pixels(page, shot, [(96, gy), (94, gy), (96, gy - 2)])
+            sea_row = logical_pixels(g_, shot, [(x, hz + 9) for x in range(135)])
+            got = logical_pixels(g_, shot, [(96, gy), (94, gy), (96, gy - 2)])
             inked = tok["inked"][k][0]
             check(q["game"]["ink"] > 2 and q["game"]["sky"] and inked in sea_row and tok["pals"][k]["sea"][0] not in sea_row
                   and delta_e(inked, tok["pals"][k]["sea"][0]) >= MIN_DE,
@@ -1609,6 +1365,7 @@ def run_contrast_pages(browser, base):
             de = min(delta_e(tok["glint"], b) for b in behind) if tok["glint"] else 0
             check(tok["glint"] is not None and got == [tok["glint"]] * 3 and de >= MIN_DE,
                   f"[{tag}] Catch: the glint drawn in {tok['glint']}, delta E {de:.2f} from what is behind it ({got})")
+            back_to_hub(page)
         ctx.close()
 
 
@@ -1742,15 +1499,14 @@ def run_putt(browser, base):
     errors = []
     page.on("console", lambda m: m.type == "error" and errors.append(m.text))
     page.on("pageerror", lambda e: errors.append(str(e)))
-    page.goto(base)
-    hits(page)
-    page.evaluate("localStorage.clear(); sessionStorage.clear()")
-    page.evaluate("localStorage.setItem('rlx.v1.session', JSON.stringify({ active: 30, last: Date.now() }))")
-    stored0 = page.evaluate(STORAGE_JS)
+    hub = page
+    hub.goto(base)
+    hits(hub)
+    hub.evaluate("localStorage.clear(); sessionStorage.clear()")
+    hub.evaluate(SET_CLOCK_JS, 30)
+    stored0 = hub.evaluate(STORAGE_JS)
     t0 = time.time()
-    tap(page, "putt")
-    page.wait_for_url("**/games/putt/")
-    page.wait_for_function("window.__putt && window.__putt.snapshot().level", timeout=20000)
+    page = open_tile(hub, "putt")
     first_ms = (time.time() - t0) * 1000
     s = psnap(page)
     check(s["level"]["fallback"] is False and s["mode"] == "worker" and first_ms < 3000 and s["opening"]["diff"] == s["level"]["diff"],
@@ -1760,8 +1516,7 @@ def run_putt(browser, base):
     s = psnap(page)
     check(s["ready"]["random"] in (1, 2, 3), f"[{tag}] the next level is built in the background while this one is played (level {s['ready']['random']} ready)")
     check(s["clock"]["active"] >= 30 and s["step"] == 0, f"[{tag}] Putt reads the shared session clock ({s['clock']['active']:.1f} s)")
-    hits_attr = page.eval_on_selector("#screen", "c => ({ hits: c.dataset.hits || null, hud: c.dataset.hud || null, layout: c.dataset.layout || null })")
-    check(hits_attr == {"hits": None, "hud": None, "layout": None}, f"[{tag}] no HUD, no button, no back control: no hit areas or HUD on the canvas {hits_attr}")
+    no_hud(page, tag, "Putt")
     shot = OUT / f"putt-play-{tag.split()[-1]}.png"
     page.screenshot(path=str(shot))
     info, sc, H, bad, total, ncol, size = crisp(page, shot, s["geo"]["scale"])
@@ -1829,19 +1584,18 @@ def run_putt(browser, base):
     check(s["clock"]["active"] > 30 + 1, f"[{tag}] the session clock counts Putt play in memory ({s['clock']['active']:.1f} s)")
     check(not s["raf"] or s["ball"]["moving"], f"[{tag}] idle at rest: no animation loop")
 
-    # Nothing written to storage.
+    # Nothing written to storage (the game's frame and the hub's page share it).
     stored1 = page.evaluate(STORAGE_JS)
-    check(stored1 == stored0, f"[{tag}] nothing written to storage (localStorage, sessionStorage, IndexedDB, cookies): {stored1}")
+    check(stored1 == stored0 and hub.evaluate(STORAGE_JS) == stored0,
+          f"[{tag}] nothing written to storage (localStorage, sessionStorage, IndexedDB, cookies): {stored1}")
+    hub_active = hub.evaluate("window.__rlxSession.active")
+    check(s["clock"]["active"] <= hub_active < s["clock"]["active"] + 5, f"[{tag}] Putt's play is on the hub's clock (one clock: {hub_active:.1f} s)")
 
     # Opening Putt again always gives a new level.
     seeds = {s["level"]["seed"]}
     for i in range(3):
-        page.go_back()
-        page.wait_for_url(base)
-        hits(page)
-        tap(page, "putt")
-        page.wait_for_url("**/games/putt/")
-        page.wait_for_function("window.__putt && window.__putt.snapshot().level", timeout=20000)
+        back_to_hub(hub)
+        page = open_tile(hub, "putt")
         s = psnap(page)
         seeds.add(s["level"]["seed"])
         openings.append(s["opening"])
@@ -1851,12 +1605,8 @@ def run_putt(browser, base):
     # The first frame already has its course on a level-1 or 2 opening; a level 3 is asked of the worker
     # at module load and the sea is drawn alone until it lands. Open until both kinds are seen (or 12 openings).
     while len(openings) < 12 and not (any(o["diff"] < 3 for o in openings) and any(o["diff"] == 3 for o in openings)):
-        page.go_back()
-        page.wait_for_url(base)
-        hits(page)
-        tap(page, "putt")
-        page.wait_for_url("**/games/putt/")
-        page.wait_for_function("window.__putt && window.__putt.snapshot().level", timeout=20000)
+        back_to_hub(hub)
+        page = open_tile(hub, "putt")
         openings.append(psnap(page)["opening"])
     easy_open = [o for o in openings if o["diff"] < 3]
     hard_open = [o for o in openings if o["diff"] == 3]
@@ -1866,13 +1616,10 @@ def run_putt(browser, base):
           f"[{tag}] a level-3 opening lands from the worker started at module load ({[round(o['landedMs']) if o['landedMs'] is not None else 'first frame' for o in hard_open]} ms after load; {len(hard_open)} of {len(openings)} openings)")
 
     # From minute 10 of the session clock every new course is level 1, drawn at full dusk.
-    page.go_back()
-    page.wait_for_url(base)
-    hits(page)
-    page.evaluate("localStorage.setItem('rlx.v1.session', JSON.stringify({ active: 600, last: Date.now() }))")
-    stored0 = page.evaluate(STORAGE_JS)
-    tap(page, "putt")
-    page.wait_for_url("**/games/putt/")
+    back_to_hub(hub)
+    hub.evaluate(SET_CLOCK_JS, 600)
+    stored0 = hub.evaluate(STORAGE_JS)
+    page = open_tile(hub, "putt")
     page.wait_for_function("window.__putt && window.__putt.snapshot().level && window.__putt.snapshot().ready.random !== null", timeout=20000)
     page.wait_for_function("window.__putt.snapshot().ready.easy !== null", timeout=20000)
     s = psnap(page)
@@ -1912,14 +1659,15 @@ def ssnap(page):
     return page.evaluate("window.__stack.snapshot()")
 
 
-def open_stack(page, base):
-    """Open Stack from the hub with one tap on its tile."""
-    page.goto(base)
-    hits(page)
-    tap(page, "stack")
-    page.wait_for_url("**/games/stack/")
-    page.wait_for_function("window.__stack && window.__stack.snapshot().game", timeout=10000)
+def open_stack(hub, base, active=None):
+    """Open Stack from the hub with one tap on its tile (the hub's clock set to active first). Returns a Hosted."""
+    hub.goto(base)
+    hits(hub)
+    if active is not None:
+        hub.evaluate(SET_CLOCK_JS, active)
+    page = open_tile(hub, "stack", 10000)
     page.wait_for_timeout(100)
+    return page
 
 
 def stack_time_to(q, target):
@@ -1972,20 +1720,19 @@ def run_stack(browser, base):
     errors = []
     page.on("console", lambda m: m.type == "error" and errors.append(m.text))
     page.on("pageerror", lambda e: errors.append(str(e)))
-    page.goto(base)
-    hits(page)
-    page.evaluate("localStorage.clear(); sessionStorage.clear()")
-    page.evaluate("localStorage.setItem('rlx.v1.session', JSON.stringify({ active: 30, last: Date.now() }))")
-    stored0 = page.evaluate(STORAGE_JS)
-    open_stack(page, base)
+    hub = page
+    hub.goto(base)
+    hits(hub)
+    hub.evaluate("localStorage.clear(); sessionStorage.clear()")
+    stored0 = hub.evaluate(STORAGE_JS)
+    page = open_stack(hub, base, 30)
     q = ssnap(page)
     g = q["game"]
-    check(page.url == base + "games/stack/" and q["top"] == 0 and len(g["floors"]) == 1 and g["floors"][0]["w"] == 60
+    check(hub.url == base and hub.evaluate("document.body.dataset.game") == "stack" and q["top"] == 0 and len(g["floors"]) == 1 and g["floors"][0]["w"] == 60
           and g["pace"] == 50 and g["block"]["speed"] == 50 and g["block"]["w"] == 60 and g["block"]["mode"] == "slide",
           f"[{tag}] one tap on STACK opens a new tower: one 60 px floor, a 60 px block sliding at 50")
     check(q["clock"]["active"] >= 30 and q["step"] == 0, f"[{tag}] Stack reads the shared session clock ({q['clock']['active']:.1f} s)")
-    attrs = page.eval_on_selector("#screen", "c => ({ hits: c.dataset.hits || null, hud: c.dataset.hud || null, layout: c.dataset.layout || null })")
-    check(attrs == {"hits": None, "hud": None, "layout": None}, f"[{tag}] no HUD, no button, no back control: no hit areas or HUD on the canvas {attrs}")
+    no_hud(page, tag, "Stack")
     shot = OUT / f"stack-play-{tag.split()[-1]}.png"
     page.screenshot(path=str(shot))
     info, sc, H, bad, total, ncol, size = crisp(page, shot, q["geo"]["scale"])
@@ -2102,11 +1849,8 @@ def run_stack(browser, base):
     check(all(gp >= 40 - 0.5 for gp in gaps), f"[{tag}] at most one vibrate call per 40 ms")
 
     # Hidden: everything pauses at once, the clock stops; shown again it carries on.
-    page.evaluate("""() => {
-      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
-      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
-      document.dispatchEvent(new Event('visibilitychange'));
-    }""")
+    set_hidden(hub, True)
+    set_hidden(page.frame, True)
     page.wait_for_timeout(50)
     h1 = ssnap(page)
     r1 = page.evaluate("window.__raf")
@@ -2117,7 +1861,8 @@ def run_stack(browser, base):
     touch.tap(180, 420, hold_ms=10)
     page.wait_for_timeout(40)
     check(ssnap(page)["top"] == h2["top"], f"[{tag}] hidden: a tap drops nothing")
-    page.evaluate("() => { delete document.visibilityState; delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); }")
+    set_hidden(page.frame, False)
+    set_hidden(hub, False)
     page.wait_for_timeout(200)
     h3 = ssnap(page)
     check(h3["raf"] and h3["game"]["block"]["x"] != h2["game"]["block"]["x"] and h3["clock"]["active"] > h2["clock"]["active"],
@@ -2133,16 +1878,24 @@ def run_stack(browser, base):
     check(ssnap(page)["raf"], f"[{tag}] pageshow resumes")
 
     q = ssnap(page)
-    check(q["clock"]["active"] > 30 + 3, f"[{tag}] the session clock counts Stack play in memory ({q['clock']['active']:.1f} s)")
+    hub_active = hub.evaluate("window.__rlxSession.active")
+    check(q["clock"]["active"] > 30 + 3 and q["clock"]["active"] <= hub_active < q["clock"]["active"] + 1,
+          f"[{tag}] the session clock counts Stack play in memory, on the hub's clock ({q['clock']['active']:.1f} s)")
     check(page.evaluate(STORAGE_JS) == stored0, f"[{tag}] nothing written to storage (localStorage, sessionStorage, IndexedDB, cookies)")
+    # Hidden 5 minutes: the clock starts again, and so does the pace (the next block slides at 50).
+    set_hidden(hub, True)
+    set_hidden(page.frame, True)
+    hub.evaluate("window.__rlxSession.hiddenAt = Date.now() - 5 * 60 * 1000")
+    set_hidden(page.frame, False)
+    set_hidden(hub, False)
+    page.wait_for_timeout(100)
+    q = ssnap(page)
+    check(q["clock"]["active"] < 1 and q["clock"]["resets"] == 1 and q["game"]["pace"] == 50 and q["step"] == 0,
+          f"[{tag}] hidden 5 minutes: the clock starts again and the pace is back at 50 ({q['game']['pace']})")
 
     # Opening Stack again always starts a new tower.
-    page.go_back()
-    page.wait_for_url(base)
-    hits(page)
-    tap(page, "stack")
-    page.wait_for_url("**/games/stack/")
-    page.wait_for_function("window.__stack && window.__stack.snapshot().game", timeout=10000)
+    back_to_hub(hub)
+    page = open_tile(hub, "stack", 10000)
     q = ssnap(page)
     check(q["top"] == 0 and q["game"]["pace"] == 50 and q["game"]["floors"][0]["w"] == 60 and q["lastDrop"] is None,
           f"[{tag}] opening Stack from the hub again starts a new tower at speed 50")
@@ -2162,11 +1915,8 @@ def run_stack(browser, base):
     page.emulate_media(reduced_motion="no-preference")
 
     # Dusk: from minute 12 the block slides at 40, the scene at full dusk.
-    page.goto(base)
-    hits(page)
-    page.evaluate("localStorage.setItem('rlx.v1.session', JSON.stringify({ active: 720, last: Date.now() }))")
-    stored0 = page.evaluate(STORAGE_JS)
-    open_stack(page, base)
+    stored0 = hub.evaluate(STORAGE_JS)
+    page = open_stack(hub, base, 720)
     touch = Touch(ctx, page)
     page.wait_for_timeout(100)
     stack_tap_at(page, touch, 0)
@@ -2194,15 +1944,11 @@ def run_contrast_stack(browser, base):
         }""")
         for k, active in ((0, 0), (5, 300), (10, 720)):
             tag = f"contrast stack {vtag} step {k}"
-            page.goto(base)
-            hits(page)
-            page.evaluate("a => { localStorage.clear(); if (a) localStorage.setItem('rlx.v1.session', JSON.stringify({ active: a, last: Date.now() - 1000 })); }", active)
-            page.goto(base + "games/stack/")
-            page.wait_for_function("window.__stack && window.__stack.snapshot().game", timeout=10000)
-            page.wait_for_timeout(150)
+            g_ = open_stack(page, base, active)
+            page.wait_for_timeout(50)
             shot = OUT / f"s1-stack-{vtag}-{k}.png"
             page.screenshot(path=str(shot))
-            q = ssnap(page)
+            q = ssnap(g_)
             hz = q["geo"]["horizon"]
             # Floor 0 (coral): its edge on the top row, its fill on the fifth; just below the horizon, the sea in front.
             got = stack_pixels(page, shot, q, [(67, hz - 8), (67, hz - 4), (67, hz)])
@@ -2211,6 +1957,49 @@ def run_contrast_stack(browser, base):
                   and delta_e(tok["edges"][0], sea0) >= MIN_DE,
                   f"[{tag}] the first floor coral in its edge, standing on the horizon, the sea in front ({got})")
         ctx.close()
+
+
+ACTIVATION_PROBE = """
+if (location.pathname.includes('/games/')) {
+  setTimeout(() => {
+    window.__act = { active: navigator.userActivation.hasBeenActive, vib: typeof navigator.vibrate === 'function' ? navigator.vibrate(1) : null };
+  }, 700);
+}
+"""
+
+
+def run_activation(browser, base):
+    """Row X1: a game opened by a tap on its hub tile runs in a frame made on that touch, so the tap also
+    counts as the game page's own (Chrome lets a page vibrate only after one). Real navigator.vibrate, real
+    touch over CDP; the game page records its own state from a timer (no test gesture involved)."""
+    tag = "activation 360x800"
+    ctx = browser.new_context(viewport={"width": 360, "height": 800}, device_scale_factor=DPR, is_mobile=True, has_touch=True)
+    ctx.add_init_script(ACTIVATION_PROBE)
+    page = ctx.new_page()
+    logs = []
+    page.on("console", lambda m: logs.append(m.text))
+    page.goto(base)
+    hits(page)
+    touch = Touch(ctx, page)
+    for game in GAMES:
+        p = hits(page)[game]
+        touch.tap(p["x"], p["y"], 40)
+        # No script runs in the hub or the game until the game has recorded its state: a test's evaluate
+        # counts as a user gesture in Chromium and would grant the activation being tested.
+        page.wait_for_timeout(1500)
+        fr = game_frame(page, game)
+        act = fr.evaluate("window.__act || null") if fr else None
+        check(act == {"active": True, "vib": True},
+              f"[{tag}] {game} opened by a tap on its tile can vibrate before any touch of its own {act}")
+        back_to_hub(page)
+    blocked = [m for m in logs if "Blocked call to navigator.vibrate" in m]
+    check(not blocked, f"[{tag}] Chrome blocked no vibrate call {blocked}")
+    # For the record (X6): a game page loaded on its own, with no tap, cannot vibrate until its first tap.
+    page.goto(base + "games/bricks/")
+    page.wait_for_timeout(1500)
+    act = page.evaluate("window.__act || null") or {}
+    check(act.get("active") is False and act.get("vib") is False, f"[{tag}] (X6, for the record) Bricks loaded on its own, no tap: no activation, vibrate refused {act}")
+    ctx.close()
 
 
 def run_version_bump(browser):
@@ -2247,6 +2036,115 @@ def run_version_bump(browser):
     httpd.shutdown()
 
 
+def view_of(page):
+    """The logical screen of a page: scale, H and the device-pixel offsets, from the hub's layout or a game's hook."""
+    return page.evaluate("""() => {
+      const c = document.getElementById('screen');
+      const off = (scale, H) => ({ scale, H, ox: Math.floor((c.width - 135 * scale) / 2), oy: Math.floor((c.height - H * scale) / 2) });
+      if (c.dataset.layout) { const l = JSON.parse(c.dataset.layout); return off(l.scale, l.H); }
+      for (const k of ['__bricks', '__catch']) if (window[k]) return window[k].snapshot().view;
+      if (window.__stack) { const g = window.__stack.snapshot().geo; return { scale: g.scale, H: g.H, ox: g.ox, oy: g.oy }; }
+      return null;
+    }""")
+
+
+GAMES = ("bricks", "catch", "putt", "stack")
+
+
+GAME_READY = {
+    "bricks": "window.__bricks && window.__bricks.snapshot().game",
+    "catch": "window.__catch && window.__catch.snapshot().game",
+    "putt": "window.__putt && window.__putt.snapshot().level",
+    "stack": "window.__stack && window.__stack.snapshot().game",
+}
+
+
+class Hosted:
+    """A game opened from the hub: it runs in a frame over the hub's page (row X1). Script calls go to
+    the game's frame; input, screenshots, media and history go to the page (the frame fills the screen)."""
+    FRAME = {"evaluate", "wait_for_function", "eval_on_selector", "query_selector", "query_selector_all", "content"}
+
+    def __init__(self, page, frame):
+        self.page, self.frame = page, frame
+
+    def __getattr__(self, name):
+        return getattr(self.frame if name in self.FRAME else self.page, name)
+
+
+def game_frame(page, name):
+    for f in page.frames:
+        if f.url.split("?")[0].endswith(f"/games/{name}/"):
+            return f
+    return None
+
+
+def open_tile(page, name, timeout=20000):
+    """Tap a hub tile, wait for the game's frame to show and the game to be ready. Returns a Hosted."""
+    tap(page, name)
+    page.wait_for_function(f"document.body.dataset.game === '{name}'", timeout=timeout)
+    deadline = time.time() + timeout / 1000
+    fr = game_frame(page, name)
+    while fr is None and time.time() < deadline:
+        page.wait_for_timeout(20)
+        fr = game_frame(page, name)
+    fr.wait_for_function(GAME_READY[name], timeout=timeout)
+    return Hosted(page, fr)
+
+
+def back_to_hub(page):
+    """The Android back gesture: one step back in history. The game's frame goes; the hub shows."""
+    page.go_back()
+    page.wait_for_function("!document.body.dataset.game && !document.querySelector('iframe')")
+    hits(page)
+
+
+def set_hidden(target, hidden):
+    """Fake the page being hidden or shown (in a page or a game's frame) and fire visibilitychange."""
+    if hidden:
+        target.evaluate("""() => {
+          Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+          Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+          document.dispatchEvent(new Event('visibilitychange'));
+        }""")
+    else:
+        target.evaluate("() => { delete document.visibilityState; delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); }")
+
+
+# The DOM of a game screen: nothing but the canvas, the safe-area probe and scripts; no visible text.
+SCREEN_DOM_JS = """() => {
+  const els = [...document.body.querySelectorAll('*')].filter((e) => e.tagName !== 'SCRIPT');
+  const odd = els.filter((e) => !(e.tagName === 'CANVAS' && e.id === 'screen') && !e.classList.contains('safe-probe'));
+  const c = document.getElementById('screen');
+  return { odd: odd.map((e) => e.tagName + '.' + e.className), text: document.body.innerText.trim(),
+           buttons: document.querySelectorAll('button, a, input, select, [role=button]').length,
+           hud: c.dataset.hud || null, hits: c.dataset.hits || null, layout: c.dataset.layout || null };
+}"""
+
+
+def no_hud(page, tag, what):
+    d = page.evaluate(SCREEN_DOM_JS)
+    check(d == {"odd": [], "text": "", "buttons": 0, "hud": None, "hits": None, "layout": None},
+          f"[{tag}] {what}: no text, number or button drawn or in the DOM, no HUD or hit areas {d}")
+
+
+STALE_KEYS_JS = """() => {
+  const old = { 'rlx.v1.settings': '{"haptics":false}', 'rlx.v2.bricks': '{}', 'rlx.v1.bricks-score': '12', 'rlx.v1.catch': '{}',
+    'rlx.v1.catch-count': '{"caught":3,"eaten":1}', 'rlx.v1.session': '{"active":300,"last":0}', 'rlx.v1.bricks': '{}' };
+  for (const [k, v] of Object.entries(old)) localStorage.setItem(k, v);
+  sessionStorage.setItem('rlx.v1.session', '{}');
+  localStorage.setItem('other-app', 'kept');
+}"""
+
+
+SET_CLOCK_JS = """a => { const c = window.__rlxSession; c.active = a; c.hiddenAt = null;
+  dispatchEvent(new PageTransitionEvent('pageshow', { persisted: false })); }"""
+
+
+def set_catch(page, js, arg=None):
+    """Set up a scene in the live Catch state (paused): js is a function of (state, arg)."""
+    page.evaluate("([src, arg]) => { const s = window.__catch.live(); (0, eval)(src)(s, arg); }", [js, arg])
+
+
 def main():
     global MAX_AGE
     if "--max-age" in sys.argv:
@@ -2274,6 +2172,7 @@ def main():
         run_contrast_hub(browser, base)
         run_contrast_pages(browser, base)
         run_contrast_stack(browser, base)
+        run_activation(browser, base)
         run_version_bump(browser)
         browser.close()
     httpd.shutdown()

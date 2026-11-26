@@ -13,59 +13,38 @@
 <link rel="stylesheet" href="shared/theme.css">
 </head>
 <body>
-<canvas class="screen" id="screen" role="img" aria-label="RLX: Bricks, Catch, Putt and Stack. Haptics setting."></canvas>
+<canvas class="screen" id="screen" role="img" aria-label="RLX: Bricks, Catch, Putt and Stack. The Android back gesture returns from a game."></canvas>
 <script type="module">
-import { COLORS, mix, edge } from './shared/tokens.js';
-import { drawFitted, fitSize, measure } from './shared/font.js';
+import { COLORS, edge } from './shared/tokens.js';
+import { drawFitted, fitSize } from './shared/font.js';
 import {
-  createScreen, drawScene, pixelBody, initPage, hitTest, publishHits, openPage, SEA_HEIGHT, SUN_RADIUS,
+  createScreen, drawScene, pixelBody, initPage, hitTest, publishHits, SEA_HEIGHT, SUN_RADIUS,
 } from './shared/pixel.js';
-import { hapticsOn, setHaptics } from './shared/settings.js';
-import { testTick } from './shared/haptics.js';
-import { readClock, phaseOf, sceneStep, SESSION } from './shared/session.js';
+import { sessionClock, phaseOf, sceneStep } from './shared/session.js';
 
 initPage();
 
+// The hub is the game tiles and nothing else (PLAN §2): one active tile per built game.
 const TILES = [
-  { id: 'bricks', label: 'BRICKS', active: true, href: 'games/bricks/' },
-  { id: 'catch', label: 'CATCH', active: true, href: 'games/catch/' },
-  { id: 'putt', label: 'PUTT', active: true, href: 'games/putt/' },
-  { id: 'stack', label: 'STACK', active: true, href: 'games/stack/' },
+  { id: 'bricks', label: 'BRICKS', href: 'games/bricks/' },
+  { id: 'catch', label: 'CATCH', href: 'games/catch/' },
+  { id: 'putt', label: 'PUTT', href: 'games/putt/' },
+  { id: 'stack', label: 'STACK', href: 'games/stack/' },
 ];
 
 // Tile height and gap, largest first; short screens take a smaller pair
 // (U1: the smallest pair added so four tiles fit a logical height of 240).
 const TILE_SIZES = [[22, 6], [20, 5], [18, 4], [16, 3], [15, 2]];
 const SUN_CLEAR = SUN_RADIUS + 4; // tiles end this far above the horizon to keep the sun clear
-const TOGGLE_H = 15;
-const TOGGLE_W = 75;
-// B4 contrast pass: every control and the wordmark carry a 1 px edge all round
-// that stands off every scene colour; the active tiles take white lettering
-// in a 1 px outline of the coral's edge; the SOON tile keeps a pale fill with an edge and
-// label in the coral's edge colour; the tag and the toggle use the ink.
-const SOON_FILL = mix(COLORS.skyBottom, COLORS.cloud, 0.45);
-const SOON_INK = edge(COLORS.coral);
+// B4 contrast pass: every tile and the wordmark carry a 1 px edge all round
+// that stands off every scene colour; the tiles take white lettering in a
+// 1 px outline of the coral's edge.
 const TILE_INK = COLORS.cloud;
-const SOON_SHADE = mix(SOON_FILL, COLORS.shadeTarget, 0.12);
-const TAG_FILL = COLORS.card;
 const TILE_EDGE = edge(COLORS.coral);
 
+const clock = sessionClock(); // the one session clock: the hub holds it, the games it opens share it
 let pressed = null;
-let haptics = hapticsOn();
 let rects = {};
-let resetTimer = 0;
-
-// The hub never advances the clock; it shows the phase of the saved clock.
-// After the reset gap that is sunset; a hub left open redraws at that moment.
-function currentPhase() {
-  const { clock } = readClock(Date.now());
-  clearTimeout(resetTimer);
-  if (clock.last !== null && clock.active > 0) {
-    const wait = clock.last + SESSION.resetGapMin * 60 * 1000 - Date.now();
-    resetTimer = setTimeout(() => screen.render(), Math.max(0, wait) + 50);
-  }
-  return phaseOf(clock.active);
-}
 
 function layout(s) {
   const { W, H, safe } = s;
@@ -93,82 +72,40 @@ function layout(s) {
   TILES.forEach((t, i) => {
     r[t.id] = { x: mx + 8, y: ty + i * (th + gap), w: tw, h: th };
   });
-  const toggleY = Math.min(horizon + 13, H - safe.bottom - 3 - TOGGLE_H);
-  r.haptics = { x: Math.floor((W - TOGGLE_W) / 2), y: toggleY, w: TOGGLE_W, h: TOGGLE_H };
   return r;
 }
 
 // One box computation, used both to size the labels and to draw them.
 const TILE_PAD = 6;
-const TAG_W = measure('SOON', 1) + 6;
-const TAG_H = 11;
 
-function tileParts(t, r, y) {
+function tileParts(r, y) {
   const right = r.x + r.w - TILE_PAD;
-  const parts = {};
-  let end;
-  if (t.active) {
-    parts.chevron = { x: right - 4, y: y + Math.floor((r.h - 7) / 2) };
-    end = parts.chevron.x - 4;
-  } else {
-    parts.tag = { x: right - TAG_W + 2, y: y + Math.floor((r.h - TAG_H) / 2), w: TAG_W, h: TAG_H };
-    end = parts.tag.x - 4;
-  }
-  parts.label = { x: r.x + TILE_PAD, y: y + 3, w: end - (r.x + TILE_PAD), h: r.h - 6 };
-  return parts;
+  const chevron = { x: right - 4, y: y + Math.floor((r.h - 7) / 2) };
+  const end = chevron.x - 4;
+  return { chevron, label: { x: r.x + TILE_PAD, y: y + 3, w: end - (r.x + TILE_PAD), h: r.h - 6 } };
 }
 
 // The largest size at which every label fits its box (with room for the
-// 1 px outline or the 1 px drop shade), so all tiles share one label size.
+// 1 px outline all round), so all tiles share one label size.
 function labelSizeFor(tiles, rectsById) {
   let size = 16;
   for (const t of tiles) {
-    const box = tileParts(t, rectsById[t.id], rectsById[t.id].y).label;
-    // Active labels: a 1 px outline all round (2 px each way); SOON: the 1 px drop shade.
-    size = t.active ? Math.min(size, fitSize(t.label, box.w - 2, box.h - 2, 16))
-      : Math.min(size, fitSize(t.label, box.w, box.h - 1, 16));
+    const box = tileParts(rectsById[t.id], rectsById[t.id].y).label;
+    size = Math.min(size, fitSize(t.label, box.w - 2, box.h - 2, 16));
   }
   return Math.max(1, size);
 }
 
 function drawTile(ctx, t, r, labelSize) {
   const y = r.y + (pressed === t.id ? 1 : 0);
-  const active = t.active;
-  pixelBody(ctx, r.x, y, r.w, r.h, active ? COLORS.coral : SOON_FILL, 2, active ? TILE_EDGE : SOON_INK);
-  const parts = tileParts(t, r, y);
-  if (parts.chevron) {
-    // chevron: this one opens
-    ctx.fillStyle = TILE_INK;
-    const { x: cx, y: cy } = parts.chevron;
-    [0, 1, 2, 3, 2, 1, 0].forEach((c, i) => ctx.fillRect(cx + c, cy + i, 2, 1));
-  }
-  if (parts.tag) {
-    const g = parts.tag;
-    pixelBody(ctx, g.x, g.y, g.w, g.h, TAG_FILL, 1);
-    drawFitted(ctx, 'SOON', { x: g.x + 3, y: g.y + 2, w: g.w - 6, h: g.h - 3 }, COLORS.ink, { maxSize: 1 });
-  }
-  return drawFitted(ctx, t.label, parts.label, active ? TILE_INK : SOON_INK, {
-    align: 'left',
-    maxSize: labelSize,
-    // B4 review: white in a 1 px outline of the coral's edge (6.13:1), as the
-    // wordmark; the outline takes the place of the drop shade.
-    shadow: active ? null : SOON_SHADE,
-    outline: active ? TILE_EDGE : null,
-  });
-}
-
-function drawToggle(ctx, r) {
-  const down = pressed === 'haptics' ? 1 : 0;
-  const y = r.y + down;
-  // On: an ink body in a white rim; off: a white body in an ink rim. One of
-  // the two stands off every sea colour at every scene step.
-  const fill = haptics ? COLORS.ink : COLORS.cloud;
-  pixelBody(ctx, r.x, y, r.w, r.h, fill, 2, haptics ? COLORS.cloud : COLORS.ink);
-  const text = haptics ? 'HAPTICS ON' : 'HAPTICS OFF';
-  const box = { x: r.x + 4, y: y + 3, w: r.w - 8, h: r.h - 5 };
-  // one size for both states, fitted to the longer label
-  const size = fitSize('HAPTICS OFF', box.w, box.h, 2);
-  drawFitted(ctx, text, box, haptics ? COLORS.cloud : COLORS.ink, { maxSize: size });
+  pixelBody(ctx, r.x, y, r.w, r.h, COLORS.coral, 2, TILE_EDGE);
+  const parts = tileParts(r, y);
+  // chevron: this one opens
+  ctx.fillStyle = TILE_INK;
+  const { x: cx, y: cy } = parts.chevron;
+  [0, 1, 2, 3, 2, 1, 0].forEach((c, i) => ctx.fillRect(cx + c, cy + i, 2, 1));
+  // B4 review: white in a 1 px outline of the coral's edge (6.13:1), as the wordmark.
+  return drawFitted(ctx, t.label, parts.label, TILE_INK, { align: 'left', maxSize: labelSize, outline: TILE_EDGE });
 }
 
 function draw(ctx, s) {
@@ -176,7 +113,8 @@ function draw(ctx, s) {
   const firstTile = rects[TILES[0].id].y;
   const wordBottom = rects.wordmark.y + rects.wordmark.h;
   const open = firstTile - wordBottom;
-  const phase = currentPhase();
+  // The hub never advances the clock; it shows the phase it stands at.
+  const phase = phaseOf(clock.active);
   drawScene(ctx, s.W, s.H, {
     clouds: [
       [96, wordBottom + Math.round(open * 0.2)],
@@ -193,24 +131,72 @@ function draw(ctx, s) {
   const drawn = {};
   for (const t of TILES) drawn[t.id] = drawTile(ctx, t, rects[t.id], labelSize);
   canvas.dataset.labels = JSON.stringify(drawn);
-  drawToggle(ctx, rects.haptics);
-  publishHits(canvas, s, { bricks: rects.bricks, catch: rects.catch, putt: rects.putt, stack: rects.stack, haptics: rects.haptics });
+  const hitRects = {};
+  for (const t of TILES) hitRects[t.id] = rects[t.id];
+  publishHits(canvas, s, hitRects);
 }
 
 const canvas = document.getElementById('screen');
 const screen = createScreen(canvas, draw);
 
+/* ---------- opening a game: a fresh frame over the hub ---------- */
+
+// The game is made on the tile's touch, so the tap that opens it also counts
+// as the game page's own tap (Chrome lets a page vibrate only after one); it
+// shows when the touch lifts on the tile, with a history entry, so the
+// Android back gesture returns here. Going back removes the frame: the next
+// opening is a fresh game. The page itself never leaves the hub, so the
+// session clock lives on in memory across games.
+let game = null; // { el, id, shown }
+
+function prepare(t) {
+  discard();
+  const el = document.createElement('iframe');
+  el.className = 'game';
+  el.title = t.label;
+  el.src = t.href;
+  document.body.appendChild(el);
+  game = { el, id: t.id, shown: false };
+}
+
+function show() {
+  game.shown = true;
+  game.el.classList.add('shown');
+  document.body.dataset.game = game.id;
+  history.pushState({ rlx: game.id }, '');
+}
+
+function discard() {
+  if (!game) return;
+  game.el.remove();
+  game = null;
+  delete document.body.dataset.game;
+}
+
+addEventListener('popstate', () => {
+  if (game && game.shown) {
+    discard();
+    screen.render();
+  }
+});
+// Reopened on a game's history entry (a reload): the hub shows, with no game.
+// The entry is left behind with one back, so the first back gesture after a reload does not land on the hub again.
+if (history.state && history.state.rlx) history.back();
+
 function targetAt(e) {
   const p = screen.toLogical(e.clientX, e.clientY);
-  if (hitTest(p, rects.haptics, 3)) return 'haptics';
-  for (const t of TILES) if (t.active && hitTest(p, rects[t.id], 2)) return t.id;
+  for (const t of TILES) if (hitTest(p, rects[t.id], 2)) return t.id;
   return null;
 }
 
 canvas.addEventListener('pointerdown', (e) => {
   e.preventDefault();
+  if (game && game.shown) return;
   pressed = targetAt(e);
-  if (pressed) screen.render();
+  if (pressed) {
+    prepare(TILES.find((t) => t.id === pressed));
+    screen.render();
+  }
 });
 
 canvas.addEventListener('pointerup', (e) => {
@@ -218,26 +204,21 @@ canvas.addEventListener('pointerup', (e) => {
   const hit = targetAt(e);
   const was = pressed;
   pressed = null;
-  if (hit && hit === was) {
-    if (hit === 'haptics') {
-      haptics = setHaptics(!haptics);
-      if (haptics) testTick();
-    } else {
-      const t = TILES.find((x) => x.id === hit);
-      if (t && t.active) {
-        screen.render();
-        openPage(t.href);
-        return;
-      }
-    }
-  }
+  if (hit && hit === was && game && !game.shown) show();
+  else if (game && !game.shown) discard();
   screen.render();
 });
 
-const release = () => { if (pressed) { pressed = null; screen.render(); } };
+const release = () => {
+  if (pressed) {
+    pressed = null;
+    if (game && !game.shown) discard();
+    screen.render();
+  }
+};
 canvas.addEventListener('pointercancel', release);
 canvas.addEventListener('pointerleave', release);
-addEventListener('pageshow', () => { pressed = null; haptics = hapticsOn(); screen.render(); });
+addEventListener('pageshow', () => { release(); screen.render(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) screen.render(); });
 </script>
 </body>

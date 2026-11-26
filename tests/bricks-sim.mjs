@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// RLX rows B1 and B2 headless checks: runs games/bricks/physics.js and the
+// RLX rows B1, B2 and X1 headless checks: runs games/bricks/physics.js and the
 // shared session clock in Node (PLAN §6 and §6a Accept). Not needed to run
 // the app. Run: node tests/bricks-sim.mjs
 // Uses the tuning block from games/bricks/bricks.js, so it tests what ships.
@@ -129,7 +129,7 @@ function run(tag, geo, cfg, minutes, tracker, onEvents = () => {}, easeAt = () =
     wasFading = !!s.fade;
 
     const b = s.ball;
-    const nums = [s.paddleX, s.score, s.time, s.respawn, s.slide === null ? 0 : s.slide];
+    const nums = [s.paddleX, s.time, s.respawn, s.slide === null ? 0 : s.slide];
     if (b) nums.push(b.x, b.y, b.vx, b.vy);
     if (!nums.every(finite)) st.nan++;
     const n = P.brickCount(s);
@@ -198,7 +198,7 @@ function tracker(maxStep) {
 function report(tag, st, { minutes, expectMisses }) {
   console.log(`  [${tag}] ${minutes} min: pops ${st.pops}, paddle ${st.paddleHits}, splashes ${st.splashes}, `
     + `refills ${st.refills}, fades ${st.fades}, bricks ${st.minCount}..${st.maxCount}, deepest row ${st.maxDeepest + 1}, `
-    + `longest gap between pops ${st.maxGap.toFixed(1)} s, score ${st.final.score}, `
+    + `longest gap between pops ${st.maxGap.toFixed(1)} s, `
     + `speed ${st.minSpeed.toFixed(0)}..${st.maxSpeed.toFixed(0)}`);
   check(st.nan === 0, `[${tag}] no NaN or infinity in the state`);
   check(st.outOfBounds === 0, `[${tag}] ball and paddle stay in bounds (${st.outOfBounds} bad steps)`);
@@ -215,7 +215,7 @@ function report(tag, st, { minutes, expectMisses }) {
   check(st.still === 0, `[${tag}] the ball moves at every step (${st.still} still steps)`);
   check(st.maxGap < 60, `[${tag}] no stuck ball: a brick pops at least every 60 s (longest ${st.maxGap.toFixed(1)} s)`);
   check(st.refills > 0, `[${tag}] endless refill ran (${st.refills} slides)`);
-  check(st.final.score === st.pops, `[${tag}] score counts every popped brick`);
+  check(!('score' in st.final) && st.pops > 0, `[${tag}] no score in the state (row X1: no points), ${st.pops} pops`);
   if (expectMisses) check(st.splashes > 0, `[${tag}] misses splash and a new ball follows (${st.splashes})`);
 }
 
@@ -261,9 +261,9 @@ for (const [tag, g] of GEOS) {
   check(aQ > 20 && aQ < 40, `between centre and edge the angle scales (${aQ.toFixed(2)} deg)`);
 }
 {
-  // Twelve-row cap: the lowest row fades (no score), then the slide happens.
+  // Twelve-row cap: the lowest row fades (no pop, no haptic), then the slide happens.
   const g = GEOS[0][1];
-  const s = P.create(g, CONFIG, 5);
+  const s = P.create(g, CONFIG);
   s.rows.forEach((r) => { r.m = 0; });
   s.rows[11].m = P.FULL;
   s.rows[3].m = 0b0000011;
@@ -273,10 +273,11 @@ for (const [tag, g] of GEOS) {
   check(s.fade && s.fade.row === 11 && s.slide === null, 'refill with row 12 occupied: the lowest row fades first');
   check(P.brickCount(s) === 2, 'a fading row no longer counts or collides');
   let steps = 0;
-  while (s.fade && steps < 200) { P.step(s, CONFIG); steps++; }
+  let fadePops = 0;
+  while (s.fade && steps < 200) { fadePops += P.step(s, CONFIG).filter((e) => e.type === 'brick').length; steps++; }
   check(s.slide !== null && s.rows[11].m === 0 && s.rows[0].m === P.FULL && s.rows[4].m === 0b0000011,
     `after the fade (${steps} steps) the slide runs and a full row enters at the top`);
-  check(s.score === 5, 'the faded row scores nothing');
+  check(fadePops === 0, 'the faded row pops nothing (no brick event, so no tick)');
   let k = 0;
   while (s.slide !== null && k < 200) { P.step(s, CONFIG); k++; }
   check(Math.abs(k * P.DT - P.SLIDE_S) < 2 * P.DT, `the slide takes 400 ms (${(k * P.DT * 1000).toFixed(0)} ms)`);
@@ -327,43 +328,22 @@ for (const [tag, g] of GEOS) {
   check(sides.join(',') === '-1,1,-1,1', `serves alternate left and right (${sides.join(',')})`);
 }
 {
-  // Save and restore: a JSON round trip gives the same game, step for step.
+  // Row X1: nothing is saved or restored; physics.js has no save code and the state has no score.
+  const src = read('games/bricks/physics.js');
+  check(!/\b(restore|readScore|STATE_VERSION|score)\b/.test(src.replace(/\/\/.*$/gm, '')) && P.restore === undefined
+    && P.readScore === undefined && P.rallyAfter === undefined,
+    'physics.js has no save, restore, score or rally (row X1)');
   const g = GEOS[1][1];
-  const a = P.create(g, CONFIG, 41);
+  const a = P.create(g, CONFIG);
+  check(!('score' in a) && !('v' in a), 'a new field has no score and no save version');
+  // A different screen height: the field keeps its place, the ball stays clear of bricks.
   const tr = tracker(4);
   for (let i = 0; i < 5000; i++) { P.movePaddle(a, tr(a, i * P.DT), CONFIG); P.step(a, CONFIG); }
-  const saved = JSON.stringify(a);
-  const b = P.restore(JSON.parse(saved), g, CONFIG);
-  check(b && JSON.stringify(b) === saved, 'save and restore round trip is exact');
-  for (let i = 5000; i < 9000; i++) {
-    P.movePaddle(a, tr(a, i * P.DT), CONFIG); P.step(a, CONFIG);
-    P.movePaddle(b, tr(b, i * P.DT), CONFIG); P.step(b, CONFIG);
-  }
-  check(JSON.stringify(a) === JSON.stringify(b), 'a restored game plays on identically');
-  // Mid-slide and mid-fade states restore too.
-  const c = P.create(g, CONFIG);
-  c.rows.forEach((r) => { r.m = 0; });
-  c.rows[11].m = 1;
-  c.ball.y -= 30;
-  P.step(c, CONFIG);
-  const cr = P.restore(JSON.parse(JSON.stringify(c)), g, CONFIG);
-  check(cr && cr.fade && cr.fade.row === 11, 'a save taken mid-fade restores');
-  // Corrupt and old-version saves are refused, the score still readable.
-  const base = JSON.parse(saved);
-  const bad = [
-    null, 'x', 42, {}, { ...base, v: 0 }, { ...base, rows: 'garbage' }, { ...base, rows: base.rows.slice(1) },
-    { ...base, ball: { x: NaN, y: 1, vx: 1, vy: 1 } }, { ...base, ball: { ...base.ball, vx: 0, vy: 0 } },
-    { ...base, colour: 9 }, { ...base, paddleX: 'a' }, { ...base, geo: null }, { ...base, score: -1 },
-    { ...base, ball: null, respawn: 0 }, { ...base, slide: 9 },
-  ];
-  check(bad.every((o) => P.restore(o, g, CONFIG) === null), `${bad.length} corrupt or old-version saves give null (fresh field)`);
-  check(P.readScore({ ...base, v: 0 }) === base.score && P.readScore({ score: 7, rows: 1 }) === 7
-    && P.readScore({ score: 'x' }) === null && P.readScore(null) === null, 'the score is read from a refused save when it can be');
-  // A different screen height: the field keeps its place, the ball stays clear of bricks.
-  const tall = P.geometry(135, 23, 400);
-  const d = P.restore(JSON.parse(saved), tall, CONFIG);
-  check(d && d.geo.horizon === 400 && d.paddleX >= 0 && (!d.ball || (d.ball.y >= tall.top && d.ball.y < tall.horizon)),
-    'restore on a taller screen re-fits the geometry');
+  const tall = P.geometry(135, 5, 400);
+  const d = JSON.parse(JSON.stringify(a));
+  P.setGeometry(d, tall);
+  check(d.geo.horizon === 400 && d.paddleX >= 0 && (!d.ball || (d.ball.y >= tall.top && d.ball.y < tall.horizon)),
+    'a resize to a taller screen re-fits the geometry');
 }
 
 {
@@ -481,19 +461,11 @@ for (const [tag, g] of GEOS) {
     `centre bounces go straight up, then after ${CONFIG.loopBounces} with nothing popped the path is nudged (${angles.join(', ')} deg)`);
 }
 
-/* ---------- row B2: pace, rally, session clock, scene phase ---------- */
+/* ---------- row B2: pace, session clock, scene phase ---------- */
 
 const S = await import('../shared/session.js');
 const T = await import('../shared/tokens.js');
 const PX = await import('../shared/pixel.js');
-{
-  const store = new Map();
-  globalThis.localStorage = {
-    getItem: (k) => (store.has(k) ? store.get(k) : null),
-    setItem: (k, v) => store.set(k, String(v)),
-    removeItem: (k) => store.delete(k),
-  };
-}
 const RAMP_S = S.SESSION.rampMin * 60;
 const END_S = RAMP_S + S.SESSION.slowdownMin * 60; // minute 12
 const GAP_MS = S.SESSION.resetGapMin * 60 * 1000;
@@ -515,7 +487,7 @@ check(/^\/\/[^\n]*\n(\/\/[^\n]*\n)*\n\/\/[^\n]*\nexport const SESSION/.test(read
     return away * 4;
   };
   const clock = S.freshClock();
-  const st = run('B2 15 min', geo, CONFIG, 15, missing, (ev, t) => { S.addPlay(clock, P.DT, t * 1000); },
+  const st = run('B2 15 min', geo, CONFIG, 15, missing, (ev, t) => { S.addPlay(clock, P.DT); },
     (t) => S.slowdownOf(t));
   report('H240 B2 15 min with misses', st, { minutes: 15, expectMisses: true });
   const after = st.bounceSpeeds.filter(([t]) => t >= END_S - 1e-9);
@@ -613,55 +585,51 @@ check(/^\/\/[^\n]*\n(\/\/[^\n]*\n)*\n\/\/[^\n]*\nexport const SESSION/.test(read
 }
 
 {
-  // The session clock.
+  // The session clock (row X1: in memory only; it resets when the app starts
+  // and when the page has been hidden for 5 minutes or more).
   const T0 = 1_700_000_000_000;
-  // The loop in bricks.js: while running, each 120 Hz step calls addPlay with
-  // the wall time; a pause runs no steps; play starting again calls beginPlay.
-  // Here 90 s of play, a 4-minute pause with the wall clock running, 30 s more.
+  const src = read('shared/session.js').replace(/\/\/.*$/gm, '');
+  check(!/\b(localStorage|sessionStorage|indexedDB|cookie|store\.js)\b/.test(src)
+    && S.readClock === undefined && S.saveClock === undefined,
+    'shared/session.js stores nothing: no storage, no saveClock or readClock (row X1)');
+  // The loop in bricks.js: while running, each 120 Hz step calls addPlay; a
+  // pause runs no steps. Here 90 s of play, a 4-minute pause, 30 s more.
   const c = S.freshClock();
-  const STEP_MS = 1000 / P.STEP_HZ;
-  let wall = T0;
-  const play = (secs) => {
-    for (let i = 0; i < secs * P.STEP_HZ; i++) { wall += STEP_MS; S.addPlay(c, P.DT, wall); }
-  };
+  const play = (secs) => { for (let i = 0; i < secs * P.STEP_HZ; i++) S.addPlay(c, P.DT); };
   play(90);
-  const pausedFor = 4 * 60 * 1000; // a pause under the reset gap
-  wall += pausedFor;
-  const reset = S.beginPlay(c, wall);
   play(30);
-  check(!reset && Math.abs(c.active - 120) < 1e-6 && c.last === wall && S.slowdownOf(c.active) === 0,
-    `paused time does not advance the clock: 90 s, 4 minutes paused, 30 s gives ${c.active.toFixed(3)} s of active play`);
-  // A device clock set back: now earlier than the saved last active play.
-  const back = { active: 300, last: T0 };
-  check(S.isStale(back, T0 - 1) && S.beginPlay(back, T0 - 60 * 1000) === true && back.active === 0,
-    'a device clock set backwards (now before the last active play) counts as stale: the clock resets');
-  S.saveClock({ active: 300, last: T0 });
-  const rb = S.readClock(T0 - 1);
-  check(rb.reset && rb.clock.active === 0, 'and a stored clock read with the device clock set back starts at phase 0');
+  check(Math.abs(c.active - 120) < 1e-6 && c.resets === 0 && S.slowdownOf(c.active) === 0,
+    `paused time does not advance the clock: 90 s, a pause, 30 s gives ${c.active.toFixed(3)} s of active play`);
+  // Hidden under 5 minutes: the clock carries on. Hidden 5 minutes or more: it starts again.
+  S.noteHidden(c, T0);
+  S.noteHidden(c, T0 + 1000); // a second hidden note keeps the first time
+  check(S.noteShown(c, T0 + GAP_MS - 1) === false && Math.abs(c.active - 120) < 1e-6 && c.hiddenAt === null,
+    'hidden for just under 5 minutes: the clock carries on');
+  const watch = S.watchReset(c);
+  S.noteHidden(c, T0);
+  check(S.noteShown(c, T0 + GAP_MS) === true && c.active === 0 && c.resets === 1 && S.phaseOf(c.active) === 0,
+    'hidden for 5 minutes: the clock starts again at phase 0');
+  check(S.noteShown(c, T0 + 2 * GAP_MS) === false && c.resets === 1, 'noting shown twice resets once');
+  check(watch() === true && watch() === false, 'a game watching the clock sees one reset, once');
+  play(60);
+  S.noteHidden(c, T0);
+  check(S.noteShown(c, T0 - 1) === true && c.active === 0,
+    'a device clock set backwards while hidden counts as the gap passed: the clock starts again');
   // 12 minutes of active play in 120 Hz steps.
   const d = S.freshClock();
-  for (let i = 0; i < 12 * 60 * P.STEP_HZ; i++) S.addPlay(d, P.DT, T0 + i * (1000 / P.STEP_HZ));
+  for (let i = 0; i < 12 * 60 * P.STEP_HZ; i++) S.addPlay(d, P.DT);
   check(Math.abs(d.active - 720) < 1e-6 && S.phaseOf(d.active) === 1 && S.sceneStep(S.phaseOf(d.active)) === 10
     && S.slowdownOf(d.active) > 1 - 1e-9, `12 minutes of active play: phase 1, full dusk (step ${S.sceneStep(S.phaseOf(d.active))})`);
-  // Saved and read back; after the reset gap the next session starts at sunset.
-  S.saveClock(d);
-  const r1 = S.readClock(d.last + GAP_MS - 1);
-  check(!r1.reset && r1.clock.active === d.active && r1.clock.last === d.last, 'the clock and the time of the last active play are saved and read back');
-  const r2 = S.readClock(d.last + GAP_MS);
-  check(r2.reset && r2.clock.active === 0 && S.phaseOf(r2.clock.active) === 0, 'after 5 minutes without active play the next session starts at phase 0');
-  const e = { ...d };
-  check(S.beginPlay(e, d.last + GAP_MS) === true && e.active === 0, 'a pause of 5 minutes inside a game resets the clock when play starts again');
+  // In Node there is no page: sessionClock() gives a fresh clock in memory.
+  const sc = S.sessionClock();
+  check(sc.active === 0 && sc.hiddenAt === null && S.sessionClock() === sc, 'sessionClock() is one fresh clock, in memory');
   const g = GEOS[0][1];
   const s = P.create(g, CONFIG);
   s.pace = 80; s.speed = 80; s.ball = null; s.respawn = P.DT / 2;
   P.resetPace(s, CONFIG);
-  P.step(s, CONFIG, S.slowdownOf(r2.clock.active));
+  P.step(s, CONFIG, S.slowdownOf(c.active));
   check(s.pace === 90 && s.speed === 90 && Math.abs(Math.hypot(s.ball.vx, s.ball.vy) - 90) < 1e-9,
-    'and the speed starts at 90 again');
-  localStorage.setItem('rlx.v1.session', '{nope');
-  const r3 = S.readClock(T0);
-  check(r3.clock.active === 0 && r3.clock.last === null, 'an unreadable stored clock gives a fresh clock');
-  localStorage.removeItem('rlx.v1.session');
+    'after a clock reset the speed starts at 90 again');
   // Scene steps change only on whole minutes of active play.
   const changes = [];
   let prevStep = 0;
@@ -672,55 +640,6 @@ check(/^\/\/[^\n]*\n(\/\/[^\n]*\n)*\n\/\/[^\n]*\nexport const SESSION/.test(read
   }
   check(changes.length === 10 && changes.every(([t, k], i) => t === (i + 1) * 60 && k === i + 1),
     `the scene moves in 10 steps, one per minute of active play (${changes.map(([t]) => t / 60).join(',')})`);
-}
-
-{
-  // Rally: +1 per paddle return, 0 on a miss, nothing else; never in the state.
-  let bad = 0;
-  let maxRally = 0;
-  let rally = 0;
-  let resets = 0;
-  const st = run('rally', GEOS[0][1], CONFIG, 3, tracker(0.6), (ev) => {
-    const paddle = ev.filter((e) => e.type === 'paddle').length;
-    const miss = ev.some((e) => e.type === 'splash');
-    const next = P.rallyAfter(rally, ev);
-    if (miss ? next !== 0 : next !== rally + paddle) bad++;
-    if (miss && rally > 0) resets++;
-    rally = next;
-    maxRally = Math.max(maxRally, rally);
-  });
-  const plain = run('rally-free', GEOS[0][1], CONFIG, 3, tracker(0.6));
-  check(bad === 0 && maxRally > 2 && resets > 0,
-    `rally counts up on each paddle return and resets on a miss (max ${maxRally}, ${resets} resets, ${bad} wrong)`);
-  check(JSON.stringify(st.final) === JSON.stringify(plain.final), 'counting the rally has no other effect: the game is identical without it');
-  check(!('rally' in st.final) && !JSON.stringify(st.final).includes('rally'), 'the rally is not part of the saved state');
-  check(P.rallyAfter(5, [{ type: 'brick' }]) === 5 && P.rallyAfter(5, [{ type: 'splash' }, { type: 'paddle' }]) === 1,
-    'bricks do not count; a return after a miss starts again at 1');
-}
-
-{
-  // Save and restore of pace and speed (state version 2); a B1 save is refused safely.
-  const g = GEOS[1][1];
-  const a = P.create(g, CONFIG, 9);
-  const tr = tracker(4);
-  for (let i = 0; i < 6000; i++) { P.movePaddle(a, tr(a, i * P.DT), CONFIG); P.step(a, CONFIG); }
-  check(P.STATE_VERSION === 2 && a.v === 2, 'the Bricks state is version 2');
-  const b = P.restore(JSON.parse(JSON.stringify(a)), g, CONFIG);
-  check(b && b.pace === a.pace && b.speed === a.speed && a.pace !== 90,
-    `pace and speed are saved and restored (${a.pace}, ${a.speed})`);
-  const saved = JSON.parse(JSON.stringify(a));
-  const bad = [
-    { ...saved, pace: 79 }, { ...saved, pace: 126 }, { ...saved, speed: 'x' }, { ...saved, pace: undefined },
-    { ...saved, speed: NaN },
-  ];
-  check(bad.every((o) => P.restore(JSON.parse(JSON.stringify(o)), g, CONFIG) === null), 'a pace or speed out of range or missing gives a fresh field');
-  const b1 = { ...saved, v: 1 };
-  delete b1.pace;
-  delete b1.speed;
-  let threw = false;
-  let r = null;
-  try { r = P.restore(JSON.parse(JSON.stringify(b1)), g, CONFIG); } catch (err) { threw = true; }
-  check(!threw && r === null && P.readScore(b1) === saved.score, 'a B1 (version 1) save gives a fresh field without error, its score still readable');
 }
 
 {
@@ -776,18 +695,16 @@ check(/^\/\/[^\n]*\n(\/\/[^\n]*\n)*\n\/\/[^\n]*\nexport const SESSION/.test(read
   // (with and without a 10 px top inset), 300 and 400. No exceptions.
   // Backgrounds come from the real layout: the brick field (top to 12 rows
   // down), the paddle line (its sky bands and the sun), the ball (every sky
-  // band, the clouds and the sun), the HUD (score, rally, back control), the
-  // pause ring and its chevrons (the sea bands).
+  // band, the clouds and the sun), the pause ring and its chevrons (the sea
+  // bands). Row X1: no HUD; the field starts 5 px below the top (plus the inset).
   const C = T.COLORS;
   const edge = T.edge || T.shade; // tokens before B4 had no edge
   const ink = C.ink || C.blue;
-  const card = C.card || '#A0D0E8';
   const screens = [['H240', 240, 0], ['H240-safe', 240, 10], ['H300', 300, 0], ['H400', 400, 0]];
   const M = CT.pairs();
   for (const [tag, H, safeTop] of screens) {
     const horizon = H - PX.SEA_HEIGHT;
-    const backY = 5 + safeTop;
-    const geo = P.geometry(135, backY + 13 + 5, horizon);
+    const geo = P.geometry(135, 5 + safeTop, horizon);
     const bandsOver = (y0, y1) => {
       const out = [];
       for (let i = 0; i < T.SKY_BANDS; i++) {
@@ -800,7 +717,6 @@ check(/^\/\/[^\n]*\n(\/\/[^\n]*\n)*\n\/\/[^\n]*\nexport const SESSION/.test(read
     const field = bandsOver(geo.top, geo.top + P.MAX_ROWS * P.ROW_H - P.GAP);
     const paddle = bandsOver(geo.paddleY, geo.paddleY + P.PADDLE_H);
     const all = bandsOver(geo.top, horizon);
-    const hud = bandsOver(backY, backY + 16);
     for (let k = 0; k <= 10; k++) {
       const pal = T.scenePalette(k / 10);
       const sky = (ix) => ix.map((i) => [`sky band ${i + 1}`, pal.sky[i]]);
@@ -810,8 +726,6 @@ check(/^\/\/[^\n]*\n(\/\/[^\n]*\n)*\n\/\/[^\n]*\nexport const SESSION/.test(read
       T.BRICK_ROWS.forEach((c, i) => add(`brick row ${i + 1}`, 'de', c, null, sky(field)));
       add('paddle', 'cr', C.coral, edge(C.coral), [...sky(paddle), ...sun]);
       add('ball', 'cr', C.blue, null, [...sky(all), ...sun, ['cloud', C.cloud]]);
-      add('score and rally', 'cr-small', ink, null, sky(hud));
-      add('back control', 'cr', card, ink, sky(hud));
       add('pause ring', 'cr', C.cloud, ink, sea);
       add('pause chevrons', 'cr', C.cloud, ink, sea);
     }
@@ -823,16 +737,12 @@ check(/^\/\/[^\n]*\n(\/\/[^\n]*\n)*\n\/\/[^\n]*\nexport const SESSION/.test(read
   for (const u of rows.filter((r) => !r.ok)) console.log(`  [readability] UNDER: ${CT.fmt(u)}`);
   for (const [tag] of screens) {
     const mine = rows.filter((r) => r.tag === tag);
-    for (const [rule, label] of [['cr', `paddle, ball, back control, pause ring and chevrons: contrast >= ${CT.MIN_CR} (fill or edge)`],
-      ['cr-small', `score and rally: contrast >= ${CT.MIN_CR_SMALL}`],
+    for (const [rule, label] of [['cr', `paddle, ball, pause ring and chevrons: contrast >= ${CT.MIN_CR} (fill or edge)`],
       ['de', `bricks: fill delta E >= ${CT.MIN_DE}`]]) {
       const r = mine.filter((x) => x.rule === rule);
       check(r.length > 0 && r.every((x) => x.ok), `[${tag}] sunset and all 10 steps, ${label} (weakest ${CT.worst(r).v.toFixed(2)}, ${r.filter((x) => !x.ok).length} under)`);
     }
   }
-  // Fixed pairs: the back chevron on its card (small, so 4.5).
-  const chev = CT.contrast(ink, card);
-  check(chev >= CT.MIN_CR_SMALL, `back chevron on its card: contrast ${chev.toFixed(2)} >= ${CT.MIN_CR_SMALL}`);
   // The nine brick colours are told apart from each other.
   let minPair = Infinity;
   let at = '';
@@ -845,13 +755,15 @@ check(/^\/\/[^\n]*\n(\/\/[^\n]*\n)*\n\/\/[^\n]*\nexport const SESSION/.test(read
   check(/PADDLE_EDGE = edge\(COLORS\.coral\)/.test(src) && /pixelBody\(ctx, game\.paddleX[^;]*COLORS\.coral, 2, PADDLE_EDGE\)/.test(src),
     'bricks.js draws the paddle in coral with its edge all round');
   check(/pixelBody\(ctx, game\.ball\.x[^;]*COLORS\.blue, 1\)/.test(src), 'bricks.js draws the ball in the blue');
-  check((src.match(/rects\.(score|rally), COLORS\.ink/g) || []).length === 2, 'bricks.js draws the score and rally in the ink');
   check(/disc\(RING_R \+ 1, COLORS\.ink\);\s*disc\(RING_R, COLORS\.cloud\);/.test(src)
-    && (src.match(/drawTextOutlined\(ctx, '[<>]'[^;]*COLORS\.cloud, COLORS\.ink\)/g) || []).length === 2,
+    && (src.match(/chevron\(ctx, CHEVRON_[LR],/g) || []).length === 2
+    && /ctx\.fillStyle = COLORS\.ink;[\s\S]*ctx\.fillStyle = COLORS\.cloud;/.test(src.slice(src.indexOf('function chevron'))),
     'bricks.js draws the pause ring white in an ink ring, the chevrons white in an ink outline');
+  // Row X1: no text, number, button or HUD on the Bricks screen.
+  check(!/font\.js|drawFitted|drawText|fillText|drawBackControl|publishHits|dataset\.(hits|hud|layout)|store\.js|settings\.js|localStorage|sessionStorage|goToHub/.test(src),
+    'bricks.js draws no text, number or back control, publishes no hit areas and stores nothing (row X1)');
   const pxSrc = read('shared/pixel.js').replace(/\/\/.*$/gm, '');
-  check(/pixelBody\(ctx, x, y \+ dy, BACK_SIZE\.w, BACK_SIZE\.h, COLORS\.card, 2, COLORS\.ink\)/.test(pxSrc)
-    && /ctx\.fillStyle = COLORS\.ink;/.test(pxSrc), 'pixel.js draws the back control as a card in an ink edge with an ink chevron');
+  check(!/drawBackControl|BACK_SIZE|goToHub|openPage/.test(pxSrc), 'pixel.js has no back control and no navigation (row X1)');
   check(hexIn(pxSrc).length === 0, 'no colour literals in pixel.js: tokens only');
 }
 
@@ -890,18 +802,11 @@ check(/^\/\/[^\n]*\n(\/\/[^\n]*\n)*\n\/\/[^\n]*\nexport const SESSION/.test(read
 {
   let clock = 0;
   const calls = [];
-  const store = new Map();
-  globalThis.localStorage = {
-    getItem: (k) => (store.has(k) ? store.get(k) : null),
-    setItem: (k, v) => store.set(k, String(v)),
-    removeItem: (k) => store.delete(k),
-  };
   Object.defineProperty(globalThis, 'performance', { value: { now: () => clock }, configurable: true });
   Object.defineProperty(globalThis, 'navigator', {
     value: { vibrate: (ms) => { calls.push([clock, ms]); return true; } }, configurable: true,
   });
   const H = await import('../shared/haptics.js');
-  const { setHaptics } = await import('../shared/settings.js');
   const feed = (ev, t) => {
     clock = t * 1000;
     for (const e of ev) {
@@ -909,7 +814,6 @@ check(/^\/\/[^\n]*\n(\/\/[^\n]*\n)*\n\/\/[^\n]*\nexport const SESSION/.test(read
       else if (e.type === 'paddle') H.tick(CONFIG.hapticPaddleMs);
     }
   };
-  setHaptics(true);
   const on = run('haptics-on', GEOS[0][1], CONFIG, 2, tracker(4), feed);
   const kinds = new Set(calls.map((c) => c[1]));
   let minGap = Infinity;
@@ -920,11 +824,8 @@ check(/^\/\/[^\n]*\n(\/\/[^\n]*\n)*\n\/\/[^\n]*\nexport const SESSION/.test(read
   check(minGap >= 40, `at most one vibrate call per 40 ms (min gap ${minGap.toFixed(1)} ms)`);
   check(calls.length <= on.pops + on.paddleHits, 'never more calls than brick and paddle events');
   calls.length = 0;
-  setHaptics(false);
-  const off = run('haptics-off', GEOS[0][1], CONFIG, 2, tracker(4), feed);
-  check(calls.length === 0 && off.pops > 0, `haptics off: zero vibrate calls over ${off.pops} pops`);
-  setHaptics(true);
-  calls.length = 0;
+  const hSrc = read('shared/haptics.js').replace(/\/\/.*$/gm, '');
+  check(!/settings|hapticsOn|testTick|localStorage/.test(hSrc), 'haptics are always on: shared/haptics.js reads no setting (row X1)');
   delete globalThis.navigator.vibrate;
   clock += 1000;
   check(H.tick(8) === false && calls.length === 0, 'no navigator.vibrate: nothing is called');
