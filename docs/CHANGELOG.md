@@ -448,3 +448,13 @@ Tests: bricks-sim 242, catch-sim 199, putt-sim 73, stack-sim 112, haptics-native
 Review findings (no blockers) and fixes: tools/rlx_font.py untracked, added to the commit; README tools list missed the font and the social scripts, added. Deferred as Proposed rows: X40 (smoke check does not read the navigation mode), X41 (a rare snap-distance flake in the landed-drop check).
 
 Not verifiable here: the CI workflow as a whole, the API 36 image and gesture run, the wrapper validation step, a distributionSha256Sum in gradle-wrapper.properties (services.gradle.org blocked from here). Deferred: X34, D1a, D1b need Pedro's phone.
+
+## 2026-11-26: U2 Putt, open course and two themes
+
+Models that ran: main chat Sonnet 5.5; builder Opus 5.5 (claude-opus-5-5); reviewer Opus 5.5 (claude-opus-5-5), which had not seen the build, fixed its own finding 1.
+
+Built: Putt per PLAN §6h. No drawn frame; the course is the screen less the safe-area insets and its edges are the walls. Perpendicular stubs, corner cuts and wedges grow from the edges (1 to 2, 2 to 4, 3 to 5 per difficulty); the 14 px gap rule; convex-polygon solids in sim.js with true 45 degree sides. Sand and sea looks alternate from a sand start, drawing only, with light and dark values (new tokens shallow, deep, trapTint, DUSK.sand, DUSK.shallow, puttGround). Generator places barriers first (level 2 shelf, level 3 gates) to keep the stroke ranges; 200 levels per difficulty, no fallbacks. Tests: putt-sim 88, check.py 1411 (new part putt-open), other suites unchanged. sw.js rlx-v24.
+
+Review: edge pieces replacing the old cuts, bars and free diagonals judged a defensible reading of §6h (recorded in §6h build choices; veto freely). Findings: (1) medium, sea sandbanks lost their pale edge on downward slants: fixed in putt.js. (2) medium, level 3 gates all alike: carried as U2a. (3) low, dark sandbanks read as slabs: U2b. (4) low, dark sea ball edge near black: U2b. (5) hub Putt card still framed: U2c. (6) sand trap colour moved by the contrast check: accepted.
+
+Not verifiable headless: the ball bouncing off the glass on all four sides, how both looks read on the phone, cutout and inset placement, level-3 build time on the phone.

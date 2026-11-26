@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// RLX row U1 headless checks: runs games/putt/sim.js and games/putt/gen.js in
-// Node (PLAN §6c Accept). Not needed to run the app.
+// RLX rows U1 and U2 headless checks: runs games/putt/sim.js and
+// games/putt/gen.js in Node (PLAN §6c and §6h Accept). Not needed to run the app.
 // Run: node tests/putt-sim.mjs
 // Uses the play values from the CONFIG block of games/putt/putt.js and the
 // generator values from GEN in games/putt/gen.js, so it tests what ships.
@@ -44,15 +44,15 @@ const genSrc = read('games/putt/gen.js');
 check(genSrc.indexOf('export const GEN') < genSrc.indexOf('import '), 'GEN block sits at the top of gen.js');
 const TB = G.GEN.table;
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-check(same(TB[1], { cuts: [0, 2], bars: [0, 1], diags: [0, 1], blocks: [1, 2], pegs: [0, 0], traps: [0, 0], water: [0, 0], holeR: 5, straight: true, strokes: [1, 2] })
-  && same(TB[2], { cuts: [1, 3], bars: [1, 2], diags: [1, 2], blocks: [1, 3], pegs: [0, 2], traps: [0, 1], water: [0, 1], holeR: 5, straight: false, strokes: [2, 3] })
-  && same(TB[3], { cuts: [2, 4], bars: [2, 3], diags: [2, 3], blocks: [2, 4], pegs: [1, 3], traps: [0, 1], water: [1, 1], holeR: 4, straight: false, strokes: [3, 4] }),
-  'GEN.table is the PLAN §6c table');
-check(same(G.GEN.cutSize, [10, 24]) && G.GEN.barGapMin === 22 && same(G.GEN.diagLen, [20, 50]) && same(G.GEN.blockW, [8, 24])
-  && same(G.GEN.blockH, [8, 12]) && S.PEG_R === 3 && same(G.GEN.hazardSide, [16, 30]) && G.GEN.passageMin === 14
+check(same(TB[1], { edges: [1, 2], blocks: [1, 2], pegs: [0, 0], traps: [0, 0], water: [0, 0], holeR: 5, straight: true, strokes: [1, 2] })
+  && same(TB[2], { edges: [2, 4], blocks: [1, 3], pegs: [0, 2], traps: [0, 1], water: [0, 1], holeR: 5, straight: false, strokes: [2, 3] })
+  && same(TB[3], { edges: [3, 5], blocks: [2, 4], pegs: [1, 3], traps: [0, 1], water: [1, 1], holeR: 4, straight: false, strokes: [3, 4] }),
+  'GEN.table is the PLAN §6c table with row U2 edge pieces in place of cut corners, bars and diagonals (1 to 2, 2 to 4, 3 to 5)');
+check(same(G.GEN.stubLen, [20, 60]) && same(G.GEN.stubThick, [8, 12]) && same(G.GEN.cornerLeg, [20, 45]) && same(G.GEN.wedgeDepth, [15, 30])
+  && same(G.GEN.blockW, [8, 24]) && same(G.GEN.blockH, [8, 12]) && S.PEG_R === 3 && same(G.GEN.hazardSide, [16, 30]) && G.GEN.passageMin === 14
   && G.GEN.clearTeeHole === 12 && G.GEN.solverDirs === 96 && G.GEN.solverPowers === 5 && G.GEN.solverBeam === 12
-  && G.GEN.rejectLimit === 30 && G.GEN.teeSpreadPx === 20 && G.GEN.holeZone === 0.2 && G.GEN.insetX === 6
-  && G.GEN.insetTop === 6 && G.GEN.insetBottom === 26, 'GEN holds the PLAN building blocks, solver sampling and reject limit');
+  && G.GEN.rejectLimit === 30 && G.GEN.teeSpreadPx === 20 && G.GEN.holeZone === 0.2,
+  'GEN holds the PLAN building blocks (U2 edge pieces: stubs 20 to 60 by 8 to 12, corner legs 20 to 45, wedges 15 to 30 deep), the 14 px gap, solver sampling and reject limit');
 const noComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 const simSrc = noComments(read('games/putt/sim.js'));
 const genCode = noComments(genSrc);
@@ -80,28 +80,55 @@ check(/generateSteps/.test(puttCode) && /yield/.test(genCode), 'with no worker, 
 
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
 const HEIGHTS = [240, 270, 300, 340, 400];
+// Safe-area insets, logical px: none on most phones; a cutout above and a gesture bar below on some.
+const INSETS = [[0, 0], [0, 0], [12, 6], [0, 0], [6, 3]];
 const planesOf = (L) => S.halfPlanes(L.poly);
+const isInt = (v) => Number.isInteger(v);
 
-/** Every placement rule of PLAN §6c; returns a list of what is broken. */
+/** Row U2: an edge piece's own rules. Returns what is broken. */
+function edgePieceErrors(e, L) {
+  const err = [];
+  const { x0, y0, x1, y1 } = L;
+  if (e.k === 'stub') {
+    const vert = e.side === 't' || e.side === 'b';
+    const len = vert ? e.h : e.w;
+    const th = vert ? e.w : e.h;
+    const flush = e.side === 'l' ? e.x === x0 : e.side === 'r' ? e.x + e.w === x1 : e.side === 't' ? e.y === y0 : e.y + e.h === y1;
+    if (!flush) err.push(`stub not on its ${e.side} edge`);
+    if (len < 20 || len > 60 || th < 8 || th > 12 || ![e.x, e.y, e.w, e.h].every(isInt)) err.push(`stub ${len} x ${th}`);
+  } else if (e.k === 'corner') {
+    const [c, a, b] = e.pts;
+    const cx = e.corner === 0 || e.corner === 3 ? x0 : x1;
+    const cy = e.corner === 0 || e.corner === 1 ? y0 : y1;
+    const leg = Math.abs(a[0] - c[0]);
+    if (c[0] !== cx || c[1] !== cy || a[1] !== cy || b[0] !== cx || Math.abs(b[1] - c[1]) !== leg || leg < 20 || leg > 45 || leg !== e.leg) err.push(`corner cut ${JSON.stringify(e.pts)}`);
+    // the cut side is a true 45 degree line
+    if (Math.abs(Math.abs(a[0] - b[0]) - Math.abs(a[1] - b[1])) > EPS) err.push('corner cut not 45 degrees');
+  } else if (e.k === 'wedge') {
+    const [p, tip, q] = e.pts;
+    const ex = e.side === 'l' ? x0 : x1;
+    const D = e.depth;
+    if (p[0] !== ex || q[0] !== ex || Math.abs(tip[0] - ex) !== D || q[1] - p[1] !== 2 * D || tip[1] - p[1] !== D || D < 15 || D > 30) err.push(`wedge ${JSON.stringify(e.pts)}`);
+  } else err.push(`unknown edge piece ${e.k}`);
+  return err;
+}
+
+/** Every placement rule of PLAN §6c and §6h; returns a list of what is broken. */
 function placementErrors(L) {
   const err = [];
   const T = TB[L.diff];
   const planes = planesOf(L);
   const box = G.courseBox(L.H, L.top, L.bottom);
   if (L.x0 !== box.x0 || L.x1 !== box.x1 || L.y0 !== box.y0 || L.y1 !== box.y1) err.push('course box');
-  if (L.x0 - S.WALL_T !== 6 || L.x1 + S.WALL_T !== 129 || L.y0 - S.WALL_T !== 6 + L.top || L.y1 + S.WALL_T !== L.H - 26 - L.bottom) err.push('course insets');
-  const nc = L.cuts.filter((c) => c > 0).length;
-  if (!L.fallback && (nc < T.cuts[0] || nc > T.cuts[1])) err.push(`cut count ${nc}`);
-  if (L.cuts.some((c) => c !== 0 && (c < 10 || c > 24))) err.push('cut size');
-  if (Math.abs(L.tee.x - 67.5) > 20 || L.tee.y < L.y1 - 12 || L.tee.y > L.y1 - S.BALL_R) err.push('tee');
+  if (L.x0 !== 0 || L.x1 !== 135 || L.y0 !== L.top || L.y1 !== L.H - L.bottom) err.push('the course is not the screen less its insets');
+  if (L.poly.length !== 4) err.push('the course is not the plain screen rectangle');
+  if (Math.abs(L.tee.x - 67.5) > 20 || L.tee.y !== L.y1 - 9.5) err.push('tee');
   if (L.hole.r !== T.holeR) err.push('hole radius');
-  if (L.hole.y > L.y0 + (L.y1 - L.y0) * 0.2 || S.insideDist(planes, L.hole.x, L.hole.y) < L.hole.r) err.push('hole outside the top fifth');
-  const counts = { bars: L.bars.length, diags: L.diags.length, blocks: L.blocks.length, pegs: L.pegs.length, traps: L.traps.length, water: L.water.length };
+  if (L.hole.y > L.y0 + (L.y1 - L.y0) * 0.2 || L.hole.y < L.y0 + 10 || S.insideDist(planes, L.hole.x, L.hole.y) < L.hole.r) err.push('hole outside the top fifth');
+  const counts = { edges: L.edges.length, blocks: L.blocks.length, pegs: L.pegs.length, traps: L.traps.length, water: L.water.length };
   if (!L.fallback) for (const [k, n] of Object.entries(counts)) if (n < T[k][0] || n > T[k][1]) err.push(`${k} count ${n}`);
-  for (const d of L.diags) {
-    const len = Math.hypot(d.bx - d.ax, d.by - d.ay);
-    if (Math.abs(Math.abs(d.bx - d.ax) - Math.abs(d.by - d.ay)) > EPS || len < 20 - EPS || len > 50 + EPS) err.push(`diagonal ${len.toFixed(1)}`);
-  }
+  for (const e of L.edges) err.push(...edgePieceErrors(e, L));
+  if (new Set(L.edges.filter((e) => e.k === 'corner').map((e) => e.corner)).size !== L.edges.filter((e) => e.k === 'corner').length) err.push('two cuts in one corner');
   for (const b of L.blocks) if (b.w < 8 || b.w > 24 || b.h < 8 || b.h > 12) err.push('block size');
   for (const t of [...L.traps, ...L.water]) if (t.w < 16 || t.w > 30 || t.h < 16 || t.h > 30) err.push('hazard size');
   const solids = G.solidPieces(L);
@@ -111,28 +138,23 @@ function placementErrors(L) {
   for (const p of [...solids, ...hazards]) {
     if (S.shapeDist(p.shape, tee) < 12 - EPS || S.shapeDist(p.shape, hole) < 12 - EPS) err.push(`${p.kind} within 12 px of the tee or hole`);
   }
-  // Passages: solid to solid, and solid to wall, at least 14 px (a bar is joined to its own wall and leaves a gap of 22).
+  // The gap rule (§6h): between two solids, and between a solid and an edge, closed (0) or at least 14 px.
   for (let i = 0; i < solids.length; i++) {
     for (let j = i + 1; j < solids.length; j++) {
       const d = S.shapeDist(solids[i].shape, solids[j].shape);
-      if (d < 14 - EPS) err.push(`passage ${solids[i].kind}-${solids[j].kind} ${d.toFixed(1)}`);
+      if (d > EPS && d < 14 - EPS) err.push(`gap ${solids[i].kind}-${solids[j].kind} ${d.toFixed(1)}`);
+      if (d <= EPS) err.push(`${solids[i].kind} and ${solids[j].kind} overlap or touch`);
     }
-    const p = solids[i];
-    if (p.kind === 'bar') {
-      const side = p.piece.side === 0 ? L.x0 : L.x1;
-      for (const e of planes) {
-        if (Math.abs(e.ax - e.bx) < EPS && Math.abs(e.ax - side) < EPS) {
-          // its own wall: joined along the straight part
-          if (!(e.ay <= p.piece.y && e.by >= p.piece.y + p.piece.h) && !(e.by <= p.piece.y && e.ay >= p.piece.y + p.piece.h)) err.push('bar not on a straight side');
-          continue;
-        }
-        const d = S.shapeDist(p.shape, S.shapeOf({ k: 'seg', ax: e.ax, ay: e.ay, bx: e.bx, by: e.by, r: 0 }));
-        if (d < 22 - EPS) err.push(`bar gap ${d.toFixed(1)}`);
-      }
-      if (p.piece.h !== S.BAR_T) err.push('bar thickness');
-    } else if (G.wallDist(planes, p.shape) < 14 - EPS) err.push(`passage ${p.kind}-wall`);
+    const ds = G.edgeDists(planes, solids[i].shape);
+    for (const d of ds) {
+      if (d < -EPS) err.push(`${solids[i].kind} pokes out of the screen`);
+      else if (d > EPS && d < 14 - EPS) err.push(`gap ${solids[i].kind}-edge ${d.toFixed(1)}`);
+    }
+    const attached = ds.filter((d) => Math.abs(d) <= EPS).length;
+    const want = solids[i].kind === 'corner' ? 2 : ['stub', 'wedge'].includes(solids[i].kind) ? 1 : 0;
+    if (attached !== want) err.push(`${solids[i].kind} touches ${attached} edges (want ${want})`);
   }
-  // Nothing overlaps: hazards clear of each other, of solids and inside the course.
+  // Hazards: inside, clear of each other and of the solids.
   for (let i = 0; i < hazards.length; i++) {
     if (G.wallDist(planes, hazards[i].shape) < 0) err.push('hazard outside');
     for (const s of solids) if (S.shapeDist(hazards[i].shape, s.shape) <= 0) err.push('hazard overlaps a solid');
@@ -141,9 +163,25 @@ function placementErrors(L) {
   return err;
 }
 
+/** The smallest open gap of a level: solid to solid, solid to edge (0 counts as closed and is skipped). */
+function smallestGap(L) {
+  const planes = planesOf(L);
+  const solids = G.solidPieces(L);
+  let m = Infinity;
+  for (let i = 0; i < solids.length; i++) {
+    for (let j = i + 1; j < solids.length; j++) {
+      const d = S.shapeDist(solids[i].shape, solids[j].shape);
+      if (d > EPS) m = Math.min(m, d);
+    }
+    for (const d of G.edgeDists(planes, solids[i].shape)) if (d > EPS) m = Math.min(m, d);
+  }
+  return m;
+}
+
 /* ---------- 200 generated levels per difficulty ---------- */
 
 const levels = { 1: [], 2: [], 3: [] };
+const kindsSeen = new Set();
 for (const diff of [1, 2, 3]) {
   const t0 = Date.now();
   let solvedIn = 0;
@@ -151,16 +189,20 @@ for (const diff of [1, 2, 3]) {
   let straightOk = 0;
   let fallbacks = 0;
   let maxMs = 0;
+  let minGap = Infinity;
   const bad = [];
   const strokes = {};
   for (let i = 0; i < 200; i++) {
     const seed = (diff * 1000003 + i * 7919) >>> 0;
     const H = HEIGHTS[i % HEIGHTS.length];
+    const [top, bottom] = INSETS[Math.floor(i / HEIGHTS.length) % INSETS.length];
     const t = Date.now();
-    const L = G.generate(seed, diff, H, PLAY);
+    const L = G.generate(seed, diff, H, PLAY, top, bottom);
     maxMs = Math.max(maxMs, Date.now() - t);
     levels[diff].push(L);
+    for (const e of L.edges) kindsSeen.add(e.k === 'stub' ? `stub-${e.side}` : e.k === 'corner' ? `corner-${e.corner}` : `wedge-${e.side}`);
     if (L.fallback) fallbacks++;
+    minGap = Math.min(minGap, smallestGap(L));
     const range = TB[L.diff].strokes;
     const n = G.solve(S.buildWorld(L), PLAY, range[1]);
     strokes[n] = (strokes[n] || 0) + 1;
@@ -172,11 +214,16 @@ for (const diff of [1, 2, 3]) {
     if (L.diff === 1 || !G.straightLine(L)) straightOk++;
     else bad.push(`seed ${seed} H ${H}: straight line from tee to hole`);
   }
-  check(solvedIn === 200, `[level ${diff}] 200 generated levels (heights ${HEIGHTS.join(', ')}): every one solved by the solver within its stroke range ${JSON.stringify(TB[diff].strokes)} (solver strokes ${JSON.stringify(strokes)}) ${bad.slice(0, 3)}`);
-  check(placeOk === 200, `[level ${diff}] no level breaks a placement rule ${bad.filter((b) => !/solver|straight/.test(b)).slice(0, 3)}`);
+  check(solvedIn === 200, `[level ${diff}] 200 generated levels (heights ${HEIGHTS.join(', ')}, with and without safe-area insets): every one solved by the solver within its stroke range ${JSON.stringify(TB[diff].strokes)} (solver strokes ${JSON.stringify(strokes)}) ${bad.slice(0, 3)}`);
+  check(placeOk === 200, `[level ${diff}] every piece inside the rules: edge pieces on their edges at their sizes, counts from the table, the tee and the hole where PLAN puts them, 12 px clear of them ${bad.filter((b) => !/solver|straight/.test(b)).slice(0, 3)}`);
+  check(minGap >= 14 - EPS, `[level ${diff}] no gap between 0 and 14 px: every gap between two solids or a solid and a screen edge is closed or at least 14 px (smallest open gap ${minGap.toFixed(2)} px)`);
   if (diff > 1) check(straightOk === 200, `[level ${diff}] no course has a straight line from tee to hole`);
   check(fallbacks === 0, `[level ${diff}] every level generated without falling back (${fallbacks} fallbacks; generation ${((Date.now() - t0) / 1000).toFixed(1)} s with checks, slowest ${maxMs} ms)`);
   check(levels[diff].every((L) => L.diff === diff || L.fallback), `[level ${diff}] each level has the difficulty it was asked for`);
+}
+{
+  const want = ['stub-l', 'stub-r', 'stub-t', 'stub-b', 'corner-0', 'corner-1', 'corner-2', 'corner-3', 'wedge-l', 'wedge-r'];
+  check(want.every((k) => kindsSeen.has(k)), `edge pieces of every kind grow from every edge they may: ${[...kindsSeen].sort().join(', ')}`);
 }
 
 /* ---------- determinism ---------- */
@@ -217,10 +264,10 @@ for (const diff of [1, 2, 3]) {
       const n = G.solve(S.buildWorld(L), PLAY, 2);
       const e = placementErrors(L);
       tried++;
-      if (n === null || n < 1 || n > 2 || e.length || L.diff !== 1 || L.bars.length || L.diags.length || L.blocks.length !== 1) bad.push(`H ${H} seed ${seed}: ${n} ${e}`);
+      if (n === null || n < 1 || n > 2 || e.length || L.diff !== 1 || L.edges.length !== 1 || L.blocks.length !== 1) bad.push(`H ${H} seed ${seed}: ${n} ${e}`);
     }
   }
-  check(!bad.length, `the open level-1 fallback is solved in 1 to 2 strokes and keeps the placement rules at heights 240 to 420 (${tried} courses, 9 seeds per height) ${bad}`);
+  check(!bad.length, `the open level-1 fallback is solved in 1 to 2 strokes and keeps the placement rules (one corner cut, one block) at heights 240 to 420 (${tried} courses, 9 seeds per height) ${bad}`);
   // The seed varies it: the block's place and size and the hole's x.
   const key = (L) => JSON.stringify([L.blocks, L.hole]);
   const layouts = new Set();
@@ -263,8 +310,8 @@ for (const diff of [1, 2, 3]) {
 
 /** A bare level for unit checks: a W x H box with optional pieces. */
 function box(w, h, extra = {}) {
-  const L = { x0: 0, y0: 0, x1: w, y1: h, cuts: [0, 0, 0, 0], bars: [], diags: [], blocks: [], pegs: [], traps: [], water: [], hole: { x: -1000, y: -1000, r: 5 }, ...extra };
-  L.poly = S.coursePolygon(0, 0, w, h, L.cuts);
+  const L = { x0: 0, y0: 0, x1: w, y1: h, edges: [], blocks: [], pegs: [], traps: [], water: [], hole: { x: -1000, y: -1000, r: 5 }, ...extra };
+  L.poly = S.coursePolygon(0, 0, w, h);
   return L;
 }
 
@@ -319,13 +366,37 @@ function run(w, b, maxS = 30) {
   let e5 = 0;
   while (b5.moving && !(e5 & S.EV_BOUNCE)) e5 |= S.step(w4, b5, PLAY);
   check((e4 & S.EV_BOUNCE) && b4.vy > 0 && (e5 & S.EV_BOUNCE) && b5.vy < 0, 'pegs and blocks bounce the ball back');
-  // A 45 degree diagonal sends a vertical ball sideways.
-  const w6 = S.buildWorld(box(200, 200, { diags: [{ ax: 80, ay: 70, bx: 120, by: 30 }] }));
-  const b6 = S.newBall(100, 150);
+  // Row U2: a corner cut and a wedge are true 45 degree lines: a ball sent straight at them leaves sideways.
+  const w6 = S.buildWorld(box(200, 200, { edges: [{ k: 'corner', corner: 1, leg: 40, pts: [[200, 0], [160, 0], [200, 40]] }] }));
+  const b6 = S.newBall(185, 150);
   S.shoot(b6, 0, -1, 150);
   let e6 = 0;
   while (b6.moving && !(e6 & S.EV_BOUNCE)) e6 |= S.step(w6, b6, PLAY);
-  check((e6 & S.EV_BOUNCE) && Math.abs(b6.vy) < 1 && b6.vx > 0, `a diagonal is a true 45 degree line: straight up becomes sideways (v ${b6.vx.toFixed(1)}, ${b6.vy.toFixed(2)})`);
+  const w7 = S.buildWorld(box(200, 200, { edges: [{ k: 'wedge', side: 'l', depth: 30, pts: [[0, 70], [30, 100], [0, 130]] }] }));
+  const b7 = S.newBall(15, 190);
+  S.shoot(b7, 0, -1, 150);
+  let e7 = 0;
+  while (b7.moving && !(e7 & S.EV_BOUNCE)) e7 |= S.step(w7, b7, PLAY);
+  check((e6 & S.EV_BOUNCE) && Math.abs(b6.vy) < 1 && b6.vx < 0 && (e7 & S.EV_BOUNCE) && Math.abs(b7.vy) < 1 && b7.vx > 0,
+    `a corner cut and a wedge are true 45 degree lines: straight up becomes sideways (v ${b6.vx.toFixed(1)}, ${b6.vy.toFixed(2)}; ${b7.vx.toFixed(1)}, ${b7.vy.toFixed(2)})`);
+  // A stub from an edge bounces like a block.
+  const w8 = S.buildWorld(box(200, 200, { edges: [{ k: 'stub', side: 't', x: 90, y: 0, w: 10, h: 40 }] }));
+  const b8 = S.newBall(95, 150);
+  S.shoot(b8, 0, -1, 150);
+  let e8 = 0;
+  while (b8.moving && !(e8 & S.EV_BOUNCE)) e8 |= S.step(w8, b8, PLAY);
+  check((e8 & S.EV_BOUNCE) && b8.vy > 0 && b8.y > 40, 'a stub from the top edge sends the ball back');
+  // The screen edges are the walls: a ball sent at each of the four bounces off it.
+  let four = 0;
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const w9 = S.buildWorld(box(135, 300));
+    const b9 = S.newBall(67.5, 150);
+    S.shoot(b9, dx, dy, 220);
+    let e9 = 0;
+    while (b9.moving && !(e9 & S.EV_BOUNCE)) e9 |= S.step(w9, b9, PLAY);
+    if ((e9 & S.EV_BOUNCE) && b9.vx * dx + b9.vy * dy < 0 && b9.x >= S.BALL_R - 1e-9 && b9.x <= 135 - S.BALL_R + 1e-9 && b9.y >= S.BALL_R - 1e-9 && b9.y <= 300 - S.BALL_R + 1e-9) four++;
+  }
+  check(four === 4, `the ball bounces off all four screen edges and stays on the screen (${four}/4)`);
 }
 
 {
@@ -500,6 +571,7 @@ function run(w, b, maxS = 30) {
   let shots = 0;
   let worstPen = 0;
   let worstOut = Infinity;
+  let worstScreen = Infinity;
   let nan = 0;
   let notRest = 0;
   let maxStep = 0;
@@ -539,6 +611,7 @@ function run(w, b, maxS = 30) {
         maxStep = Math.max(maxStep, Math.hypot(b.x - px, b.y - py));
         worstPen = Math.max(worstPen, S.overlap(w, b.x, b.y));
         worstOut = Math.min(worstOut, S.insideDist(planes, b.x, b.y));
+        worstScreen = Math.min(worstScreen, b.x - S.BALL_R, L.x1 - S.BALL_R - b.x, b.y - S.BALL_R, L.H - S.BALL_R - b.y);
         // Swept: the straight move of this step never crosses a solid's core.
         const move = S.shapeOf({ k: 'seg', ax: px, ay: py, bx: b.x, by: b.y, r: 0 });
         for (const p of solids) if (S.shapeDist(move, p.shape) <= 0) crossed++;
@@ -547,9 +620,9 @@ function run(w, b, maxS = 30) {
       maxSteps = Math.max(maxSteps, steps);
     }
   }
-  check(nan === 0, `${shots} random shots on 120 generated levels: no NaN`);
-  check(crossed === 0 && worstPen < 0.05, `the ball never passes through a wall, block, diagonal or peg (deepest overlap ${worstPen.toFixed(4)} px, ${crossed} crossings)`);
-  check(worstOut >= S.BALL_R - 0.05, `the ball never leaves the course (closest centre to the wall ${worstOut.toFixed(3)} px, radius ${S.BALL_R})`);
+  check(nan === 0, `${shots} random shots on 120 generated levels (40 per difficulty): no NaN`);
+  check(shots === 3000 && crossed === 0 && worstPen < 0.05, `${shots} random shots: no tunnelling through an edge, a stub, a corner cut, a wedge, a block or a peg (deepest overlap ${worstPen.toFixed(4)} px, ${crossed} crossings)`);
+  check(worstOut >= S.BALL_R - 0.05 && worstScreen >= -0.05, `the ball never leaves the course or the screen (closest centre to an edge ${worstOut.toFixed(3)} px, radius ${S.BALL_R}; closest ball edge to the screen's ${worstScreen.toFixed(3)} px)`);
   check(notRest === 0 && maxSteps <= 120 * 4 + 2, `the ball always comes to rest, within 4 s (longest ${(maxSteps / 120).toFixed(2)} s); ${sunk} sank, ${water} in water`);
   check(maxStep <= 220 / 120 + EPS, `the ball moves at most ${(220 / 120).toFixed(3)} px per step (${maxStep.toFixed(3)})`);
 
@@ -571,52 +644,94 @@ function run(w, b, maxS = 30) {
   check(out === 0, `stress at 2200 px/s (ten times the top speed): never through a wall (${out} bad steps)`);
 }
 
-/* ---------- readability (the B4 standard, sunset and all 10 steps) ---------- */
+/* ---------- row U2: two looks, alternating; drawing only ---------- */
+
+{
+  const seq = [1, 2, 3, 4, 5, 6, 7, 8].map(G.lookOf);
+  check(same(seq, ['sand', 'sea', 'sand', 'sea', 'sand', 'sea', 'sand', 'sea']), `levels alternate sand and sea from a sand start (${seq.join(', ')})`);
+  check(/let levelNo = 0;/.test(puttCode) && /levelNo\+\+;/.test(puttCode) && /const lookNow = \(\) => G\.lookOf\(levelNo\);/.test(puttCode)
+    && /paintCourse\(lv, r, step, G\.lookOf\(no\)\)/.test(puttCode) && /no: levelNo \+ 1/.test(puttCode)
+    && !/levelNo = [1-9]/.test(puttCode) && !/\bseed\b[^;]*look|look[^;]*\bseed\b/.test(puttCode),
+    'putt.js counts levels from 0 on every opening (nothing stored), so the first is sand; the look comes from the count alone, not the seed; the next level slides in in its own look');
+  check(!/\blook\b|sand|\bsea\b/i.test(simSrc.replace(/sandFactor/g, '')) && !/\blook\b/.test(JSON.stringify(levels[1][0])),
+    'the look is drawing only: sim.js has no look, and a level carries none (the same shapes and numbers in both)');
+  check(/world = S\.buildWorld\(lv\);/.test(puttCode) && (puttCode.match(/S\.buildWorld\(/g) || []).length === 1,
+    'putt.js builds the one collision world from the level alone');
+  // Same seed, height and insets: the same level, whichever look it is drawn in.
+  let det = 0;
+  for (const diff of [1, 2, 3]) for (const [H, top, bottom] of [[240, 0, 0], [300, 12, 6], [400, 6, 3]]) {
+    if (same(G.generate(31 * diff + H, diff, H, PLAY, top, bottom), G.generate(31 * diff + H, diff, H, PLAY, top, bottom))) det++;
+  }
+  check(det === 9, `the same seed, height and insets give the same level (${det}/9)`);
+}
+
+/* ---------- readability (the B4 standard, sunset and all 10 steps, both looks, both themes) ---------- */
 
 for (const THEME of [T.LIGHT, T.DARK]) {
   // Row D1: every readability check runs in both themes (the Node checks have no colour scheme: forced).
   T.forceTheme(THEME);
   THEME_TAG = THEME === T.DARK ? '[dark] ' : '';
 
-  check(/const trap = trapOn\(sand\);/.test(puttSrc) && T.TRAP_AMOUNT === 0.55 && /const DROP_AMOUNT = 0\.2;/.test(puttSrc)
-    && /const sand = pal\.sky\[0\];/.test(puttSrc) && /const water = pal\.sea\[1\];/.test(puttSrc)
-    && /\bWALL = COLORS\.coral;/.test(puttSrc) && /\bBLOCKS = \[BRICK_ROWS\[2\], BRICK_ROWS\[4\]\];/.test(puttSrc)
-    && /\bPEG = BRICK_ROWS\[5\];/.test(puttSrc) && /powerOff: mix\(COLORS\.coral, sand, 0\.6\)/.test(puttSrc)
-    && /guideAfter: mix\(BALL, sand, 0\.45\)/.test(puttSrc) && /\bHOLE = COLORS\.keel;/.test(puttSrc) && /\bBALL = COLORS\.blue;/.test(puttSrc),
-    'putt.js draws with the colours measured here');
+  check(/const g = puttGround\(look, t\);/.test(puttSrc) && /const DROP_AMOUNT = 0\.2;/.test(puttSrc)
+    && /\bROCK = COLORS\.coral;/.test(puttSrc) && /\bROCK_WEDGE = BRICK_ROWS\[5\];/.test(puttSrc) && /\bBLOCKS = \[BRICK_ROWS\[2\], BRICK_ROWS\[4\]\];/.test(puttSrc)
+    && /\bPEG = BRICK_ROWS\[5\];/.test(puttSrc) && /powerOff: mix\(COLORS\.coral, ground, 0\.6\)/.test(puttSrc)
+    && /guideAfter: mix\(guide, ground, 0\.45\)/.test(puttSrc) && /const guide = sea \? COLORS\.ink : BALL;/.test(puttSrc)
+    && /\bHOLE = COLORS\.keel;/.test(puttSrc) && /\bBALL = COLORS\.blue;/.test(puttSrc)
+    && /\bSEA_BALL = COLORS\.foam;/.test(puttSrc) && /\bSEA_BALL_EDGE = edge\(COLORS\.coral\);/.test(puttSrc)
+    && /\bFLOAT = COLORS\.coral;/.test(puttSrc) && /\bFLOAT_EDGE = edge\(COLORS\.coral\);/.test(puttSrc)
+    && /\bBANK = COLORS\.sand;/.test(puttSrc) && /\bBANK_EDGE = COLORS\.foam;/.test(puttSrc)
+    && /hex = blob \? p\.reefBlob : p\.reef;/.test(puttSrc) && /hex = rim \? p\.deepRim : p\.deep;/.test(puttSrc) && /else hex = p\.pool;/.test(puttSrc),
+    'putt.js draws with the colours measured here (both looks)');
   const P = CT.pairs();
+  const C = T.COLORS;
   for (let k = 0; k <= SE.SESSION.sceneSteps; k++) {
-    const pal = T.scenePalette(k / SE.SESSION.sceneSteps);
-    const sand = pal.sky[0];
-    const trap = T.trapOn(sand);
-    const water = pal.sea[1];
-    const where = { k, tag: 'putt' };
-    for (const [on, bg] of [['sand', sand], ['sand trap', trap]]) {
-      P.add('ball', 'cr', T.COLORS.blue, null, on, bg, where);
-      P.add('hole', 'cr', T.COLORS.keel, null, on, bg, where);
-      P.add('wall', 'de', T.COLORS.coral, null, on, bg, where);
+    const t = k / SE.SESSION.sceneSteps;
+    // Sand level.
+    {
+      const g = T.puttGround('sand', t);
+      const where = { k, tag: 'putt sand' };
+      for (const [on, bg] of [['sand', g.ground], ['sand trap', g.trap]]) {
+        P.add('ball', 'cr', C.blue, null, on, bg, where);
+        P.add('hole', 'cr', C.keel, null, on, bg, where);
+      }
+      P.add('aim guide', 'cr', C.blue, null, 'sand', g.ground, where);
+      P.add('aim guide (rebound)', 'de', T.mix(C.blue, g.ground, 0.45), null, 'sand', g.ground, where);
+      for (const [what, c] of [['stub, corner cut (coral)', C.coral], ['wedge, peg (pink)', T.BRICK_ROWS[5]], ['block (salmon)', T.BRICK_ROWS[2]], ['block (pink)', T.BRICK_ROWS[4]], ['pool', g.pool], ['sand trap', g.trap]]) {
+        P.add(what, 'de', c, null, 'sand', g.ground, where);
+      }
+      P.add('power bar (lit)', 'de', C.coral, null, 'sand', g.ground, where);
+      P.add('power bar (unlit)', 'de', T.mix(C.coral, g.ground, 0.6), null, 'sand', g.ground, where);
+      P.add('pull ring', 'cr', C.white, C.ink, 'sand', g.ground, where);
     }
-    P.add('aim guide', 'cr', T.COLORS.blue, null, 'sand', sand, where);
-    P.add('block (salmon)', 'de', T.BRICK_ROWS[2], null, 'sand', sand, where);
-    P.add('block (pink)', 'de', T.BRICK_ROWS[4], null, 'sand', sand, where);
-    P.add('peg', 'de', T.BRICK_ROWS[5], null, 'sand', sand, where);
-    P.add('water', 'de', water, null, 'sand', sand, where);
-    P.add('sand trap', 'de', trap, null, 'sand', sand, where);
-    const powerOff = T.mix(T.COLORS.coral, sand, 0.6);
-    P.add('power bar (lit)', 'de', T.COLORS.coral, null, 'sand', sand, where);
-    P.add('power bar (unlit)', 'de', powerOff, null, 'sand', sand, where);
-    P.add('power bar (lit)', 'de', T.COLORS.coral, null, 'unlit bar', powerOff, where);
-    P.add('aim guide (rebound)', 'de', T.mix(T.COLORS.blue, sand, 0.45), null, 'sand', sand, where);
-    P.add('pull ring', 'cr', T.COLORS.white, T.COLORS.ink, 'sand', sand, where);
-    for (let i = 0; i < 3; i++) {
-      P.add('course wall', 'de', T.COLORS.coral, null, `sea band ${i + 1}`, pal.sea[i], where);
-      P.add('pull ring', 'cr', T.COLORS.white, T.COLORS.ink, `sea band ${i + 1}`, pal.sea[i], where);
+    // Sea level.
+    {
+      const g = T.puttGround('sea', t);
+      const where = { k, tag: 'putt sea' };
+      const ballEdge = T.edge(C.coral);
+      for (const [on, bg] of [['shallow sea', g.ground], ['reef', g.reef], ['reef blob', g.reefBlob]]) {
+        P.add('ball (pale, coral edge)', 'cr', C.foam, ballEdge, on, bg, where);
+      }
+      P.add('ring float (coral, its edge)', 'cr', C.coral, ballEdge, 'shallow sea', g.ground, where);
+      P.add('aim guide (ink)', 'cr', C.ink, null, 'shallow sea', g.ground, where);
+      P.add('aim guide (rebound)', 'de', T.mix(C.ink, g.ground, 0.45), null, 'shallow sea', g.ground, where);
+      P.add('sandbank (sand, pale edge)', 'de', C.sand, C.foam, 'shallow sea', g.ground, where);
+      P.add('deep water', 'de', g.deep, null, 'shallow sea', g.ground, where);
+      P.add('reef', 'de', g.reef, null, 'shallow sea', g.ground, where);
+      P.add('reef blob', 'de', g.reefBlob, null, 'shallow sea', g.ground, where);
+      P.add('power bar (lit)', 'de', C.coral, null, 'shallow sea', g.ground, where);
+      P.add('power bar (unlit)', 'de', T.mix(C.coral, g.ground, 0.6), null, 'shallow sea', g.ground, where);
+      P.add('pull ring', 'cr', C.white, C.ink, 'shallow sea', g.ground, where);
     }
   }
   const under = P.rows.filter((x) => !x.ok);
-  const w = CT.worst(P.rows);
-  check(!under.length, `ball, hole, walls, blocks, pegs, water, traps, guide and pull ring meet the B4 standard at sunset and every step `
-    + `(weakest ${CT.fmt(w)}) ${under.slice(0, 3).map(CT.fmt)}`);
+  for (const tag of ['putt sand', 'putt sea']) {
+    const rows = P.rows.filter((x) => x.tag === tag);
+    const w = CT.worst(rows);
+    const bad = rows.filter((x) => !x.ok);
+    check(!bad.length, `[${tag.split(' ')[1]} level] ball, hole, pieces, hazards, guide, power bar and pull ring meet the B4 standard at sunset and every step `
+      + `(weakest ${CT.fmt(w)}) ${bad.slice(0, 3).map(CT.fmt)}`);
+  }
+  check(!under.length, `both looks pass (${P.rows.length} pairs)`);
   T.forceTheme(null);
   THEME_TAG = '';
 }

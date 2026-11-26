@@ -30,9 +30,12 @@ const LIGHT_COLORS = Object.freeze({
   shadeTarget: '#783C5A', // shade() mixes toward it; also Putt's trap dots and drop shade
   edgeTarget: '#783C5A', // D1: edge() mixes toward it (in light the same as shadeTarget, as before)
   star: '#FFFFFF',
-  sand: '#FFE6D2', // D1: new, for rows U2 and A1; unused until then
-  wetSand: '#FFCFBA', // D1: new, for rows U2 and A1; unused until then
-  foam: '#FFFAF3', // D1: new, foam and lines for rows U2 and A1; unused until then
+  sand: '#FFE6D2', // D1: new, for rows U2 and A1; U2: Putt's sand ground and its sandbanks
+  wetSand: '#FFCFBA', // D1: new, for rows U2 and A1; U2: the sandbanks' bottom row
+  foam: '#FFFAF3', // D1: new, foam and lines for rows U2 and A1; U2: the sandbanks' pale edge, the ball on a sea level
+  shallow: '#84C4DE', // U2: Putt's sea-level ground (the shallow sea), at sunset
+  deep: '#3A5A8C', // U2: deep water on a sea level
+  trapTint: '#FFA38C', // U2: a sand-level trap is the ground mixed SAND_TRAP_AMOUNT toward it (brick row 4's peach)
 });
 
 // The same beach at night (PLAN §3 Dark theme). Values moved from the §3
@@ -57,6 +60,9 @@ const DARK_COLORS = Object.freeze({
   sand: '#2B2142',
   wetSand: '#3B2C58',
   foam: '#CDD6FF',
+  shallow: '#24406B', // U2: sea band 1's night value
+  deep: '#05060D', // U2: near black, so it clears the night sea by delta E 20 at dusk
+  trapTint: '#7A1E3A', // U2: a deep rust, so the trap stays dark enough for the ball and hole yet differs from the night sand
 });
 
 // Dusk (PLAN §2b): the end of the exit ramp. Bricks, paddle, ball and
@@ -65,11 +71,15 @@ const LIGHT_DUSK = Object.freeze({
   skyTop: '#CDB8E0',
   skyBottom: '#F0A9A6',
   seaBands: Object.freeze(['#6FA3C4', '#5F93B8', '#5083AB']),
+  sand: '#E6CBD8', // U2: Putt's sand ground at dusk
+  shallow: '#A6BCDD', // U2: Putt's sea-level ground at dusk (stays light: the pale ball's coral edge needs a light ground)
 });
 const DARK_DUSK = Object.freeze({
   skyTop: '#0C0918',
   skyBottom: '#241436',
   seaBands: Object.freeze(['#1A2F52', '#162849', '#132140']),
+  sand: '#1E1730', // U2
+  shallow: '#1A2F52', // U2: sea band 1's dark dusk value
 });
 
 // Brick rows, top to bottom (dark: unchanged, PLAN §3).
@@ -91,15 +101,22 @@ export const EDGE_AMOUNT = 0.7; // B4: the 1 px edge drawn all round a shape, 70
 export const LINE_AMOUNT_DARK = 0.25; // D1: dark only, a 1 px line drawn in a piece's edge colour (the mast, the flag pole) mixes this far toward edgeTarget
 export const TRAP_AMOUNT = 0.55; // Putt's sand traps: the sand mixed this far toward brick row 4's peach (light)
 export const TRAP_AMOUNT_DARK = 0.22; // D1: in dark, so the ball clears the trap and the trap still differs from the sand by delta E 20
+export const SAND_TRAP_AMOUNT = 0.75; // U2: Putt's sand-level trap, the ground mixed this far toward COLORS.trapTint (light)
+export const SAND_TRAP_AMOUNT_DARK = 0.65; // U2: the same in dark
+export const POOL_LIFT_DARK = 0.3; // U2: in dark a sand-level pool is sea band 2 mixed this far toward foam, so it clears the night sand (light: 0)
+export const REEF_AMOUNT = 0.55; // U2: a reef on a sea level is the ground mixed this far toward brick row 7 (light)
+export const REEF_AMOUNT_DARK = 0.35; // U2: the same in dark
 export const INK_CLOUD_AMOUNT = 0.45; // B4 review: how far the ink cloud mixes each sea band toward COLORS.inkCloud (both themes)
 
 export const LIGHT = Object.freeze({
   name: 'light', COLORS: LIGHT_COLORS, DUSK: LIGHT_DUSK, BRICK_ROWS: LIGHT_BRICKS, SEA_BANDS: LIGHT_SEA,
   highlightAmount: HIGHLIGHT_AMOUNT, lineAmount: EDGE_AMOUNT, trapAmount: TRAP_AMOUNT,
+  sandTrapAmount: SAND_TRAP_AMOUNT, poolLift: 0, reefAmount: REEF_AMOUNT,
 });
 export const DARK = Object.freeze({
   name: 'dark', COLORS: DARK_COLORS, DUSK: DARK_DUSK, BRICK_ROWS: DARK_BRICKS, SEA_BANDS: DARK_SEA,
   highlightAmount: HIGHLIGHT_AMOUNT_DARK, lineAmount: LINE_AMOUNT_DARK, trapAmount: TRAP_AMOUNT_DARK,
+  sandTrapAmount: SAND_TRAP_AMOUNT_DARK, poolLift: POOL_LIFT_DARK, reefAmount: REEF_AMOUNT_DARK,
 });
 
 /* ---------- the active set: the phone's colour scheme ---------- */
@@ -209,6 +226,23 @@ export const edge = (c, set) => mix(c, setOf(set).COLORS.edgeTarget, EDGE_AMOUNT
 export const line = (c, set) => mix(c, setOf(set).COLORS.edgeTarget, setOf(set).lineAmount);
 /** Putt's sand trap colour on a sand colour (both themes; the amount is the set's). */
 export const trapOn = (sand, set) => mix(sand, setOf(set).BRICK_ROWS[3], setOf(set).trapAmount);
+
+/**
+ * Row U2: Putt's level colours at mix t (0 sunset .. 1 dusk) in the active set
+ * (or set), for a look, 'sand' or 'sea'. Only Putt reads them; nothing else in
+ * shared/ changes. Each value is a flat mix between its sunset and dusk token,
+ * as in scenePalette.
+ */
+export function puttGround(look, t, set) {
+  const s = setOf(set);
+  const pal = scenePalette(t, s);
+  if (look === 'sea') {
+    const ground = mix(s.COLORS.shallow, s.DUSK.shallow, t);
+    return { ground, reef: mix(ground, s.BRICK_ROWS[6], s.reefAmount), reefBlob: s.BRICK_ROWS[6], deep: s.COLORS.deep };
+  }
+  const ground = mix(s.COLORS.sand, s.DUSK.sand, t);
+  return { ground, trap: mix(ground, s.COLORS.trapTint, s.sandTrapAmount), pool: mix(pal.sea[1], s.COLORS.foam, s.poolLift) };
+}
 
 /**
  * Scene colours at mix t (0 sunset .. 1 dusk) in the active set (or set):

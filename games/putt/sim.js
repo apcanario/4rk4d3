@@ -3,18 +3,17 @@
 // generator's solver uses this same file) and on the page.
 //
 // Units are logical px and seconds. The ball is a disc of radius BALL_R. The
-// course outline is a convex polygon; the ball is kept inside it by one
-// half-plane per edge. Bars and blocks are boxes, diagonals are 45 degree
-// segments with a half-thickness, pegs are discs. The play values (launch
-// speed, deceleration, bounce, capture speed) come in as cfg from the CONFIG
-// block at the top of putt.js.
+// course is the screen less its safe-area insets (row U2, PLAN §6h): a
+// rectangle whose four sides are the walls, one half-plane each. Edge stubs
+// and blocks are boxes, corner cuts and wedges are triangles (convex polygons
+// with true 45 degree sides), pegs are discs. The play values (launch speed,
+// deceleration, bounce, capture speed) come in as cfg from the CONFIG block at
+// the top of putt.js. How a level is drawn (sand or sea, row U2) is not seen
+// here: the same shapes and numbers in both.
 
 export const STEP_HZ = 120;
 export const DT = 1 / STEP_HZ;
 export const BALL_R = 2.5; // the 5 x 5 ball
-export const WALL_T = 3; // the outline wall, drawn outside the course polygon
-export const BAR_T = 3; // a bar's thickness
-export const DIAG_HALF = 1.5; // a diagonal's half-thickness
 export const PEG_R = 3;
 export const MAX_SUB_PX = 1; // the ball moves at most this far between two contact tests
 export const CELL = 8; // broad-phase grid cell, px
@@ -74,6 +73,10 @@ export function shapeOf(p) {
     };
   }
   if (p.k === 'seg') return { segs: [[p.ax, p.ay, p.bx, p.by]], r: p.r };
+  if (p.k === 'poly') {
+    const segs = p.pts.map((q, i) => [q[0], q[1], p.pts[(i + 1) % p.pts.length][0], p.pts[(i + 1) % p.pts.length][1]]);
+    return { segs, r: 0, poly: polyPlanes(p.pts) };
+  }
   return { segs: [[p.x, p.y, p.x, p.y]], r: p.r }; // disc
 }
 
@@ -81,21 +84,50 @@ function inBox(x, y, b) {
   return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
 }
 
+/** Outward edges of a convex polygon (either winding): { ax, ay, bx, by, nx, ny, c }; outside where nx*x + ny*y > c. */
+export function polyPlanes(pts) {
+  let area = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const [ax, ay] = pts[i];
+    const [bx, by] = pts[(i + 1) % pts.length];
+    area += ax * by - bx * ay;
+  }
+  const sgn = area > 0 ? 1 : -1;
+  return pts.map(([ax, ay], i) => {
+    const [bx, by] = pts[(i + 1) % pts.length];
+    const L = Math.hypot(bx - ax, by - ay);
+    const nx = (sgn * (by - ay)) / L;
+    const ny = (-sgn * (bx - ax)) / L;
+    return { ax, ay, bx, by, nx, ny, c: nx * ax + ny * ay };
+  });
+}
+
+/** True when x, y is inside (or on) a convex polygon given by polyPlanes. */
+export function inPoly(x, y, planes) {
+  for (const e of planes) if (e.nx * x + e.ny * y - e.c > 1e-9) return false;
+  return true;
+}
+
+function inside(x, y, s) {
+  return (s.box && inBox(x, y, s.box)) || (s.poly && inPoly(x, y, s.poly));
+}
+
 /** Clear distance between two shapes (0 when they touch or overlap). */
 export function shapeDist(a, b) {
-  if (a.box && inBox(b.segs[0][0], b.segs[0][1], a.box)) return 0;
-  if (b.box && inBox(a.segs[0][0], a.segs[0][1], b.box)) return 0;
+  if ((a.box || a.poly) && inside(b.segs[0][0], b.segs[0][1], a)) return 0;
+  if ((b.box || b.poly) && inside(a.segs[0][0], a.segs[0][1], b)) return 0;
   let d = Infinity;
   for (const s of a.segs) for (const t of b.segs) d = Math.min(d, segSegDist(s[0], s[1], s[2], s[3], t[0], t[1], t[2], t[3]));
   return Math.max(0, d - a.r - b.r);
 }
 
 /**
- * The course polygon (convex): the rectangle x0..x1, y0..y1 with its corners
- * cut at 45 degrees. cuts: [top-left, top-right, bottom-right, bottom-left],
- * each 0 (square) or the cut size in px. Clockwise on screen.
+ * The course polygon (convex): the rectangle x0..x1, y0..y1, clockwise on
+ * screen. Since row U2 the corners are square (a corner cut is a piece of its
+ * own); cuts, [top-left, top-right, bottom-right, bottom-left] in px, is kept
+ * for the unit checks.
  */
-export function coursePolygon(x0, y0, x1, y1, cuts) {
+export function coursePolygon(x0, y0, x1, y1, cuts = [0, 0, 0, 0]) {
   const [tl, tr, br, bl] = cuts;
   const pts = [];
   const add = (x, y) => {
@@ -140,23 +172,26 @@ export function insideDist(planes, x, y) {
 
 /**
  * Build the collision world of a level (see gen.js for the level's shape).
- * Solids: the outline's half-planes, bars and blocks (boxes), diagonals
- * (segments), pegs (discs). Hazards: sand traps and water (boxes). Each grid
- * cell lists the solids near it, so a step tests only a few.
+ * Solids: the course's half-planes (the screen edges), edge stubs and blocks
+ * (boxes), corner cuts and wedges (triangles), pegs (discs). Hazards: sand
+ * traps and water (boxes). Each grid cell lists the solids near it, so a step
+ * tests only a few.
  */
 export function buildWorld(level) {
   const planes = halfPlanes(level.poly);
   const solids = [];
   for (const p of planes) solids.push({ t: 0, nx: p.nx, ny: p.ny, c: p.c, ax: p.ax, ay: p.ay, bx: p.bx, by: p.by });
-  for (const b of level.bars) solids.push({ t: 1, x0: b.x, y0: b.y, x1: b.x + b.w, y1: b.y + b.h });
+  for (const e of level.edges || []) {
+    if (e.k === 'stub') solids.push({ t: 1, x0: e.x, y0: e.y, x1: e.x + e.w, y1: e.y + e.h });
+    else solids.push({ t: 4, e: polyPlanes(e.pts), pts: e.pts });
+  }
   for (const b of level.blocks) solids.push({ t: 1, x0: b.x, y0: b.y, x1: b.x + b.w, y1: b.y + b.h });
-  for (const d of level.diags) solids.push({ t: 2, ax: d.ax, ay: d.ay, bx: d.bx, by: d.by, r: DIAG_HALF });
   for (const g of level.pegs) solids.push({ t: 3, x: g.x, y: g.y, r: PEG_R });
 
-  const gx0 = level.x0 - WALL_T - CELL;
-  const gy0 = level.y0 - WALL_T - CELL;
-  const cols = Math.ceil((level.x1 - level.x0 + 2 * (WALL_T + CELL)) / CELL) + 1;
-  const rows = Math.ceil((level.y1 - level.y0 + 2 * (WALL_T + CELL)) / CELL) + 1;
+  const gx0 = level.x0 - CELL;
+  const gy0 = level.y0 - CELL;
+  const cols = Math.ceil((level.x1 - level.x0 + 2 * CELL) / CELL) + 1;
+  const rows = Math.ceil((level.y1 - level.y0 + 2 * CELL) / CELL) + 1;
   const cells = Array.from({ length: cols * rows }, () => []);
   const m = BALL_R + MAX_SUB_PX + 2; // reach of a test from inside a cell
   solids.forEach((s, i) => {
@@ -168,8 +203,9 @@ export function buildWorld(level) {
       bx0 = Math.min(s.ax, s.bx); bx1 = Math.max(s.ax, s.bx); by0 = Math.min(s.ay, s.by); by1 = Math.max(s.ay, s.by);
     } else if (s.t === 1) {
       bx0 = s.x0; bx1 = s.x1; by0 = s.y0; by1 = s.y1;
-    } else if (s.t === 2) {
-      bx0 = Math.min(s.ax, s.bx) - s.r; bx1 = Math.max(s.ax, s.bx) + s.r; by0 = Math.min(s.ay, s.by) - s.r; by1 = Math.max(s.ay, s.by) + s.r;
+    } else if (s.t === 4) {
+      bx0 = Math.min(...s.pts.map((q) => q[0])); bx1 = Math.max(...s.pts.map((q) => q[0]));
+      by0 = Math.min(...s.pts.map((q) => q[1])); by1 = Math.max(...s.pts.map((q) => q[1]));
     } else {
       bx0 = s.x - s.r; bx1 = s.x + s.r; by0 = s.y - s.r; by1 = s.y + s.r;
     }
@@ -239,22 +275,40 @@ function deepest(w, x, y, rad) {
         ny = m === t ? -1 : m === b ? 1 : 0;
         if (nx !== 0 && ny !== 0) ny = 0;
       }
-    } else if (s.t === 2) {
-      const ex = s.bx - s.ax;
-      const ey = s.by - s.ay;
-      const L = ex * ex + ey * ey;
-      let u = ((x - s.ax) * ex + (y - s.ay) * ey) / L;
-      u = u < 0 ? 0 : u > 1 ? 1 : u;
-      const dx = x - (s.ax + u * ex);
-      const dy = y - (s.ay + u * ey);
-      const d = Math.sqrt(dx * dx + dy * dy);
-      pen = rad + s.r - d;
-      if (d > 0) {
-        nx = dx / d;
-        ny = dy / d;
+    } else if (s.t === 4) {
+      // A convex polygon: the edge the centre is furthest outside of, or,
+      // outside a corner, the nearest point of the outline.
+      let md = -Infinity;
+      let me = null;
+      for (let j = 0; j < s.e.length; j++) {
+        const e = s.e[j];
+        const d = e.nx * x + e.ny * y - e.c;
+        if (d > md) { md = d; me = e; }
+      }
+      if (md >= rad) continue; // the distance is at least md: no contact
+      if (md <= 0) {
+        pen = rad - md;
+        nx = me.nx;
+        ny = me.ny;
       } else {
-        nx = -ey / Math.sqrt(L);
-        ny = ex / Math.sqrt(L);
+        let bd = Infinity;
+        let qx = 0;
+        let qy = 0;
+        for (let j = 0; j < s.e.length; j++) {
+          const e = s.e[j];
+          const ex = e.bx - e.ax;
+          const ey = e.by - e.ay;
+          let u = ((x - e.ax) * ex + (y - e.ay) * ey) / (ex * ex + ey * ey);
+          u = u < 0 ? 0 : u > 1 ? 1 : u;
+          const px = e.ax + u * ex;
+          const py = e.ay + u * ey;
+          const d = (x - px) * (x - px) + (y - py) * (y - py);
+          if (d < bd) { bd = d; qx = px; qy = py; }
+        }
+        const d = Math.sqrt(bd);
+        pen = rad - d;
+        nx = d > 0 ? (x - qx) / d : me.nx;
+        ny = d > 0 ? (y - qy) / d : me.ny;
       }
     } else {
       const dx = x - s.x;

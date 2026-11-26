@@ -1,4 +1,4 @@
-// Putt (PLAN §6c): drawing, the thumb, haptics, the level queue. The
+// Putt (PLAN §6c, row U2 §6h): drawing, the thumb, haptics, the level queue. The
 // simulation lives in sim.js and the level generator, with its solver, in
 // gen.js (no DOM in either); gen.js also runs as a module Web Worker, so the
 // next level is built while this one is played.
@@ -35,9 +35,9 @@ export const CONFIG = Object.freeze({
 });
 
 import {
-  LOGICAL_WIDTH, COLORS, BRICK_ROWS, mix, shade, highlight, line, trapOn, scenePalette, tokens, onThemeChange,
+  LOGICAL_WIDTH, COLORS, BRICK_ROWS, mix, shade, highlight, edge, line, puttGround, tokens, onThemeChange,
 } from '../../shared/tokens.js';
-import { createScreen, initPage, atSideEdge, pixelBody, ditherRow, reducedMotion, MIN_HEIGHT } from '../../shared/pixel.js';
+import { createScreen, initPage, atSideEdge, pixelBody, reducedMotion, MIN_HEIGHT } from '../../shared/pixel.js';
 import { MIN_GAP_MS, canVibrate, send } from '../../shared/haptics.js';
 import { sessionClock, addPlay, phaseOf, sceneStep, SESSION } from '../../shared/session.js';
 import * as S from './sim.js';
@@ -52,11 +52,17 @@ const PLAY = Object.freeze({
 
 /* ---------- colours (tokens only) ---------- */
 
-// From the active token set; retheme() makes them again when the phone
-// switches between light and dark (row D1).
-let WALL, BLOCKS, PEG, HOLE, HOLE_RIM, FLAG, POLE, BALL;
+// Row U2: two looks, alternating level by level from a sand start (gen.js
+// lookOf): sand (rocks in coral, salmon and pink on sand, a pool, a peach
+// trap, the plum hole with its flag, the blue ball) and sea (sandbanks with a
+// pale edge on the shallow sea, deep water, a pink reef, a ring float for the
+// hole, a pale ball in a coral edge). Drawing only: sim.js sees the same
+// shapes. From the active token set; retheme() makes them again when the
+// phone switches between light and dark (row D1).
+let ROCK, ROCK_WEDGE, BLOCKS, PEG, HOLE, HOLE_RIM, FLAG, POLE, BALL, SEA_BALL, SEA_BALL_EDGE, FLOAT, FLOAT_EDGE, BANK, BANK_EDGE, BANK_LOW;
 function retheme() {
-  WALL = COLORS.coral;
+  ROCK = COLORS.coral; // stubs and corner cuts on a sand level
+  ROCK_WEDGE = BRICK_ROWS[5]; // wedges: pink
   BLOCKS = [BRICK_ROWS[2], BRICK_ROWS[4]]; // salmon and pink
   PEG = BRICK_ROWS[5];
   HOLE = COLORS.keel; // the deep plum
@@ -64,74 +70,88 @@ function retheme() {
   FLAG = COLORS.coral;
   POLE = line(COLORS.coral); // the edge colour in light, a lighter line in dark (row D1)
   BALL = COLORS.blue;
+  SEA_BALL = COLORS.foam; // the pale ball of a sea level...
+  SEA_BALL_EDGE = edge(COLORS.coral); // ...in its coral edge (PLAN §3 B4 edge)
+  FLOAT = COLORS.coral; // the ring float, with white bands, in the same edge
+  FLOAT_EDGE = edge(COLORS.coral);
+  BANK = COLORS.sand; // sandbanks
+  BANK_EDGE = COLORS.foam; // their pale edge
+  BANK_LOW = COLORS.wetSand; // their bottom row
 }
 retheme();
-const DROP_AMOUNT = 0.2; // the drop shade a solid casts on the floor below it
+const DROP_AMOUNT = 0.2; // the drop shade a solid casts on the sand below it
+const DASH_AMOUNT = 0.55; // a sea level's glint dashes: foam mixed this far toward the ground
+const RIM_AMOUNT = 0.4; // deep water's 1 px rim: the deep mixed this far toward the ground
 
-function palette(step) {
+function palette(step, look) {
   const t = step / SESSION.sceneSteps;
-  const pal = scenePalette(t);
-  const sand = pal.sky[0]; // the sky-top token (cream) at this step
-  const trap = trapOn(sand); // the sand mixed toward brick row 4's peach (shared/tokens.js TRAP_AMOUNT, dark TRAP_AMOUNT_DARK)
-  const water = pal.sea[1];
+  const g = puttGround(look, t);
+  const ground = g.ground;
+  const sea = look === 'sea';
+  const guide = sea ? COLORS.ink : BALL; // a control on the sea is ink (PLAN §3 B4)
   return {
-    sea: pal.sea,
-    sand,
-    trap,
-    trapDot: mix(trap, COLORS.shadeTarget, 0.15),
-    water,
-    glint: mix(COLORS.sun, water, 0.15),
-    seaGlint: mix(COLORS.sun, pal.sea[0], 0.15),
-    guide: BALL,
-    guideAfter: mix(BALL, sand, 0.45),
+    ...g,
+    look,
+    trapDot: sea ? null : mix(g.trap, COLORS.shadeTarget, 0.15),
+    dash: mix(COLORS.foam, ground, DASH_AMOUNT),
+    deepRim: sea ? mix(g.deep, ground, RIM_AMOUNT) : null,
+    glint: sea ? null : mix(COLORS.sun, g.pool, 0.15),
+    guide,
+    guideAfter: mix(guide, ground, 0.45),
     powerOn: COLORS.coral,
-    powerOff: mix(COLORS.coral, sand, 0.6),
+    powerOff: mix(COLORS.coral, ground, 0.6),
+    ball: sea ? SEA_BALL : BALL,
+    ballEdge: sea ? SEA_BALL_EDGE : null,
   };
 }
 
 /* ---------- the course, rasterised once per level ---------- */
 
 // Pixel classes.
-const C_NONE = 0;
-const C_SAND = 1;
-const C_WALL = 2;
-const C_BLOCK0 = 3;
-const C_BLOCK1 = 4;
-const C_PEG = 5;
-const C_TRAP = 6;
-const C_WATER = 7;
-const SOLID = (c) => c >= C_WALL && c <= C_PEG;
+const C_GROUND = 0;
+const C_STUB = 1;
+const C_CORNER = 2;
+const C_WEDGE = 3;
+const C_BLOCK0 = 4;
+const C_BLOCK1 = 5;
+const C_PEG = 6;
+const C_TRAP = 7;
+const C_WATER = 8;
+const SOLID = (c) => c >= C_STUB && c <= C_PEG;
 
 /**
  * Classify every logical pixel of the screen by its centre, with the same
- * geometry the physics uses: the wall is the band WALL_T wide outside the
- * course polygon; bars, blocks and traps are their rectangles, diagonals the
- * pixels within DIAG_HALF of their line (a stair-step), pegs within PEG_R.
+ * geometry the physics uses: stubs, blocks and hazards are their rectangles,
+ * corner cuts and wedges their triangles (so their slanted sides come out as
+ * stair-steps), pegs the pixels within PEG_R. Everything else is ground: no
+ * frame, the screen edges are the walls (row U2).
  */
 function rasterise(level, W, H) {
   const cls = new Uint8Array(W * H);
-  const obj = new Int16Array(W * H); // which solid a pixel belongs to (walls are all 1)
-  const planes = S.halfPlanes(level.poly);
+  const obj = new Int16Array(W * H); // which piece a pixel belongs to
+  const tris = level.edges.map((e) => (e.k === 'stub' ? null : S.polyPlanes(e.pts)));
+  const inRect = (px, py, b) => px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h;
   const cornerCut = (x, y, b) => (x === b.x || x === b.x + b.w - 1) && (y === b.y || y === b.y + b.h - 1);
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const px = x + 0.5;
       const py = y + 0.5;
-      const d = S.insideDist(planes, px, py);
-      let c = d >= 0 ? C_SAND : d >= -S.WALL_T ? C_WALL : C_NONE;
-      let o = c === C_WALL ? 1 : 0;
-      if (c === C_SAND) {
-        for (const b of level.bars) if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) { c = C_WALL; o = 1; }
-        for (const g of level.diags) if (S.pointSegDist(px, py, g.ax, g.ay, g.bx, g.by) <= S.DIAG_HALF) { c = C_WALL; o = 1; }
-        level.blocks.forEach((b, i) => {
-          if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h && !cornerCut(x, y, b)) { c = b.c ? C_BLOCK1 : C_BLOCK0; o = 10 + i; }
-        });
-        level.pegs.forEach((g, i) => {
-          if (Math.hypot(px - g.x, py - g.y) <= S.PEG_R) { c = C_PEG; o = 100 + i; }
-        });
-        for (const t of level.traps) if (px >= t.x && px <= t.x + t.w && py >= t.y && py <= t.y + t.h && !cornerCut(x, y, t)) c = C_TRAP;
-        for (const t of level.water) if (px >= t.x && px <= t.x + t.w && py >= t.y && py <= t.y + t.h && !cornerCut(x, y, t)) c = C_WATER;
-      }
+      let c = C_GROUND;
+      let o = 0;
+      level.edges.forEach((e, i) => {
+        if (e.k === 'stub' ? inRect(px, py, e) : S.inPoly(px, py, tris[i])) {
+          c = e.k === 'stub' ? C_STUB : e.k === 'corner' ? C_CORNER : C_WEDGE;
+          o = 1 + i;
+        }
+      });
+      level.blocks.forEach((b, i) => {
+        if (inRect(px, py, b) && !cornerCut(x, y, b)) { c = b.c ? C_BLOCK1 : C_BLOCK0; o = 20 + i; }
+      });
+      level.pegs.forEach((g, i) => {
+        if (Math.hypot(px - g.x, py - g.y) <= S.PEG_R) { c = C_PEG; o = 40 + i; }
+      });
+      level.traps.forEach((t, i) => { if (inRect(px, py, t) && !cornerCut(x, y, t)) { c = C_TRAP; o = 60 + i; } });
+      level.water.forEach((t, i) => { if (inRect(px, py, t) && !cornerCut(x, y, t)) { c = C_WATER; o = 80 + i; } });
       cls[y * W + x] = c;
       obj[y * W + x] = o;
     }
@@ -144,12 +164,12 @@ function hexRgb(hex) {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-/** The course layer (transparent outside the wall) at a scene step. */
-function paintCourse(level, ras, step) {
+/** The whole screen for a level at a scene step, in its look (sand or sea). */
+function paintCourse(level, ras, step, look) {
   const { cls, obj, W, H } = ras;
-  const p = palette(step);
-  const solidColour = { [C_WALL]: WALL, [C_BLOCK0]: BLOCKS[0], [C_BLOCK1]: BLOCKS[1], [C_PEG]: PEG };
-  const floorColour = { [C_SAND]: p.sand, [C_TRAP]: p.trap, [C_WATER]: p.water };
+  const p = palette(step, look);
+  const sea = look === 'sea';
+  const rockColour = { [C_STUB]: ROCK, [C_CORNER]: ROCK, [C_WEDGE]: ROCK_WEDGE, [C_BLOCK0]: BLOCKS[0], [C_BLOCK1]: BLOCKS[1], [C_PEG]: PEG };
   const memo = new Map();
   const rgb = (hex) => {
     let v = memo.get(hex);
@@ -159,29 +179,52 @@ function paintCourse(level, ras, step) {
   const c = document.createElement('canvas');
   c.width = W;
   c.height = H;
-  const g = c.getContext('2d');
+  const g = c.getContext('2d', { alpha: false });
   const img = g.createImageData(W, H);
   const data = img.data;
+  // A neighbour off the screen counts as the same piece: nothing is drawn along an edge.
+  const same = (i, x, y) => x < 0 || y < 0 || x >= W || y >= H || obj[y * W + x] === obj[i];
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const i = y * W + x;
       const k = cls[i];
-      if (k === C_NONE) continue;
       let hex;
-      const above = y > 0 ? i - W : -1;
       if (SOLID(k)) {
-        const base = solidColour[k];
-        const topEdge = above < 0 || obj[above] !== obj[i];
-        const below = y < H - 1 ? i + W : -1;
-        const bottomEdge = below < 0 || obj[below] !== obj[i];
-        if (topEdge) hex = highlight(base);
-        else if (bottomEdge && k !== C_WALL) hex = shade(base);
-        else hex = base;
+        const topEdge = !same(i, x, y - 1);
+        const bottomEdge = !same(i, x, y + 1);
+        if (sea) {
+          // The pale edge on the top, the sides and every slant (a top corner
+          // cut's or a wedge's lower slant too); the wet-sand row only along a
+          // flat bottom.
+          const sideEdge = !same(i, x - 1, y) || !same(i, x + 1, y);
+          hex = topEdge || sideEdge ? BANK_EDGE : bottomEdge ? BANK_LOW : BANK;
+        } else {
+          const base = rockColour[k];
+          hex = topEdge ? highlight(base) : bottomEdge ? shade(base) : base;
+        }
+      } else if (k === C_TRAP) {
+        if (sea) {
+          const t = level.traps[obj[i] - 60];
+          const ly = y - t.y;
+          const row = Math.floor(ly / 6);
+          const lx = x - t.x + (row % 2 ? 3 : 0);
+          const u = lx % 6;
+          const v = ly % 6;
+          const blob = u >= 1 && u <= 4 && v >= 1 && v <= 4 && !((u === 1 || u === 4) && (v === 1 || v === 4));
+          hex = blob ? p.reefBlob : p.reef;
+        } else {
+          hex = (x * 7 + y * 13) % 23 === 0 ? p.trapDot : p.trap;
+        }
+      } else if (k === C_WATER) {
+        if (sea) {
+          const rim = !same(i, x - 1, y) || !same(i, x + 1, y) || !same(i, x, y - 1) || !same(i, x, y + 1);
+          hex = rim ? p.deepRim : p.deep;
+        } else hex = p.pool;
       } else {
-        hex = floorColour[k];
-        if (k === C_TRAP && (x * 7 + y * 13) % 23 === 0) hex = p.trapDot;
-        if (above >= 0 && SOLID(cls[above])) hex = mix(hex, COLORS.shadeTarget, DROP_AMOUNT);
+        hex = p.ground;
+        if (sea && y % 7 === 3 && (x + y * 5) % 19 < 6) hex = p.dash; // glint dashes on the shallow sea
       }
+      if (!sea && !SOLID(k) && y > 0 && SOLID(cls[i - W])) hex = mix(hex, COLORS.shadeTarget, DROP_AMOUNT);
       const [r, gg, b] = rgb(hex);
       data[i * 4] = r;
       data[i * 4 + 1] = gg;
@@ -190,17 +233,19 @@ function paintCourse(level, ras, step) {
     }
   }
   g.putImageData(img, 0, 0);
-  // Water: a glint dash or two.
-  g.fillStyle = p.glint;
-  for (const t of level.water) {
-    g.fillRect(t.x + 3, t.y + 3, Math.max(3, Math.floor(t.w / 3)), 1);
-    g.fillRect(t.x + Math.floor(t.w / 2), t.y + t.h - 4, Math.max(2, Math.floor(t.w / 4)), 1);
-  }
-  drawHole(g, level.hole, level);
+  if (!sea) {
+    // A pool: a glint dash or two.
+    g.fillStyle = p.glint;
+    for (const t of level.water) {
+      g.fillRect(t.x + 3, t.y + 3, Math.max(3, Math.floor(t.w / 3)), 1);
+      g.fillRect(t.x + Math.floor(t.w / 2), t.y + t.h - 4, Math.max(2, Math.floor(t.w / 4)), 1);
+    }
+    drawHole(g, level.hole);
+  } else drawFloat(g, level.hole);
   return c;
 }
 
-function drawHole(g, h, level) {
+function drawHole(g, h) {
   for (let y = Math.floor(h.y - h.r); y < h.y + h.r; y++) {
     for (let x = Math.floor(h.x - h.r); x < h.x + h.r; x++) {
       const d = Math.hypot(x + 0.5 - h.x, y + 0.5 - h.y);
@@ -210,7 +255,7 @@ function drawHole(g, h, level) {
     }
   }
   // The flag: a pole and a small coral pennant beside the hole.
-  const right = h.x + h.r + 6 <= level.x1;
+  const right = h.x + h.r + 6 <= 135;
   const px = right ? h.x + h.r : h.x - h.r - 1;
   const top = h.y - 9;
   g.fillStyle = POLE;
@@ -220,25 +265,23 @@ function drawHole(g, h, level) {
   rows.forEach((w, r) => g.fillRect(right ? px + 1 : px - w, top + r, w, 1));
 }
 
-/** The sea around the course: three bands down the screen, dither seams, pale glint dashes. */
-function paintSea(W, H, step) {
-  const p = palette(step);
-  const c = document.createElement('canvas');
-  c.width = W;
-  c.height = H;
-  const g = c.getContext('2d', { alpha: false });
-  let y = 0;
-  for (let i = 0; i < 3; i++) {
-    const y1 = Math.round(((i + 1) * H) / 3);
-    g.fillStyle = p.sea[i];
-    g.fillRect(0, y, W, y1 - y);
-    if (i > 0) ditherRow(g, 0, y, W, p.sea[i], p.sea[i - 1], i);
-    y = y1;
+/** A sea level's hole: a ring float, coral with four white bands, in its 1 px edge, the hole dark in the middle. */
+function drawFloat(g, h) {
+  const R = h.r + 1.5;
+  for (let y = Math.floor(h.y - R); y < h.y + R; y++) {
+    for (let x = Math.floor(h.x - R); x < h.x + R; x++) {
+      const dx = x + 0.5 - h.x;
+      const dy = y + 0.5 - h.y;
+      const d = Math.hypot(dx, dy);
+      if (d > R) continue;
+      let hex;
+      if (d > h.r + 0.5) hex = FLOAT_EDGE;
+      else if (d > h.r - 2) hex = Math.abs(Math.abs(dx) - Math.abs(dy)) < 1.2 ? COLORS.white : FLOAT;
+      else hex = HOLE;
+      g.fillStyle = hex;
+      g.fillRect(x, y, 1, 1);
+    }
   }
-  g.fillStyle = p.seaGlint;
-  for (const [x, f, len] of [[1, 0.2, 3], [1, 0.51, 3], [131, 0.34, 3], [131, 0.68, 3], [2, 0.84, 2]]) g.fillRect(x, Math.round(H * f), len, 1);
-  for (const [x, dy, len] of [[14, 17, 6], [40, 8, 5], [78, 14, 7], [104, 5, 5], [120, 19, 4], [60, 3, 4]]) g.fillRect(x, H - dy, len, 1);
-  return c;
 }
 
 /* ---------- state ---------- */
@@ -251,7 +294,6 @@ let ras = null;
 let ball = null;
 let levelNo = 0;
 let courseCache = { key: '', canvas: null };
-let seaCache = { key: '', canvas: null };
 let aim = null; // { id, x0, y0, x, y } logical px
 let sinkAt = 0; // performance.now() of the drop, or 0
 let slide = null; // { t0, from: { level, ras }, to: { level, ras } }
@@ -439,28 +481,24 @@ function install(lv) {
 
 /* ---------- drawing ---------- */
 
-function seaFor(W, H, step) {
-  const key = `${W}x${H}:${step}:${tokens().name}`;
-  if (seaCache.key !== key) seaCache = { key, canvas: paintSea(W, H, step) };
-  return seaCache.canvas;
-}
+const lookNow = () => G.lookOf(levelNo);
 
 function courseFor(lv, r, step, no) {
   const key = `${no}:${step}:${tokens().name}`;
-  if (courseCache.key !== key) courseCache = { key, canvas: paintCourse(lv, r, step) };
+  if (courseCache.key !== key) courseCache = { key, canvas: paintCourse(lv, r, step, G.lookOf(no)) };
   return courseCache.canvas;
 }
 
-function drawBall(ctx, x, y) {
-  pixelBody(ctx, Math.round(x - S.BALL_R), Math.round(y - S.BALL_R), 5, 5, BALL, 1);
+function drawBall(ctx, x, y, p) {
+  pixelBody(ctx, Math.round(x - S.BALL_R), Math.round(y - S.BALL_R), 5, 5, p.ball, 1, p.ballEdge);
 }
 
-function drawDrop(ctx, now) {
+function drawDrop(ctx, now, p) {
   const u = (now - sinkAt) / CONFIG.dropMs;
   if (u >= 1) return;
   const h = level.hole;
   const size = u < 0.34 ? 5 : u < 0.67 ? 3 : 1;
-  ctx.fillStyle = BALL;
+  ctx.fillStyle = p.ball;
   const o = Math.floor(size / 2);
   ctx.fillRect(Math.round(h.x - 0.5) - o, Math.round(h.y - 0.5) - o, size, size);
 }
@@ -501,7 +539,7 @@ function ring(ctx, x, y, r, fill, outline) {
 
 /** The pull: a small ring where the thumb went down, a ring under the thumb, dots between. */
 function drawPull(ctx, step) {
-  const pal = palette(step);
+  const pal = palette(step, lookNow());
   const ax = Math.round(aim.x0);
   const ay = Math.round(aim.y0);
   const tx = Math.round(aim.x);
@@ -510,12 +548,12 @@ function drawPull(ctx, step) {
   ctx.fillStyle = COLORS.white;
   for (let d = 6; d < len - 7; d += 4) ctx.fillRect(Math.round(ax + ((tx - ax) * d) / len), Math.round(ay + ((ty - ay) * d) / len), 1, 1);
   const inner = (x, y, r, c) => ring(ctx, x, y, r, c, null);
-  inner(ax, ay, 3, highlight(pal.sea[0]));
+  inner(ax, ay, 3, COLORS.white);
   inner(ax, ay, 2, COLORS.ink);
-  inner(ax, ay, 1, highlight(pal.sea[0]));
+  inner(ax, ay, 1, COLORS.white);
   ring(ctx, tx, ty, 6, COLORS.white, COLORS.ink);
   inner(tx, ty, 5, COLORS.ink);
-  inner(tx, ty, 4, pal.sea[1]);
+  inner(tx, ty, 4, pal.ground);
 }
 
 function drawSplash(ctx, now) {
@@ -536,23 +574,27 @@ function draw(ctx, s) {
   const now = performance.now();
   const step = currentStep();
   canvas.dataset.scene = String(step);
-  ctx.drawImage(seaFor(s.W, s.H, step), 0, 0);
-  if (!level) return;
+  if (!level) { // a level-3 opening waiting for the worker: the first level's bare ground (sand)
+    ctx.fillStyle = palette(step, G.lookOf(1)).ground;
+    ctx.fillRect(0, 0, s.W, s.H);
+    return;
+  }
   if (slide) {
+    // The next level slides in from the top, in its own look (row U2).
     const u = Math.min(1, (now - slide.t0) / CONFIG.slideMs);
     const off = Math.round(u * s.H);
     ctx.drawImage(courseFor(slide.from.level, slide.from.ras, step, slide.from.no), 0, off);
     if (slide.to.step !== step || slide.to.theme !== tokens().name) {
-      slide.to = { ...slide.to, step, theme: tokens().name, canvas: paintCourse(slide.to.level, slide.to.ras, step) };
+      slide.to = { ...slide.to, step, theme: tokens().name, canvas: paintCourse(slide.to.level, slide.to.ras, step, G.lookOf(slide.to.no)) };
     }
     ctx.drawImage(slide.to.canvas, 0, off - s.H);
     return;
   }
   ctx.drawImage(courseFor(level, ras, step, levelNo), 0, 0);
-  const p = palette(step);
+  const p = palette(step, lookNow());
   if (aim && !ball.moving && !ball.sunk) drawGuide(ctx, p);
-  if (!ball.sunk) drawBall(ctx, ball.x, ball.y);
-  else if (sinkAt) drawDrop(ctx, now);
+  if (!ball.sunk) drawBall(ctx, ball.x, ball.y, p);
+  else if (sinkAt) drawDrop(ctx, now, p);
   if (splash) drawSplash(ctx, now);
   if (aim) drawPull(ctx, step);
 }
@@ -630,7 +672,7 @@ function frame(now) {
     const to = take();
     if (reducedMotion()) install(to);
     else {
-      slide = { t0: now, from: { level, ras, no: levelNo }, to: { level: to, ras: rasterise(to, screenGeo.W, screenGeo.H), step: -1, canvas: null } };
+      slide = { t0: now, from: { level, ras, no: levelNo }, to: { level: to, ras: rasterise(to, screenGeo.W, screenGeo.H), no: levelNo + 1, step: -1, canvas: null } };
       sinkAt = 0;
     }
   }
@@ -773,6 +815,7 @@ Object.defineProperty(window, '__putt', {
     snapshot: () => ({
       level: level ? JSON.parse(JSON.stringify(level)) : null,
       levelNo,
+      look: level ? lookNow() : null,
       ball: ball ? { ...ball } : null,
       aiming: !!aim,
       sliding: !!slide,

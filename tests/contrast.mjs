@@ -1,6 +1,6 @@
 // Colour measures for the readability checks (row B4 contrast pass), shared by
 // tests/bricks-sim.mjs, tests/catch-sim.mjs, tests/putt-sim.mjs and
-// tests/stack-sim.mjs; tests/check.py has the same in
+// tests/stack-sim.mjs (Putt: both level looks, sand and sea, row U2); tests/check.py has the same in
 // Python. Not shipped.
 //
 // The standard (docs/CHANGELOG.md, 2026-11-25, B4):

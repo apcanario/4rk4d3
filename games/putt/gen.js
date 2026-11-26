@@ -1,4 +1,4 @@
-// Putt (PLAN §6c): the level generator, with its solver. No DOM. It runs on
+// Putt (PLAN §6c, row U2 §6h): the level generator, with its solver. No DOM. It runs on
 // the page, in Node (tests/putt-sim.mjs) and as a module Web Worker (putt.js
 // starts this same file as a worker, so the next level is built in the
 // background while the current one is played).
@@ -10,27 +10,32 @@
 // within the stroke range of its difficulty; after GEN.rejectLimit rejected
 // candidates the generator falls back to an open level-1 course.
 
-// Generator values: one block (PLAN §6c Files). Play values (launch speed,
-// deceleration, bounce, capture speed) live in CONFIG at the top of putt.js
-// and are passed in.
+// Generator values: one block (PLAN §6c Files, §6h). Play values (launch
+// speed, deceleration, bounce, capture speed) live in CONFIG at the top of
+// putt.js and are passed in.
 export const GEN = Object.freeze({
-  insetX: 6, // the course's outer edge, px from the left and right of the screen
-  insetTop: 6, // ...from the top
-  insetBottom: 26, // ...and from the bottom (the sea below is the thumb's)
   teeSpreadPx: 20, // the tee sits within this of the centre, at the bottom of the course
-  teeAbovePx: 9.5, // the tee's centre, this far above the course floor's bottom edge
+  teeAbovePx: 9.5, // the tee's centre, this far above the course's bottom edge (the bottom safe inset)
   holeZone: 0.2, // the hole is in the top fifth of the course
   holeTopPx: 10, // ...at least this far below the course's top edge (room for the flag)
-  cutSize: [10, 24], // a cut corner, px along each side
-  barGapMin: 22, // a bar leaves at least this gap
-  barLenMin: 0.45, // a bar reaches at least this fraction of the course width
-  diagLen: [20, 50], // a diagonal's length, px
+  // Row U2: pieces that grow out of the screen edges.
+  stubLen: [20, 60], // a perpendicular stub from any edge: its length...
+  stubThick: [8, 12], // ...and thickness, px
+  cornerLeg: [20, 45], // a corner cut: a triangle across a corner, equal legs, px
+  wedgeDepth: [15, 30], // a wedge from a side edge: its tip this far in, its base on the edge twice that
+  edgeKinds: Object.freeze([['stub', 2], ['corner', 1], ['wedge', 1]]), // the odds of each kind of edge piece
+  sideBias: 0.75, // a stub grows from the left or right edge this often (the top and bottom ones crowd the hole and the tee)
+  gateGap: [15, 18], // level 3: two stubs face each other across the course, leaving this gap between their tips (two 60 px stubs leave 15)
+  singleLen: [45, 60], // a shelf: a stub this long from the hole's side, just under the hole (level 2; level 3 with three edge pieces, with one gate)
+  guardSpread: 14, // level 3: pegs are centred within this of the middle column, where every gate is open
+  guardDrift: 6, // level 3: a guard block sits over a gate's gap, centred within this, passageMin plus up to this clear of it (one gate: above and below)
+  guardW: 16, // a guard block is at least this wide (blockW's top end the most)
   blockW: [8, 24],
   blockH: [8, 12],
   hazardSide: [16, 30], // sand traps and water, px a side
-  passageMin: 14, // every passage at least this wide
+  passageMin: 14, // a gap between two solids, or a solid and an edge, is closed (0) or at least this
   clearTeeHole: 12, // nothing within this of the tee or the hole (measured from the ball's and the hole's edge)
-  hazardGap: 3, // traps and water keep this clear of every other piece and the walls
+  hazardGap: 3, // traps and water keep this clear of every other piece and the edges
   placeTries: 60, // random tries to place one piece before the candidate is given up
   rejectLimit: 30, // rejected candidates before the open level-1 fallback
   solverDirs: 96, // the solver tries this many directions...
@@ -38,20 +43,32 @@ export const GEN = Object.freeze({
   solverBeam: 12, // ...keeps the best dozen resting spots after each stroke...
   fieldCell: 2, // ...ranked by the walking distance to the hole on a grid of this size
   sliceShots: 24, // the solver yields after this many shots (for slicing off a worker)
-  // The table of PLAN §6c: [min, max] counts, drawn at random inside the range.
+  // The table of PLAN §6c with row U2's edge pieces (§6h): [min, max] counts,
+  // drawn at random inside the range. The outline's cut corners, the bars and
+  // the free-standing diagonals of §6c are gone with the frame: corner cuts,
+  // stubs and wedges (edges) take their place.
   table: Object.freeze({
-    1: Object.freeze({ cuts: [0, 2], bars: [0, 1], diags: [0, 1], blocks: [1, 2], pegs: [0, 0], traps: [0, 0], water: [0, 0], holeR: 5, straight: true, strokes: [1, 2] }),
-    2: Object.freeze({ cuts: [1, 3], bars: [1, 2], diags: [1, 2], blocks: [1, 3], pegs: [0, 2], traps: [0, 1], water: [0, 1], holeR: 5, straight: false, strokes: [2, 3] }),
-    3: Object.freeze({ cuts: [2, 4], bars: [2, 3], diags: [2, 3], blocks: [2, 4], pegs: [1, 3], traps: [0, 1], water: [1, 1], holeR: 4, straight: false, strokes: [3, 4] }),
+    1: Object.freeze({ edges: [1, 2], blocks: [1, 2], pegs: [0, 0], traps: [0, 0], water: [0, 0], holeR: 5, straight: true, strokes: [1, 2] }),
+    2: Object.freeze({ edges: [2, 4], blocks: [1, 3], pegs: [0, 2], traps: [0, 1], water: [0, 1], holeR: 5, straight: false, strokes: [2, 3] }),
+    3: Object.freeze({ edges: [3, 5], blocks: [2, 4], pegs: [1, 3], traps: [0, 1], water: [1, 1], holeR: 4, straight: false, strokes: [3, 4] }),
   }),
 });
 
 import {
-  BALL_R, WALL_T, BAR_T, DIAG_HALF, PEG_R, coursePolygon, halfPlanes, insideDist, shapeOf, shapeDist,
+  BALL_R, PEG_R, coursePolygon, halfPlanes, insideDist, shapeOf, shapeDist,
   buildWorld, playShot, newBall, overlap, inWater,
 } from './sim.js';
 
-export const LEVEL_VERSION = 1;
+export const LEVEL_VERSION = 2;
+
+/**
+ * Row U2: how a level is drawn, by its place in the opening: sand, sea, sand,
+ * sea... from a sand start (n counts from 1). Drawing only: sim.js never sees it.
+ */
+export const LOOKS = Object.freeze(['sand', 'sea']);
+export function lookOf(n) {
+  return LOOKS[(Math.max(1, n) - 1) % 2];
+}
 
 /** Seeded random numbers (mulberry32): a function giving [0, 1). */
 export function rng(seed) {
@@ -72,27 +89,26 @@ export function pickDifficulty(rand, dusk) {
   return dusk ? 1 : 1 + Math.min(2, Math.floor(rand() * 3));
 }
 
-/** The course box (the sand inside the wall) for a screen height and its insets. */
+/**
+ * The course box for a screen height and its insets (row U2): the whole
+ * screen less the safe-area insets. Its four sides are the walls: the top
+ * below a display cutout, the bottom above the bottom inset.
+ */
 export function courseBox(H, top = 0, bottom = 0) {
-  return {
-    x0: GEN.insetX + WALL_T,
-    x1: 135 - GEN.insetX - WALL_T,
-    y0: GEN.insetTop + top + WALL_T,
-    y1: H - GEN.insetBottom - bottom - WALL_T,
-  };
+  return { x0: 0, x1: 135, y0: top, y1: H - bottom };
 }
 
 /* ---------- pieces as shapes ---------- */
 
 export const boxShape = (b) => shapeOf({ k: 'box', x: b.x, y: b.y, w: b.w, h: b.h });
-export const diagShape = (d) => shapeOf({ k: 'seg', ax: d.ax, ay: d.ay, bx: d.bx, by: d.by, r: DIAG_HALF });
+export const polyShape = (e) => shapeOf({ k: 'poly', pts: e.pts });
 export const pegShape = (p) => shapeOf({ k: 'disc', x: p.x, y: p.y, r: PEG_R });
+export const edgeShape = (e) => (e.k === 'stub' ? boxShape(e) : polyShape(e));
 
-/** Every solid piece of a level as { kind, shape }. Bars are clipped to the course (their part inside the wall). */
+/** Every solid piece of a level as { kind, piece, shape }: edge pieces (stub, corner, wedge), blocks, pegs. */
 export function solidPieces(level) {
   const out = [];
-  for (const b of level.bars) out.push({ kind: 'bar', piece: b, shape: boxShape(barInside(b, level)) });
-  for (const d of level.diags) out.push({ kind: 'diag', piece: d, shape: diagShape(d) });
+  for (const e of level.edges) out.push({ kind: e.k, piece: e, shape: edgeShape(e) });
   for (const b of level.blocks) out.push({ kind: 'block', piece: b, shape: boxShape(b) });
   for (const p of level.pegs) out.push({ kind: 'peg', piece: p, shape: pegShape(p) });
   return out;
@@ -105,25 +121,18 @@ export function hazardPieces(level) {
   ];
 }
 
-/** The part of a bar inside the course (a bar is drawn from inside the wall). */
-export function barInside(b, box) {
-  const x = Math.max(b.x, box.x0);
-  const x1 = Math.min(b.x + b.w, box.x1);
-  return { x, y: b.y, w: x1 - x, h: b.h };
+/** Clear distance from a shape to each course edge (negative where it pokes out): one value per half-plane. */
+export function edgeDists(planes, shape) {
+  return planes.map((p) => {
+    let d = Infinity;
+    for (const s of shape.segs) d = Math.min(d, p.nx * s[0] + p.ny * s[1] - p.c, p.nx * s[2] + p.ny * s[3] - p.c);
+    return d - shape.r;
+  });
 }
 
-/** Points of a shape that bound it, for the inside test of a convex course: [x, y, r]. */
-function extremes(shape) {
-  const pts = [];
-  for (const s of shape.segs) pts.push([s[0], s[1]], [s[2], s[3]]);
-  return pts;
-}
-
-/** Clear distance from a shape to the course wall (negative if it pokes out). */
+/** Clear distance from a shape to the nearest course edge (negative if it pokes out). */
 export function wallDist(planes, shape) {
-  let d = Infinity;
-  for (const [x, y] of extremes(shape)) d = Math.min(d, insideDist(planes, x, y));
-  return d - shape.r;
+  return Math.min(...edgeDists(planes, shape));
 }
 
 const pointShape = (x, y, r) => shapeOf({ k: 'disc', x, y, r });
@@ -139,38 +148,83 @@ export function straightLine(level) {
   return solidPieces(level).every((p) => shapeDist(line, p.shape) > 0);
 }
 
+/* ---------- edge pieces (row U2) ---------- */
+
+/**
+ * One random edge piece for a course box, or null if the kind has no room:
+ * a stub { k: 'stub', side, x, y, w, h } (a box flush with its edge), a corner
+ * cut { k: 'corner', corner, leg, pts } (0 top-left, 1 top-right, 2
+ * bottom-right, 3 bottom-left) or a wedge { k: 'wedge', side, depth, pts }.
+ * side is 'l', 'r', 't' or 'b'. Triangles have their points on whole px, so
+ * their slanted sides are true 45 degree lines.
+ */
+function edgePiece(r, box, used) {
+  const { x0, y0, x1, y1 } = box;
+  const m = GEN.passageMin;
+  let total = 0;
+  for (const [, w] of GEN.edgeKinds) total += w;
+  let pick = r() * total;
+  let kind = GEN.edgeKinds[0][0];
+  for (const [k, w] of GEN.edgeKinds) {
+    if (pick < w) { kind = k; break; }
+    pick -= w;
+  }
+  if (kind === 'corner') {
+    const free = [0, 1, 2, 3].filter((c) => !used.has(c));
+    if (!free.length) return null;
+    const corner = free[int(r, 0, free.length - 1)];
+    const L = int(r, GEN.cornerLeg[0], GEN.cornerLeg[1]);
+    const cx = corner === 0 || corner === 3 ? x0 : x1;
+    const cy = corner === 0 || corner === 1 ? y0 : y1;
+    const sx = cx === x0 ? 1 : -1;
+    const sy = cy === y0 ? 1 : -1;
+    return { k: 'corner', corner, leg: L, pts: [[cx, cy], [cx + sx * L, cy], [cx, cy + sy * L]] };
+  }
+  if (kind === 'wedge') {
+    const side = r() < 0.5 ? 'l' : 'r';
+    const D = int(r, GEN.wedgeDepth[0], GEN.wedgeDepth[1]);
+    const lo = Math.ceil(y0 + m + D);
+    const hi = Math.floor(y1 - m - D);
+    if (hi < lo) return null;
+    const cy = int(r, lo, hi);
+    const ex = side === 'l' ? x0 : x1;
+    const tx = side === 'l' ? x0 + D : x1 - D;
+    return { k: 'wedge', side, depth: D, pts: [[ex, cy - D], [tx, cy], [ex, cy + D]] };
+  }
+  const side = r() < GEN.sideBias ? (r() < 0.5 ? 'l' : 'r') : (r() < 0.5 ? 't' : 'b');
+  const len = int(r, GEN.stubLen[0], GEN.stubLen[1]);
+  const th = int(r, GEN.stubThick[0], GEN.stubThick[1]);
+  if (side === 'l' || side === 'r') {
+    const lo = Math.ceil(y0 + m);
+    const hi = Math.floor(y1 - m - th);
+    if (hi < lo) return null;
+    const y = int(r, lo, hi);
+    return { k: 'stub', side, x: side === 'l' ? x0 : x1 - len, y, w: len, h: th };
+  }
+  const lo = Math.ceil(x0 + m);
+  const hi = Math.floor(x1 - m - th);
+  const x = int(r, lo, hi);
+  return { k: 'stub', side, x, y: side === 't' ? y0 : y1 - len, w: th, h: len };
+}
+
 /* ---------- one candidate ---------- */
 
-function candidate(r, diff, H, top, bottom) {
+export function candidate(r, diff, H, top, bottom) {
   const T = GEN.table[diff];
   const box = courseBox(H, top, bottom);
   const { x0, y0, x1, y1 } = box;
   const h = y1 - y0;
-
-  // Outline: 0 to 4 corners cut at 45 degrees.
-  const nCuts = int(r, T.cuts[0], T.cuts[1]);
-  const order = [0, 1, 2, 3];
-  for (let i = 3; i > 0; i--) {
-    const j = Math.floor(r() * (i + 1));
-    [order[i], order[j]] = [order[j], order[i]];
-  }
-  const cuts = [0, 0, 0, 0];
-  for (let i = 0; i < nCuts; i++) cuts[order[i]] = int(r, GEN.cutSize[0], GEN.cutSize[1]);
-  const poly = coursePolygon(x0, y0, x1, y1, cuts);
+  const poly = coursePolygon(x0, y0, x1, y1);
   const planes = halfPlanes(poly);
 
   const holeR = T.holeR;
   const tee = { x: 67.5 - GEN.teeSpreadPx + int(r, 0, GEN.teeSpreadPx * 2), y: y1 - GEN.teeAbovePx };
-  let hole = null;
-  for (let i = 0; i < GEN.placeTries && !hole; i++) {
-    const hx = int(r, x0 + holeR + 6, x1 - holeR - 6);
-    const hy = int(r, y0 + GEN.holeTopPx, y0 + Math.floor(h * GEN.holeZone));
-    if (insideDist(planes, hx, hy) >= holeR + 6 && insideDist(planes, tee.x, tee.y) >= BALL_R + 4) hole = { x: hx, y: hy, r: holeR };
-  }
-  if (!hole) return null;
+  const hx = int(r, x0 + holeR + 6, x1 - holeR - 6);
+  const hy = int(r, y0 + GEN.holeTopPx, y0 + Math.floor(h * GEN.holeZone));
+  const hole = { x: hx, y: hy, r: holeR };
   const level = {
-    v: LEVEL_VERSION, diff, H, top, bottom, x0, y0, x1, y1, cuts, poly, tee, hole,
-    bars: [], diags: [], blocks: [], pegs: [], traps: [], water: [],
+    v: LEVEL_VERSION, diff, H, top, bottom, x0, y0, x1, y1, poly, tee, hole,
+    edges: [], blocks: [], pegs: [], traps: [], water: [],
   };
   const solids = [];
   const hazards = [];
@@ -179,46 +233,76 @@ function candidate(r, diff, H, top, bottom) {
   const clearOfEnds = (s) => shapeDist(s, teeShape) >= GEN.clearTeeHole && shapeDist(s, holeShape) >= GEN.clearTeeHole;
   const clearOfSolids = (s, gap) => solids.every((o) => shapeDist(s, o) >= gap);
   const clearOfHazards = (s, gap) => hazards.every((o) => shapeDist(s, o) >= gap);
-  const solidOk = (s) => wallDist(planes, s) >= GEN.passageMin && clearOfSolids(s, GEN.passageMin)
+  // The gap rule (§6h): to an edge a piece is joined (0) or at least passageMin away.
+  const edgesOk = (s) => edgeDists(planes, s).every((d) => Math.abs(d) < 1e-9 || d >= GEN.passageMin);
+  const freeOk = (s) => wallDist(planes, s) >= GEN.passageMin && clearOfSolids(s, GEN.passageMin)
     && clearOfHazards(s, GEN.hazardGap) && clearOfEnds(s);
 
-  // Bars: straight walls from the left or right side, alternating, spread
-  // down the course between the hole and the tee.
-  const nBars = int(r, T.bars[0], T.bars[1]);
-  const w = x1 - x0;
-  const yTop = hole.y + holeR + GEN.clearTeeHole + 1;
-  const yBot = tee.y - BALL_R - GEN.clearTeeHole - BAR_T - 1;
-  let side = r() < 0.5 ? 0 : 1;
-  for (let i = 0; i < nBars; i++) {
-    const band0 = yTop + ((yBot - yTop) * i) / nBars;
-    const band1 = yTop + ((yBot - yTop) * (i + 1)) / nBars;
-    let placed = null;
-    for (let k = 0; k < GEN.placeTries && !placed; k++) {
-      const y = int(r, Math.ceil(band0), Math.max(Math.ceil(band0), Math.floor(band1) - BAR_T));
-      const len = int(r, Math.ceil(w * GEN.barLenMin), w - GEN.barGapMin - 2);
-      const bar = side === 0
-        ? { x: x0 - WALL_T, y, w: len + WALL_T, h: BAR_T, side }
-        : { x: x1 - len, y, w: len + WALL_T, h: BAR_T, side };
-      // The side it grows from must be straight there (not a cut corner).
-      const cTop = side === 0 ? cuts[0] : cuts[1];
-      const cBot = side === 0 ? cuts[3] : cuts[2];
-      if (y < y0 + cTop + 1 || y + BAR_T > y1 - cBot - 1) continue;
-      const inside = boxShape(barInside(bar, box));
-      // The gap at its free end, and its clearance from every other wall edge.
-      let ok = true;
-      for (const p of planes) {
-        const attached = Math.abs(p.ax - p.bx) < 1e-9 && Math.abs(p.ax - (side === 0 ? x0 : x1)) < 1e-9;
-        if (attached) continue;
-        const edge = shapeOf({ k: 'seg', ax: p.ax, ay: p.ay, bx: p.bx, by: p.by, r: 0 });
-        if (shapeDist(inside, edge) < GEN.barGapMin) { ok = false; break; }
+  // Edge pieces: stubs, corner cuts and wedges grow out of the screen edges.
+  const nEdges = int(r, T.edges[0], T.edges[1]);
+  const corners = new Set();
+  // Levels 2 and 3 first set barriers in the band between the hole and the
+  // tee, one per stretch of it, so the hole takes the strokes of its range
+  // (the stroke counts of §6c with the weaker edge pieces): a shelf (a long
+  // stub from the hole's side just under the hole, GEN.singleLen) and gates (a
+  // left and a right stub at one height, tip to tip, GEN.gateGap apart).
+  // Level 2: a shelf. Level 3: two gates, or with three edge pieces a shelf
+  // and a gate. The rest of the edge pieces are drawn at random.
+  const plan = diff === 1 ? [] : diff === 2 ? ['single'] : nEdges >= 4 ? ['gate', 'gate'] : ['single', 'gate'];
+  const gates = []; // { x, g, y, th }: each gate's gap
+  let used = 0;
+  const gTop = hole.y + holeR + GEN.clearTeeHole + 1;
+  const gBot = tee.y - BALL_R - GEN.clearTeeHole - 1;
+  for (let i = 0; i < plan.length; i++) {
+    const band0 = gTop + ((gBot - gTop) * i) / plan.length;
+    const band1 = gTop + ((gBot - gTop) * (i + 1)) / plan.length;
+    let done = false;
+    for (let k = 0; k < GEN.placeTries && !done; k++) {
+      const th = [int(r, GEN.stubThick[0], GEN.stubThick[1]), int(r, GEN.stubThick[0], GEN.stubThick[1])];
+      let y = int(r, Math.ceil(band0), Math.max(Math.ceil(band0), Math.floor(band1) - Math.max(th[0], th[1])));
+      if (plan[i] === 'single') y = int(r, Math.ceil(gTop), Math.ceil(gTop) + GEN.guardDrift); // a shelf just under the hole
+      let pair;
+      let gap = null;
+      if (plan[i] === 'gate') {
+        const g = int(r, GEN.gateGap[0], GEN.gateGap[1]);
+        const reach = x1 - x0 - g;
+        const a = int(r, Math.max(GEN.stubLen[0], reach - GEN.stubLen[1]), Math.min(GEN.stubLen[1], reach - GEN.stubLen[0]));
+        pair = [
+          { k: 'stub', side: 'l', x: x0, y, w: a, h: th[0] },
+          { k: 'stub', side: 'r', x: x1 - (reach - a), y, w: reach - a, h: th[1] },
+        ];
+        gap = { x: x0 + a, g, y, th: Math.max(th[0], th[1]) };
+      } else {
+        const len = int(r, GEN.singleLen[0], GEN.singleLen[1]);
+        pair = [hole.x < (x0 + x1) / 2 ? { k: 'stub', side: 'l', x: x0, y, w: len, h: th[0] } : { k: 'stub', side: 'r', x: x1 - len, y, w: len, h: th[0] }];
       }
-      if (!ok || !clearOfSolids(inside, GEN.passageMin) || !clearOfEnds(inside)) continue;
-      placed = bar;
-      solids.push(inside);
+      const shapes = pair.map(edgeShape);
+      if (!shapes.every((s) => edgesOk(s) && clearOfSolids(s, GEN.passageMin) && clearOfEnds(s))) continue;
+      if (shapes.length === 2 && shapeDist(shapes[0], shapes[1]) < GEN.passageMin) continue;
+      pair.forEach((e, j) => {
+        level.edges.push(e);
+        solids.push(shapes[j]);
+      });
+      used += pair.length;
+      if (gap) gates.push(gap);
+      done = true;
     }
-    if (!placed) return null;
-    level.bars.push(placed);
-    side = 1 - side;
+    if (!done) return null;
+  }
+  const nGates = gates.length;
+  for (let i = used; i < nEdges; i++) {
+    let done = false;
+    for (let k = 0; k < GEN.placeTries && !done; k++) {
+      const e = edgePiece(r, box, corners);
+      if (!e) continue;
+      const s = edgeShape(e);
+      if (!edgesOk(s) || !clearOfSolids(s, GEN.passageMin) || !clearOfEnds(s)) continue;
+      level.edges.push(e);
+      solids.push(s);
+      if (e.k === 'corner') corners.add(e.corner);
+      done = true;
+    }
+    if (!done) return null;
   }
 
   const putSolid = (list, n, make, shapeFn) => {
@@ -227,7 +311,7 @@ function candidate(r, diff, H, top, bottom) {
       for (let k = 0; k < GEN.placeTries && !done; k++) {
         const p = make();
         const s = shapeFn(p);
-        if (solidOk(s)) {
+        if (freeOk(s)) {
           list.push(p);
           solids.push(s);
           done = true;
@@ -238,31 +322,26 @@ function candidate(r, diff, H, top, bottom) {
     return true;
   };
 
-  const nDiags = int(r, T.diags[0], T.diags[1]);
-  const okDiags = putSolid(level.diags, nDiags, () => {
-    // L is the leg along each axis, in whole px; the length is L * sqrt 2, so
-    // the leg runs from ceil(20 / sqrt 2) = 15 to floor(50 / sqrt 2) = 35
-    // (21.2 to 49.5 px), always inside the table's 20 to 50.
-    const L = int(r, Math.ceil(GEN.diagLen[0] / Math.SQRT2), Math.floor(GEN.diagLen[1] / Math.SQRT2));
-    const s = r() < 0.5 ? 1 : -1;
-    const cx = int(r, x0, x1);
-    const cy = int(r, y0, y1);
-    const ax = cx - Math.floor(L / 2);
-    const ay = cy - s * Math.floor(L / 2);
-    return { ax, ay, bx: ax + L, by: ay + s * L };
-  }, diagShape);
-  if (!okDiags) return null;
-
   const nBlocks = int(r, T.blocks[0], T.blocks[1]);
   const okBlocks = putSolid(level.blocks, nBlocks, () => {
-    const bw = int(r, GEN.blockW[0], GEN.blockW[1]);
+    const j = level.blocks.length;
+    const gt = j < (nGates === 1 ? 2 : nGates) ? gates[j % nGates] : null; // one gate: guarded above and below
+    const bw = int(r, gt ? GEN.guardW : GEN.blockW[0], GEN.blockW[1]);
     const bh = int(r, GEN.blockH[0], GEN.blockH[1]);
+    if (gt) { // a guard over this gate's gap: above it on the first gate, below it on the second
+      const cx = Math.round(gt.x + gt.g / 2 - bw / 2) + int(r, -GEN.guardDrift, GEN.guardDrift);
+      const off = GEN.passageMin + int(r, 0, GEN.guardDrift);
+      const y = j % 2 === 0 ? gt.y - off - bh : gt.y + gt.th + off;
+      return { x: cx, y, w: bw, h: bh, c: int(r, 0, 1) };
+    }
     return { x: int(r, x0, x1 - bw), y: int(r, y0, y1 - bh), w: bw, h: bh, c: int(r, 0, 1) };
   }, boxShape);
   if (!okBlocks) return null;
 
   const nPegs = int(r, T.pegs[0], T.pegs[1]);
-  if (!putSolid(level.pegs, nPegs, () => ({ x: int(r, x0, x1), y: int(r, y0, y1) }), pegShape)) return null;
+  const midX = Math.round((x0 + x1) / 2);
+  const pegX = () => (nGates ? int(r, midX - GEN.guardSpread, midX + GEN.guardSpread) : int(r, x0, x1));
+  if (!putSolid(level.pegs, nPegs, () => ({ x: pegX(), y: int(r, y0, y1) }), pegShape)) return null;
 
   // Sand traps and water: floor areas; they keep clear of every other piece.
   const hazardOk = (s) => wallDist(planes, s) >= GEN.hazardGap && clearOfSolids(s, GEN.hazardGap)
@@ -447,15 +526,15 @@ export function fallbackLevel(H, top = 0, bottom = 0, seed = 0) {
   // Open and always solvable in 1 or 2 strokes, but not the same course every
   // time: the seed places the hole along the top fifth's row and sizes and
   // places the one block in the middle band of the course, well clear of the
-  // tee, the hole and the walls (the same seed and height give the same course).
+  // tee, the hole and the edges (the same seed and height give the same course).
+  // Row U2: one corner cut, in a top corner on the far side from the hole.
   const r = rng((seed ^ 0x5F3759DF) >>> 0);
   const box = courseBox(H, top, bottom);
   const { x0, y0, x1, y1 } = box;
   const h = y1 - y0;
-  const cuts = [0, 0, 0, 0];
   const holeR = GEN.table[1].holeR;
   const tee = { x: 67.5, y: y1 - GEN.teeAbovePx };
-  const hole = { x: int(r, x0 + holeR + 6, x1 - holeR - 6), y: y0 + Math.max(GEN.holeTopPx, Math.floor(h * GEN.holeZone * 0.6)), r: holeR };
+  const hole = { x: int(r, x0 + 40, x1 - 40), y: y0 + Math.max(GEN.holeTopPx, Math.floor(h * GEN.holeZone * 0.6)), r: holeR };
   const bw = int(r, GEN.blockW[0], GEN.blockW[1]);
   const bh = int(r, GEN.blockH[0], GEN.blockH[1]);
   const block = {
@@ -463,9 +542,14 @@ export function fallbackLevel(H, top = 0, bottom = 0, seed = 0) {
     y: int(r, Math.round(y0 + h * 0.4), Math.round(y0 + h * 0.6) - bh),
     w: bw, h: bh, c: int(r, 0, 1),
   };
+  const L = GEN.cornerLeg[0];
+  const corner = hole.x < 67.5 ? 1 : 0;
+  const cx = corner === 0 ? x0 : x1;
+  const sx = corner === 0 ? 1 : -1;
+  const cut = { k: 'corner', corner, leg: L, pts: [[cx, y0], [cx + sx * L, y0], [cx, y0 + L]] };
   return {
-    v: LEVEL_VERSION, seed, diff: 1, H, top, bottom, ...box, cuts, poly: coursePolygon(x0, y0, x1, y1, cuts), tee, hole,
-    bars: [], diags: [], blocks: [block], pegs: [], traps: [], water: [], strokes: null, rejects: GEN.rejectLimit, fallback: true,
+    v: LEVEL_VERSION, seed, diff: 1, H, top, bottom, ...box, poly: coursePolygon(x0, y0, x1, y1), tee, hole,
+    edges: [cut], blocks: [block], pegs: [], traps: [], water: [], strokes: null, rejects: GEN.rejectLimit, fallback: true,
   };
 }
 

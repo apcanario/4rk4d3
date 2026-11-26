@@ -4,11 +4,11 @@ Rows are defined in docs/PLAN.md. Nothing is built that is not a row here. A don
 
 ## Queue
 
-- U2 Putt, open course: no drawn frame, the screen edges are the walls, stubs and diagonals grow out of them; levels alternate sand and sea (PLAN §6h)
 - A1 Glide: beach air hockey against a crab, the table edge to edge, nothing counted; fifth hub card, grid 2 by 3 (PLAN §6i)
 
 ## Done
 
+- U2 Putt, open course (2026-11-26): no drawn frame, the screen edges are the walls; stubs, corner cuts and wedges grow from the edges; sand and sea looks alternate from a sand start; sw.js rlx-v24; suites pass (check.py 1411, putt-sim 88). Not confirmed, on the phone only: the ball bouncing off the glass on all four sides, how both looks read on the device, cutout and inset placement, level-3 build time
 - X35 shared/font.js removed; its glyph table lives on in tools/rlx_font.py for the two social-teaser scripts, which still regenerate byte for byte; sw.js rlx-v23 (2026-11-26)
 - X36 P3 hardening: every CI action pinned by full commit SHA, Gradle wrapper validated before the build, a second smoke entry on API 36 with the back gesture; not run on CI, so unconfirmed: the API 36 image booting, the gesture switch and the edge swipe in immersive mode, the wrapper validation step (2026-11-26)
 - X39 Flaky Stack check fixed: the check's expectation was wrong (a floor under 12 px rightly gets a fresh 60 px block); games/stack/sim.js unchanged; 40 of 40 runs clean (2026-11-26)
@@ -42,6 +42,9 @@ Rows are defined in docs/PLAN.md. Nothing is built that is not a row here. A don
 
 ## Proposed
 
+- U2a Putt level variety: every level 3 is one or two near-full-width walls with a centred gap and a guard block (the old bars in all but name, close to the "prison" look); level 2 always has a shelf under the hole. Off-centre or wider gates (15 to about 30 px), staggered stubs, wedges or cuts as barriers, several level-2 patterns; re-measure the stroke ranges and reject rate. Judge after Pedro plays it
+- U2b Dark sea look: sandbanks read as dark slabs (fill #2B2142 on night sea, only the foam edge carries them), and the ball's edge is near black on navy; consider a lighter night-bank token and line(coral) for the ball edge; judge on the phone
+- U2c Hub Putt card still draws the old framed course (hub/cards.js); redraw it open, with the A1 grid work
 - X40 Android smoke: if the gesture-navigation overlay command fails on the API 36 image the failure reads as an app fault; make tools/android-smoke-check.py read back-mode.txt and fail on navigation_mode other than 2 with its own message
 - X41 Stack check "a landed drop" (tests/check.py run_stack): an offset tap landing within the 2 px snap distance gives a snap, not a landed drop, and fails the check; rare, not seen in 40 runs; make the check accept or avoid it
 - D1a Device check of dark mode on the phone (dark room, outdoors) and of a live mode switch inside the installed APK; if the WebView does not follow a live switch, decide between that and recreating the activity, which would lose game state. The Android changes were never built here; CI is their first build

@@ -18,6 +18,9 @@
   --sand: #FFE6D2;
   --wet-sand: #FFCFBA;
   --foam: #FFFAF3;
+  --shallow: #84C4DE;
+  --deep: #3A5A8C;
+  --trap-tint: #FFA38C;
   --sea-1: #96D0E6;
   --sea-2: #84C4DE;
   --sea-3: #74B8D6;
@@ -38,6 +41,8 @@
   --dusk-sea-1: #6FA3C4;
   --dusk-sea-2: #5F93B8;
   --dusk-sea-3: #5083AB;
+  --dusk-sand: #E6CBD8;
+  --dusk-shallow: #A6BCDD;
 }
 
 
@@ -63,6 +68,9 @@
     --sand: #2B2142;
     --wet-sand: #3B2C58;
     --foam: #CDD6FF;
+    --shallow: #24406B;
+    --deep: #05060D;
+    --trap-tint: #7A1E3A;
     --sea-1: #24406B;
     --sea-2: #1F3760;
     --sea-3: #1C2F55;
@@ -80,6 +88,8 @@
     --dusk-sea-1: #1A2F52;
     --dusk-sea-2: #162849;
     --dusk-sea-3: #132140;
+    --dusk-sand: #1E1730;
+    --dusk-shallow: #1A2F52;
   }
 }
 

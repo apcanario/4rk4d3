@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RLX checks (rows H1, H2, B1, B2, C1, B4, U1, S1 and X1) in headless Chromium and Node. Not needed to run the app.
+"""RLX checks (rows H1, H2, B1, B2, C1, B4, U1, U2, S1 and X1) in headless Chromium and Node. Not needed to run the app.
 
 Needs Python Playwright with Chromium (pip install playwright;
 python -m playwright install chromium). Run: python3 tests/check.py
@@ -27,7 +27,8 @@ tests/putt-sim.mjs and Putt with real touch events: a level at once and the
 next built in a Web Worker, a cancelled pull, real shots planned with the
 page's own sim.js until the ball drops (10, 6 and 24 ms ticks), the next level
 sliding in with no wait, level 1 only from minute 10, a new level on every
-opening, offline. Row S1: tests/stack-sim.mjs and Stack with real touch
+opening, offline. Row U2: Putt's open course (no frame), sand and sea levels alternating, in light and dark,
+with screenshots of each. Row S1: tests/stack-sim.mjs and Stack with real touch
 events: a new tower on every opening, timed taps for a near-perfect drop (16
 ms), a landed drop with bits (8 ms), a complete miss, a floor under 12 px
 followed by a 60 px block, hidden and pagehide pause, reduced motion, dusk,
@@ -440,9 +441,9 @@ def run_layout_only(browser, base, w, h, dpr):
     ps = page.evaluate("window.__putt.snapshot()")
     info, s, H, bad, total, ncol, size = crisp(page, shot, ps["geo"]["scale"])
     lv = ps["level"]
-    check(bad == 0 and info["sw"] <= info["iw"] and info["sh"] <= info["ih"] and lv["H"] == H and lv["y1"] + 3 == H - 26 - ps["geo"]["bottom"]
-          and lv["y0"] - 3 == 6 + ps["geo"]["top"] and lv["x0"] - 3 == 6 and lv["x1"] + 3 == 129,
-          f"[{tag}] Putt: crisp, no overflow, the course inset 6 px at the sides and top, 26 px above the bottom (H {H})")
+    check(bad == 0 and info["sw"] <= info["iw"] and info["sh"] <= info["ih"] and lv["H"] == H and lv["y1"] == H - ps["geo"]["bottom"]
+          and lv["y0"] == ps["geo"]["top"] and lv["x0"] == 0 and lv["x1"] == 135,
+          f"[{tag}] Putt: crisp, no overflow, the course the whole screen less the safe-area insets (row U2; H {H})")
     page.goto(base + "games/stack/")
     page.wait_for_function("window.__stack && window.__stack.snapshot().game", timeout=10000)
     page.wait_for_timeout(150)
@@ -2091,6 +2092,94 @@ def run_putt(browser, base):
     ctx.close()
 
 
+# Row U2: what a Putt level should look like where nothing is drawn, from the page's own modules: the
+# look's ground, the ball's fill and edge, the hole's centre; and the pixels along the four screen edges
+# that no piece, hazard, hole, flag or drop shade covers (they must be bare ground: no frame).
+PUTT_LOOK_JS = """async () => {
+  const T = await import(new URL('../../shared/tokens.js', location.href).href);
+  const S = await import(new URL('./sim.js', location.href).href);
+  const G = await import(new URL('./gen.js', location.href).href);
+  const q = window.__putt.snapshot();
+  const L = q.level;
+  const look = q.look;
+  const g = T.puttGround(look, q.step / 10);
+  const C = T.COLORS;
+  const dash = T.mix(C.foam, g.ground, 0.55);
+  const shapes = [...G.solidPieces(L), ...G.hazardPieces(L)].map((p) => p.shape);
+  const covered = (x, y) => shapes.some((sh) => S.shapeDist(sh, S.shapeOf({ k: 'disc', x, y, r: 0 })) <= 0.71);
+  const H = q.geo.H;
+  const near = (x, y) => Math.hypot(x - L.hole.x, y - L.hole.y) < L.hole.r + 12;
+  const bare = [];
+  for (let x = 0; x < 135; x++) for (const y of [0, H - 1]) bare.push([x, y]);
+  for (let y = 1; y < H - 1; y++) for (const x of [0, 134]) bare.push([x, y]);
+  const edges = bare.filter(([x, y]) => !covered(x + 0.5, y + 0.5) && !covered(x + 0.5, y - 0.5) && !near(x + 0.5, y + 0.5));
+  return { look, levelNo: q.levelNo, ground: g.ground, dash, edges, ball: [Math.round(q.ball.x - 2.5), Math.round(q.ball.y - 2.5)],
+           ballFill: look === 'sea' ? C.foam : C.blue, ballEdge: look === 'sea' ? T.edge(C.coral) : null, holeC: C.keel,
+           hole: [Math.floor(L.hole.x), Math.floor(L.hole.y)], box: [L.x0, L.y0, L.x1, L.y1], geo: q.geo,
+           kinds: L.edges.map((e) => e.k) };
+}"""
+
+
+def putt_look_checks(g_, tag, shot_name, want_look):
+    """Row U2: one Putt level as drawn: its look, the course box, no frame along the four screen edges, the ball and the hole."""
+    shot = OUT / shot_name
+    g_.page.screenshot(path=str(shot))
+    q = g_.evaluate(PUTT_LOOK_JS)
+    geo = q["geo"]
+    check(q["look"] == want_look and q["box"] == [0, geo["top"], 135, geo["H"] - geo["bottom"]],
+          f"[{tag}] level {q['levelNo']} is a {q['look']} level (want {want_look}); the course is the whole screen less the insets {q['box']}; edge pieces {q['kinds']}")
+    got = logical_pixels(g_, shot, q["edges"])
+    ok = {q["ground"], q["dash"]} if q["look"] == "sea" else {q["ground"]}
+    off = [(q["edges"][i], got[i]) for i in range(len(got)) if got[i] not in ok]
+    check(len(q["edges"]) > 200 and not off,
+          f"[{tag}] no frame: every bare pixel along the four screen edges is the ground ({len(q['edges'])} px; {len(off)} not: {off[:3]})")
+    bx, by = q["ball"]
+    pts = [(bx + 2, by + 2), (bx, by + 2), q["hole"]]
+    got = logical_pixels(g_, shot, pts)
+    want_edge = q["ballEdge"] or q["ballFill"]
+    check(got[0] == q["ballFill"] and got[1] == want_edge and got[2] == q["holeC"],
+          f"[{tag}] the ball {q['ballFill']} in {'its coral edge ' + q['ballEdge'] if q['ballEdge'] else 'its stepped corners'}, the hole's middle {q['holeC']} ({got})")
+    return q
+
+
+def run_putt_open(browser, base):
+    """Row U2: Putt's open course and its two looks in the browser at 360x800, light and dark: the first level of
+    an opening is sand, then sea, then sand (played with real shots); no frame; the screenshots of one sand and
+    one sea level in each theme go to tests/out/u2-*.png for the look against docs/style-reference-putt-open.jpg."""
+    for scheme in ("light", "dark"):
+        tag = f"putt open {scheme} 360x800"
+        ctx = new_context(browser, 360, 800, DPR, scheme)
+        page = ctx.new_page()
+        errors = []
+        page.on("console", lambda m: m.type == "error" and errors.append(m.text))
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        page.goto(base)
+        hits(page)
+        page.evaluate(SET_CLOCK_JS, 0)
+        g_ = open_tile(page, "putt")
+        g_.wait_for_timeout(200)
+        looks = [putt_look_checks(g_, tag, f"u2-sand-{scheme}.png", "sand")["look"]]
+        touch = Touch(ctx, g_)
+        for k, want in ((2, "sea"), (3, "sand")):
+            log = putt_play_hole(g_, touch, tag)
+            deadline = time.time() + 4
+            while time.time() < deadline:
+                s = psnap(g_)
+                if s["levelNo"] == k and not s["sliding"]:
+                    break
+                g_.wait_for_timeout(30)
+            g_.wait_for_timeout(100)
+            check(psnap(g_)["levelNo"] == k, f"[{tag}] hole {k - 1} sunk in {len(log)} strokes; level {k} in place")
+            name = f"u2-{want}-{scheme}.png" if k == 2 else f"u2-{want}-{scheme}-3.png"
+            looks.append(putt_look_checks(g_, tag, name, want)["look"])
+        check(looks == ["sand", "sea", "sand"], f"[{tag}] the levels of an opening alternate sand, sea, sand ({looks})")
+        back_to_hub(page)
+        g_ = open_tile(page, "putt")
+        check(psnap(g_)["look"] == "sand" and psnap(g_)["levelNo"] == 1, f"[{tag}] opening Putt again starts on a sand level (nothing stored)")
+        check(not errors, f"[{tag}] no console errors {errors}")
+        ctx.close()
+
+
 def run_haptics_native():
     """tests/haptics-native.mjs: shared/haptics.js with a fake native plugin (row P3)."""
     res = subprocess.run(["node", str(ROOT / "tests" / "haptics-native.mjs")], capture_output=True, text=True)
@@ -2583,7 +2672,8 @@ THEME_STATE_JS = {
 THEME_TOKENS_JS = """async () => {
   const T = await import(new URL('shared/tokens.js', document.baseURI).href);
   const pal = (s) => T.scenePalette(0, s);
-  return { light: { sky: pal(T.LIGHT).sky[0], sea: pal(T.LIGHT).sea[0] }, dark: { sky: pal(T.DARK).sky[0], sea: pal(T.DARK).sea[0] },
+  return { light: { sky: pal(T.LIGHT).sky[0], sea: pal(T.LIGHT).sea[0], sand: T.puttGround('sand', 0, T.LIGHT).ground },
+           dark: { sky: pal(T.DARK).sky[0], sea: pal(T.DARK).sea[0], sand: T.puttGround('sand', 0, T.DARK).ground },
            active: T.tokens().name, lightTop: T.LIGHT.COLORS.skyTop, darkTop: T.DARK.COLORS.skyTop };
 }"""
 
@@ -2605,6 +2695,17 @@ def corner(page, shot_name):
     shot = OUT / shot_name
     page.screenshot(path=str(shot))
     return "#%02X%02X%02X" % Image.open(shot).convert("RGB").getpixel((2, 2))
+
+
+def game_corner(page, g_, name, shot_name):
+    """corner() for a game; for Putt (row U2: no sea round the course, pieces may sit in a corner) the sand
+    ground in the bottom row under the tee, which the 12 px clearance round the tee keeps bare."""
+    if name != "putt":
+        return corner(page, shot_name)
+    shot = OUT / shot_name
+    page.screenshot(path=str(shot))
+    q = g_.evaluate("window.__putt.snapshot()")
+    return logical_pixels(g_, shot, [(int(q["level"]["tee"]["x"]), q["geo"]["H"] - 1)])[0]
 
 
 def run_theme(browser, base):
@@ -2630,8 +2731,8 @@ def run_theme(browser, base):
         for name in GAMES:
             g_ = open_tile(page, name)
             g_.wait_for_timeout(200)
-            got = corner(page, f"d1-{name}-{scheme}.png")
-            exp = want["sea"] if name == "putt" else want["sky"]
+            got = game_corner(page, g_, name, f"d1-{name}-{scheme}.png")
+            exp = want["sand"] if name == "putt" else want["sky"]
             gc = g_.evaluate(PAGE_CHROME_JS)
             check(got == exp and gc["bg"] == rgb_css(top), f"[{tag}] {name} opened from its card is {scheme} ({got}, want {exp}; background {gc['bg']})")
             check(gc["stored"] == 0 and gc["cookie"] == "", f"[{tag}] {name}: nothing stored ({gc['stored']} keys, cookie {gc['cookie']!r})")
@@ -2664,21 +2765,21 @@ def run_theme(browser, base):
         page.emulate_media(color_scheme="dark")
         # Two animation frames after the switch: the page has drawn the dark look.
         g_.evaluate("() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
-        dark = corner(page, f"d1-switch-{name}-dark.png")
+        dark = game_corner(page, g_, name, f"d1-switch-{name}-dark.png")
         mid = g_.evaluate(THEME_STATE_JS[name])
         if name in ("bricks", "catch"):  # a fresh, paused opening draws the same in both runs: no colour left over from light
             from PIL import Image, ImageChops
             diff = ImageChops.difference(Image.open(OUT / f"d1-switch-{name}-dark.png").convert("RGB"),
                                          Image.open(OUT / f"d1-{name}-dark.png").convert("RGB")).getbbox()
             check(diff is None, f"[{tag}] switched to dark, the frame equals the same opening made in dark, pixel for pixel ({diff})")
-        exp = tok["dark"]["sea" if name == "putt" else "sky"]
+        exp = tok["dark"]["sand" if name == "putt" else "sky"]
         check(dark == exp, f"[{tag}] switched to dark with the game open: dark within two frames ({dark}, want {exp})")
         check(mid == before, f"[{tag}] the switch moves nothing in the game (state kept)")
         page.emulate_media(color_scheme="light")
         g_.evaluate("() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
-        light = corner(page, f"d1-switch-{name}-light.png")
+        light = game_corner(page, g_, name, f"d1-switch-{name}-light.png")
         after = g_.evaluate(THEME_STATE_JS[name])
-        check(light == tok["light"]["sea" if name == "putt" else "sky"] and after == before,
+        check(light == tok["light"]["sand" if name == "putt" else "sky"] and after == before,
               f"[{tag}] and back to light: light again ({light}), state kept")
         if name != "stack":  # Stack's block slides on; the paused games draw the very frame they drew before
             from PIL import Image, ImageChops
@@ -2792,13 +2893,13 @@ def run_theme_play(browser, base):
         g_.wait_for_timeout(300)
         still = (g_.evaluate(THEME_STATE_JS[name]), g_.evaluate(THEME_FULL_JS[name]))
         check(still == before, f"[{tag}] at rest before the switch: the state holds over 300 ms (so the comparison is exact)")
-        light = corner(page, f"d1-play-{name}-light.png")
+        light = game_corner(page, g_, name, f"d1-play-{name}-light.png")
         page.emulate_media(color_scheme="dark")
         g_.evaluate("() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
-        dark = corner(page, f"d1-play-{name}-dark.png")
+        dark = game_corner(page, g_, name, f"d1-play-{name}-dark.png")
         g_.wait_for_timeout(200)
         mid = (g_.evaluate(THEME_STATE_JS[name]), g_.evaluate(THEME_FULL_JS[name]))
-        exp = "sea" if name == "putt" else "sky"
+        exp = "sand" if name == "putt" else "sky"
         check(light == tok["light"][exp] and dark == tok["dark"][exp],
               f"[{tag}] switched light to dark mid-game: dark within two frames ({light} -> {dark}, want {tok['dark'][exp]})")
         check(mid[0] == before[0], f"[{tag}] the switch moves nothing: the fields run_theme compares are unchanged")
@@ -2909,6 +3010,7 @@ def view_of(page):
       if (c.dataset.layout) { const l = JSON.parse(c.dataset.layout); return off(l.scale, l.H); }
       for (const k of ['__bricks', '__catch']) if (window[k]) return window[k].snapshot().view;
       if (window.__stack) { const g = window.__stack.snapshot().geo; return { scale: g.scale, H: g.H, ox: g.ox, oy: g.oy }; }
+      if (window.__putt) { const g = window.__putt.snapshot().geo; return off(g.scale, g.H); }
       return null;
     }""")
 
@@ -3033,7 +3135,7 @@ def main():
             for w, h, dpr in LAYOUT_ONLY:
                 run_layout_only(browser, base, w, h, dpr)
         for name, fn in (("resize", run_resize), ("hub-grid", run_hub_grid), ("bricks", run_bricks), ("scene", run_scene), ("scene-dark", run_scene_dark),
-                         ("catch", run_catch), ("putt", run_putt), ("stack", run_stack), ("contrast-hub", run_contrast_hub),
+                         ("catch", run_catch), ("putt", run_putt), ("putt-open", run_putt_open), ("stack", run_stack), ("contrast-hub", run_contrast_hub),
                          ("contrast-pages", run_contrast_pages), ("contrast-stack", run_contrast_stack),
                          ("theme", run_theme), ("theme-play", run_theme_play), ("contrast-hub-dark", lambda b, u: run_contrast_hub(b, u, "dark")),
                          ("contrast-pages-dark", lambda b, u: run_contrast_pages(b, u, "dark")),
