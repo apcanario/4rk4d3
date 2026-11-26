@@ -53,9 +53,17 @@ Dusk tokens (shared/tokens.js and theme.css)
 Shared pieces, built once
 - The session clock, the scene phase (a value from 0 to 1 that pixel.js draws in 10 steps), the dusk tokens and the stars are shared code. The first row that needs them builds them as described here. Every later row reuses them and changes nothing in them.
 
+Choices made in the build (in force)
+- The session clock counts active play only and lives in memory, never saved. It resets when the app starts and when the page has been hidden for 5 minutes or more, and also if the device clock went backwards while hidden. A game left open but paused no longer resets it. After a reset the pace restarts at the next play start (Bricks, Catch) or on show (Stack); a ball or block already moving keeps its speed until its next paddle bounce or drop.
+- The scene has sunset plus 10 steps, one per whole minute of active play, full dusk at minute 10. The sun sinks round(24 x step / 10) px. Stars are 3 x 3 white crosses, 2, 4 and 6 at steps 8, 9 and 10, spread over the open sky. Clouds and glints stay.
+- The dusk ceiling falls linearly over minutes 10 to 12. In Bricks a new serve after a miss takes the current pace, and both a miss and a serve are clamped to the falling ceiling.
+- Chrome lets a page vibrate only after a tap on it. A game opened from its tile gets that tap from the tile; a game page loaded on its own (or reloaded) cannot vibrate until its first lift. Accepted for every game; the headless tests cannot see Chrome's gate (they use a stub), only the activation check in tests/check.py does.
+- The hub holds the one clock in memory and each game it opens uses it, so there is one clock for all games. A game page opened on its own URL has a clock of its own and no way back to the hub (the back gesture leaves the app); this is accepted.
+- Stored rlx.* keys are cleared on every start; other keys on the origin are kept.
+
 ## 3. Look
 
-Superseded in part by the hard rules of update 2; row X1 brings the build in line.
+The hard rules of update 2 removed every HUD, score and count, so the HUD and score parts below are void and the lettering applies to the hub only. The B4 contrast pass changed some values (list at the end of this section).
 
 Light summer sunset, rounded 8-bit. docs/style-reference.jpg is the approved reference; match it.
 
@@ -88,6 +96,13 @@ Lettering
 Motion
 - Only where it helps: brick pop particles (about 8 bits, 300 ms) and a ball trail of 3 fading squares.
 - With prefers-reduced-motion: no particles, no trail.
+
+B4 contrast pass (in force; replaces the value above where they differ)
+- Blue #436495 (ball, nasty ones). Ink #30486B for small lettering and control edges on the sea. Sail and card #A0D0E8 (the sail is no longer cream). Brick row 7 #FFA2CE; the jib is brick row 6.
+- A 1 px edge all round, 70 percent toward #783C5A, on the paddle, hull, mast, tiles, wordmark, and the outlines of things to catch and fish. White tile lettering with a 1 px outline of the coral's edge in place of the drop shade. The pause ring is white in an ink edge.
+- Keel #241E38 (the hull's rows below the horizon). Glint #FFA2CE (the sky-event glint and the spray). Ink cloud #483080 mixed 0.45 into each sea band.
+- Standard in place of "readable": every game piece against every scene step meets CIE76 delta E 20 or better (tests/contrast.mjs), WCAG contrast 3 for edges and fills seen as one shape, and WCAG 4.5 for small lettering.
+- Not yet inside the standard, left as built: the ball trail (delta E 16.42 from the sky) and a pop particle's highlight bit and the splash's white top (their other bits carry them). Pedro may ask for them to read more strongly.
 
 ## 4. Repo layout
 
@@ -125,6 +140,8 @@ Accept
 - Storage stays empty.
 - No console errors; no requests to any host but its own.
 
+Choice made in the build (X1): the hub creates each game's fullscreen frame on the tile's pointerdown and shows it on pointerup, with one history.pushState entry. The back gesture removes the frame, so the page never leaves the hub and its clock lives on. A reload on a game's history entry opens the hub. Safe-area insets inside the frame come from the hub's probe.
+
 ## 6. Row B1: Bricks (session 2)
 
 Brought in line with the hard rules of update 2 by row X1.
@@ -158,7 +175,7 @@ Miss
 
 Paddle and control
 - Paddle is 30 x 6 and sits 16 px above the horizon.
-- Relative drag anywhere on screen: the paddle moves by the finger's horizontal movement times a sensitivity of 1.2, clamped to the field. It is never absolute positioning, so the thumb rests in the sea and never covers the paddle. A touch that begins within 24 CSS px of the left or right edge is ignored.
+- Relative drag anywhere on screen: the paddle moves by the finger's horizontal movement on the shared thumb travel (section 6a), clamped to the field. It is never absolute positioning, so the thumb rests in the sea and never covers the paddle. A touch that begins within 24 CSS px of the left or right edge is ignored.
 
 Pause
 - No finger on the screen means paused: ball and timers freeze within one frame, and a thumb ring with left and right chevrons shows in the sea.
@@ -170,7 +187,7 @@ Haptics
 - At most one vibrate call per 40 ms.
 
 Tuning and performance
-- Ball speed, sensitivity, haptic lengths, refill threshold and resume delay sit in one config block at the top of bricks.js.
+- Ball speed, haptic lengths, refill threshold and resume delay sit in one config block at the top of bricks.js.
 - Steady 60 fps on a current flagship. No animation loop while the page is hidden; while paused, redraw only on change.
 
 Accept
@@ -182,6 +199,13 @@ Accept
 
 After B1, Pedro plays it and reports on feel. Tuning is a follow-up row.
 
+Choices made in the build (in force)
+- A new ball is served 10 degrees from vertical, alternating sides. Loop breaker: each launch counts toward a loop when no brick was popped since the last one; from the 3rd the path is nudged, 8 degrees more on each launch, alternating sides, capped at 70 degrees. A wedged ball escapes. The first finger down drives the paddle; a second finger does not move it, and when the first lifts the next takes over from where it is.
+- Without the HUD the field starts 5 px below the top plus the safe-area inset.
+- The pause ring, with its chevrons, stays: section 6e does not list it. Open question X33.
+- The ball speed, the pace, 10 degree serve and 8 degree nudge are in CONFIG at the top of bricks.js; the thumb travel is shared (section 6a).
+- A Bricks page loaded without a tap from the hub (direct URL, or Chrome reloading it) cannot vibrate until its first lift, because Chrome wants a tap on the page first. Accepted: no in-page fix exists without changing the controls.
+
 ## 6a. Row B2: Bricks fix
 
 Bricks was built with a constant ball speed. This row gives it the adaptive pace and the exit ramp, and shortens the thumb travel.
@@ -192,7 +216,7 @@ Changes to section 6 (Bricks)
 - A speed change takes effect only at a paddle bounce, never in mid-flight.
 - In the dusk phase (minutes 10 to 12 of the session clock) the ceiling falls from 125 to 80, and the speed follows it down at paddle bounces.
 - Opening Bricks, or a reset of the session clock, starts the speed at 90.
-- Thumb travel: moving the thumb across 50 percent of the screen width carries the paddle from one end of its travel to the other. The build used about 65 percent, which is a stretch for one thumb. The sensitivity is derived from the fraction, not set as a fixed multiplier: sensitivity = paddle travel / (0.50 x screen width), which is about 1.56 for a 135 px field and a 30 px paddle. The fraction is one named value in shared config, so every drag game uses the same one.
+- Thumb travel: moving the thumb across 35 percent of the screen width carries the paddle from one end of its travel to the other (Pedro's feel report, 2026-11-26: 50 percent was still too much; the first build used about 65 percent). The sensitivity is derived from the fraction, not set as a fixed multiplier: sensitivity = paddle travel / (0.35 x screen width), which is about 2.2 for a 135 px field and a 30 px paddle. The fraction is one named value in shared config, so every drag game uses the same one.
 - No rally number and no other number is added.
 
 Build
@@ -204,7 +228,7 @@ Build
 Accept
 - Speed never leaves the range of 80 to 125, in play and in the headless test, and never changes in mid-flight.
 - After 12 minutes of active play the ball is at 80 and the scene is at full dusk. Paused time does not advance the clock.
-- A thumb movement of 50 percent of the screen width moves the paddle exactly end to end, at 360 and at 412 CSS px wide. The paddle can still be placed to the pixel with a slow drag.
+- A thumb movement of 35 percent of the screen width moves the paddle exactly end to end, at 360 and at 412 CSS px wide. The paddle can still be placed to the pixel with a slow drag.
 - Bricks, paddle and ball are readable in every one of the 10 scene steps.
 - Everything B1 accepted about play still holds: no stuck ball, no flat loop, no tunnelling, pause within one frame, haptics unchanged.
 - The headless test is extended to 15 simulated minutes with a tracking paddle that misses now and then: speed stays in range, falls to 80 by minute 12, and the brick count stays bounded.
@@ -232,7 +256,7 @@ A small boat on the sunset sea catches things that fall from the sky. Now and th
 
 - Boat: a coral hull, 24 x 7, stepped corners, with a short mast and a cream sail about 9 px tall. Highlight and drop shade as on every shape.
 - The catch zone is the deck: the full hull width at its top edge.
-- Relative drag anywhere on screen, clamped to the field, on the shared thumb travel: moving the thumb across 50 percent of the screen width carries the boat from one end of the field to the other (section 6a). A touch that begins within 24 CSS px of the left or right edge is ignored.
+- Relative drag anywhere on screen, clamped to the field, on the shared thumb travel: moving the thumb across 35 percent of the screen width carries the boat from one end of the field to the other (section 6a). A touch that begins within 24 CSS px of the left or right edge is ignored.
 
 ### Things to catch
 
@@ -312,6 +336,18 @@ Catch follows the wind-down rules of section 2b. C1 is built after B2, so the se
 - Boat, items, nasties and fish are readable in every one of the 10 scene steps.
 - A headless test runs sim.js in Node for 15 simulated minutes with a boat that tracks the nearest item, misses now and then, and taps on every nasty: no NaN, item counts stay within the limits, every nasty is eaten, pace stays in range and is 0 by minute 12.
 
+Choices made in the build (in force)
+- A tap that comes as a nasty is about to land holds it at the deck or water line until the fish reaches it, at most 6 steps (50 ms): this guarantees a bite before it lands.
+- A nasty spawns the moment its 20 to 30 s timer ends and takes the normal spawn's place; it spawns within 70 px of the last normal item and does not sway. One due while another is in the air waits. A spawn due with 3 items in the air waits for a free slot; the first item comes one spawn gap after a fresh start; things appear 5 px below the top plus the safe-area inset.
+- The treat is separate from the 3 items, on its own timer, falls at 20 px/s with the sway, within 70 px of the last normal item. Only normal items move the 70 px reference. Catching it counts as a catch (pace +0.02, 8 ms tick) and sets off one random sky event: a gull crossing (4 s), a dolphin arcing on the horizon (1.6 s) or a glint on the sun (1 s; on the sea once the sun is down). A missed treat makes no splash and changes nothing.
+- Caught means the thing's bottom reaches the deck line with its centre over the hull; a thing passing the deck line beside the boat can only reach the water. The caught thing shows on the deck for 250 ms.
+- A tap while a fish is already after the nasty is a hop. At most 4 fish at once (hops stop at 3, so a leap always has a slot). The hop is beside the boat on its right (left at the right wall); after a bite the fish arcs toward the middle.
+- Kinds spawn cycling through the shuffled order of the unlocked kinds. The catch and eaten counts live in memory only, so every opening starts with 2 item kinds and 2 fish kinds; with all 8 in, the order reshuffles every 40 catches.
+- The boat dips 1 px for 100 ms, and rocks 1 px left and right every 125 ms for 1 s. The ink cloud mixes the sea toward the ink cloud colour (section 3) for 4 s, then fades over 0.6 s in two dither stages.
+- Items and fish carry a 1 px outline in the edge colour; the nasty ones are bare blue with the shade inside. Bite bits (6, 300 ms) and a 3-dot spray under a leaping fish go away with reduced motion; the miss and dive splashes stay.
+- Catch keeps its input code in games/catch (a state machine in sim.js). A touch that starts while paused or resuming is never a tap; a finger down in the grace plays on at once; lifted while resuming, the game stays paused. The grace counts as active play. The page hidden or pagehide pauses at once with no grace.
+- The pause ring (with a square, no chevrons, as in style-reference-catch.jpg) stays; open question X33.
+
 ## 6c. Row U1: Putt
 
 docs/style-reference-putt.jpg is the approved look. Its lettering does not apply: nothing is written on screen.
@@ -368,7 +404,7 @@ Every level comes from a seed and a difficulty. The same seed and screen height 
 
 Difficulty
 - Three levels of difficulty, called 1, 2 and 3 here. Each new course draws one at random with equal odds. The level is not shown on screen.
-- In the dusk phase (minute 10 of the session clock onward) the draw is level 1 only. This is the exit ramp easing the game down, as rule 3 of the wind-down rules asks.
+- In the dusk phase (minute 10 of the session clock onward) the draw is level 1 only. This is the exit ramp easing the game down, as rule 2 of the wind-down rules asks.
 - This random draw is Putt's difficulty scheme, in place of the adaptive pace of wind-down rule 1.
 
 Building blocks
@@ -437,6 +473,18 @@ Solvable, always
 - No restart or skip control, no strokes, no counts, no difficulty marker.
 - No moving obstacles.
 
+### Choices made in the build (in force)
+
+- Putt stores nothing. Its own buzz() vibrates whenever navigator.vibrate exists, with the shared 40 ms gap; a bounce below 8 px/s does not tick, and a bounce within 40 ms before the drop is skipped so the 24 ms sink tick always goes out.
+- Putt draws no sky: three sea bands down the full height under the course, colours from the shared scene palette in the same 10 steps, no sun and no stars.
+- The first level is built in the worker as well; a level-1 or 2 draw is built on the page at the first frame; a level-3 draw is requested at module load. The worker is gen.js itself (a module worker); if it fails, levels are built on the page in slices of about 6 ms. A level-1 course is kept ready from 2 minutes before dusk, and at dusk Putt takes it, or the instant fallback if the queue is not level 1. If the queued level is not ready when a hole is sunk, the fallback is used, so there is never a wait. The fallback is an open level-1 course varied by its seed (hole x, block size and place).
+- The course wall is 3 px, drawn outside the course polygon at the plan's insets. Bars are 3 px thick, grow from the left or right alternately and reach at least 45 percent of the width. Diagonals are 3 px thick with a leg of 15 to 35 px. The 12 px clearance is measured from the ball's and the hole's edges; solids stay 14 px from the wall; traps and water stay 3 px clear; the hole sits at least 10 px below the top.
+- The solver tries powers 0.2 to 1.0 of 220 px/s, ranks resting spots by walking distance on a 2 px grid and keeps one per 3 px cell; level 2 almost always needs exactly 2 strokes and level 3 exactly 3.
+- Look: blocks are brick rows 3 or 5, pegs row 6, sand traps the sand mixed 55 percent toward row 4 with dots, water is sea band 2 with glint dashes, the hole is the keel plum with a rim 35 percent toward white and a coral flag. The guide is 2 x 2 dots every 5 px, the power bar five 4 x 2 bars, with a pull ring where the thumb went down and a large ring under it.
+- Sink drop 240 ms; the next level starts to slide in 800 ms after the drop and arrives over 420 ms (about 1.2 s after the drop); under reduced motion it appears with no slide. The 4 px cancel distance is in logical px.
+- Putt reads the shared session clock and advances it in memory only: while the ball rolls, while the thumb is down and for CONFIG.idleS (10 s) after either.
+- The hub's smallest tile size is 15 px with a 2 px gap, so four tiles fit at logical height 240.
+
 ## 6d. Row S1: Stack
 
 A block slides from side to side above a tower. A tap drops it. The tower grows floor by floor and sinks slowly into the sea, so it never ends.
@@ -483,6 +531,15 @@ Accept
 - No text, number or button is on screen.
 - Every other game behaves exactly as before this row.
 
+### Choices made in the build (in force)
+
+- Aligned means the block's centre is over the floor's centre; a near-perfect drop snaps to that centre, clamped inside the screen, and keeps its full width, so a regrown block 2 px wider than the floor lands whole.
+- Overlap is the intersection as a share of the block's width; a near-perfect drop counts as 100 percent and adds 1; a block that only touches the floor's edge is a complete miss; "under 12 px" is strictly less than 12. The fresh 60 px block lands whole wherever it is dropped, ticks 8 ms and leaves the pace unchanged.
+- Blocks alternate starting walls floor by floor, the first from the right. A missed block falls at 360 px/s squared, a tap while it falls does nothing, and the same block returns 0.35 s after the plop.
+- Each block takes its speed when it starts; a sliding block's speed and the pace follow the falling dusk ceiling at once. All visible time counts as active play; hidden or pagehide stops the clock. The drop fires on pointerdown and lands at once; only the primary pointer drops.
+- The camera shifts one floor when the top floor's top edge passes H/2, slides at 64 px/s (125 ms per floor), and jumps under reduced motion. Floors more than 2 below the screen are dropped from memory. On a resize the tower is lowered until its lowest kept floor reaches the horizon.
+- Look: floors use the 1 px edge rim, 2-step corners at 10 px wide and up, 1-step below, an edge-colour sliver under 5 px; colour is floor index mod 9 over the brick rows; bits are 2 x 2 (up to 6 per cut, 300 px/s squared, away from the tower, none under reduced motion); the plop is a white 3-dot splash for 300 ms, kept under reduced motion; the sun stays at x 96 so the tower base overlaps it.
+
 ## 6e. Row X1: Strip-down
 
 Rows built before this update still carry things the new hard rules remove. This row takes them out of everything already built at that point: the hub, Bricks, Catch if it exists, and any other game present.
@@ -501,7 +558,7 @@ Accept
 - No game screen shows any text, number or button.
 - After play in every game, storage is empty.
 - The hub shows the game tiles and nothing else: no switch, no setting.
-- Catch uses the shared thumb-travel fraction: 50 percent of the screen width moves the boat end to end.
+- Catch and Bricks use the shared thumb-travel fraction: 35 percent of the screen width moves the paddle or boat end to end (set from Pedro's feel report, 2026-11-26; first 50).
 - Killing the app and reopening it opens the hub; opening a game starts it fresh.
 - From every game, the back gesture returns to the hub, and an edge swipe never moves a paddle, a boat or an aim.
 - Play itself is unchanged in every game: physics, pace, haptics and the exit ramp behave as before this row.

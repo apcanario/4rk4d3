@@ -30,7 +30,7 @@ export const CONFIG = Object.freeze({
   nextLevelMs: 800, // the next level starts to slide in this long after the ball drops
   slideMs: 420, // the slide
   splashMs: 300, // the plop in water
-  idleS: 20, // the session clock counts play while the ball rolls, the thumb is down, or this long after either
+  idleS: 10, // the session clock counts play while the ball rolls, the thumb is down, or this long after either
   easyLeadS: 120, // from this long before dusk, a level-1 course is kept ready
 });
 

@@ -469,6 +469,7 @@ def track(page, ms, x, y, scale, k):
     """Hold a finger at (x, y) and follow the ball with relative drags, then lift."""
     width = page.viewport_size["width"]
     cur = x
+    sens = snap(page)["sensitivity"]
     page.mouse.move(cur, y)
     page.mouse.down()
     end = time.time() + ms / 1000
@@ -476,7 +477,7 @@ def track(page, ms, x, y, scale, k):
         q = snap(page)["game"]
         if q["ball"]:
             d = q["ball"]["x"] + 2.5 - (q["paddleX"] + 15)
-            nxt = max(30, min(width - 30, cur + max(-12, min(12, d / 1.2 * scale * k))))
+            nxt = max(30, min(width - 30, cur + max(-12, min(12, d / sens * scale * k))))
             if abs(nxt - cur) > 0.01:
                 page.mouse.move(nxt, y)
                 cur = nxt
@@ -509,7 +510,7 @@ def two_touches(ctx, page, tag):
           f"[{tag}] two fingers: the second finger does not move the paddle ({q['game']['paddleX'] - p0:.2f})")
     ev("pointermove", 11, ax + 10 * sign)
     p1 = snap(page)["game"]["paddleX"]
-    want = 10 * sign / k / scale * 1.2
+    want = 10 * sign / k / scale * snap(page)["sensitivity"]
     check(abs((p1 - p0) - want) < 1e-6, f"[{tag}] two fingers: the first finger drives it ({p1 - p0:.2f} for {want:.2f})")
     ev("pointerup", 11, ax + 10 * sign)
     q = snap(page)
@@ -585,11 +586,14 @@ def run_bricks(browser, base):
     s3 = snap(page)
     check(s3["mode"] == "running" and s3["game"]["ball"]["y"] < g0["ball"]["y"], f"[{tag}] after 250 ms the ball flies")
 
-    # Relative drag: paddle moves by finger dx x 1.2, never jumps to the finger.
+    # Relative drag: paddle moves by finger dx x the thumb-travel sensitivity, never jumps to the finger.
+    sens = snap(page)["sensitivity"]
+    devw = page.evaluate("innerWidth * devicePixelRatio")
+    check(abs(sens - (135 - 30) / (0.35 * devw / scale)) < 0.01, f"[{tag}] Bricks drag sensitivity {sens:.3f} puts 35 percent of the screen width end to end")
     p0 = snap(page)["game"]["paddleX"]
     page.mouse.move(x + 20, y, steps=4)
     p1 = snap(page)["game"]["paddleX"]
-    want = 20 / k / scale * 1.2
+    want = 20 / k / scale * sens
     check(abs((p1 - p0) - want) < 0.05, f"[{tag}] relative drag: paddle moved {p1 - p0:.2f} for {want:.2f} expected")
     page.mouse.move(x, y, steps=4)
     p2 = snap(page)["game"]["paddleX"]
@@ -597,12 +601,12 @@ def run_bricks(browser, base):
     page.mouse.move(x + 600, y, steps=8)
     check(abs(snap(page)["game"]["paddleX"] - (135 - 30)) < 1e-9, f"[{tag}] paddle clamped to the field")
     page.mouse.up()
-    # Centre the paddle again: far left (clamped at 0), then right by 52.5 / 1.2.
+    # Centre the paddle again: far left (clamped at 0), then right by 52.5 / sens.
     page.mouse.move(330, y)
     page.mouse.down()
     page.mouse.move(30, y, steps=8)
     check(snap(page)["game"]["paddleX"] == 0, f"[{tag}] paddle clamped at the left edge")
-    page.mouse.move(30 + (52.5 / 1.2) * scale * k, y, steps=8)
+    page.mouse.move(30 + (52.5 / sens) * scale * k, y, steps=8)
     page.mouse.up()
     # A thumb that follows the ball, so both bricks and the paddle get hit: haptics always on.
     track(page, 5000, x, y, scale, k)
@@ -1019,14 +1023,14 @@ def run_catch(browser, base):
     touch.move(x - 600, y)
     page.wait_for_timeout(30)
     check(csnap(page)["game"]["boatX"] == 0, f"[{tag}] boat clamped at the left edge")
-    # Shared thumb travel (PLAN §6a, §6e): a drag across half the screen width moves the boat exactly end to end.
-    half = page.viewport_size["width"] * 0.5
+    # Shared thumb travel (PLAN §6a, §6e): a drag across 35 percent of the screen width moves the boat exactly end to end.
+    half = page.viewport_size["width"] * 0.35
     start = x - 600
     for i in range(1, 11):
         touch.move(start + half * i / 10, y)
     page.wait_for_timeout(30)
     end_x = csnap(page)["game"]["boatX"]
-    check(abs(end_x - (135 - 24)) < 0.05, f"[{tag}] a drag across 50 percent of the screen width ({half:.0f} CSS px) moves the boat end to end ({end_x:.2f} of 111)")
+    check(abs(end_x - (135 - 24)) < 0.05, f"[{tag}] a drag across 35 percent of the screen width ({half:.0f} CSS px) moves the boat end to end ({end_x:.2f} of 111)")
     touch.move(start + half * 0.5, y)
     touch.up()
 

@@ -15,7 +15,6 @@ export const CONFIG = Object.freeze({
   speedMax: 125, // the ceiling, which falls to speedMin in the dusk slowdown
   gainPerReturn: 1, // each clean paddle return
   lossPerMiss: 12, // each miss
-  sensitivity: 1.2, // paddle px per finger px, relative drag
   hapticBrickMs: 8,
   hapticPaddleMs: 16,
   refillBelow: 35, // refill when fewer bricks than this remain
@@ -27,7 +26,7 @@ export const CONFIG = Object.freeze({
 
 import { COLORS, BRICK_ROWS, SEA_BANDS, highlight, edge } from '../../shared/tokens.js';
 import {
-  createScreen, drawScene, initPage, pixelBody, SEA_HEIGHT, reducedMotion, atSideEdge,
+  createScreen, drawScene, initPage, pixelBody, SEA_HEIGHT, reducedMotion, atSideEdge, thumbSensitivity,
 } from '../../shared/pixel.js';
 import { tick } from '../../shared/haptics.js';
 import {
@@ -53,6 +52,7 @@ const canvas = document.getElementById('screen');
 let game = null;
 let rects = null;
 let layoutKey = '';
+let sensitivity = 1; // paddle px per finger px: from the shared thumb travel, set in layout()
 let bg = null; // the scene for the current layout and scene step
 let bgStep = -1;
 const clock = sessionClock(); // the one shared session clock, in memory (shared/session.js)
@@ -92,6 +92,10 @@ function layout(s) {
   const horizon = s.H - SEA_HEIGHT;
   const geo = P.geometry(s.W, TOP + s.safe.top, horizon);
   const ring = { x: Math.floor(s.W / 2), y: Math.min(horizon + 21, s.H - s.safe.bottom - RING_R - 2) };
+  // Thumb travel (PLAN §6a, §6e): a drag across INPUT.thumbTravel of the screen
+  // width carries the paddle from one end of the field to the other. The finger
+  // is measured in logical px, so the screen width is too.
+  sensitivity = thumbSensitivity(geo.W - P.PADDLE_W, canvas.width / s.scale);
   return { geo, ring };
 }
 
@@ -346,7 +350,7 @@ canvas.addEventListener('pointermove', (e) => {
   // Only a running game bounces the ball or ticks; while resuming the paddle
   // just moves (and stops at the ball).
   const live = mode === 'running';
-  const ev = P.movePaddle(game, dx * CONFIG.sensitivity, CONFIG, live, slowdownOf(clock.active));
+  const ev = P.movePaddle(game, dx * sensitivity, CONFIG, live, slowdownOf(clock.active));
   if (live) handle(ev);
 });
 
@@ -389,6 +393,7 @@ Object.defineProperty(window, '__bricks', {
       mode,
       raf: !!raf,
       fingers: pointers.size,
+      sensitivity,
       count: game ? P.brickCount(game) : 0,
       view: { W: screen.W, H: screen.H, scale: screen.scale, ox: screen.ox, oy: screen.oy },
       clock: { ...clock },

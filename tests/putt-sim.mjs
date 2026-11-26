@@ -35,7 +35,7 @@ check(puttSrc.indexOf('export const CONFIG') < puttSrc.indexOf('import '), 'CONF
 check(CONFIG && CONFIG.launchSpeed === 220 && CONFIG.decel === 55 && CONFIG.stopSpeed === 4 && CONFIG.bounce === 0.85
   && CONFIG.sandFactor === 3 && CONFIG.captureSpeed === 140 && CONFIG.pullCapPx === 60 && CONFIG.cancelPx === 4
   && CONFIG.hapticReleaseMs === 10 && CONFIG.hapticBounceMs === 6 && CONFIG.hapticSinkMs === 24
-  && CONFIG.guideAfterPx === 12 && Math.abs(CONFIG.nextLevelMs - 800) <= 100,
+  && CONFIG.idleS === 10 && CONFIG.guideAfterPx === 12 && Math.abs(CONFIG.nextLevelMs - 800) <= 100,
   `CONFIG holds the PLAN values ${JSON.stringify(CONFIG)}`);
 const PLAY = CONFIG;
 const genSrc = read('games/putt/gen.js');

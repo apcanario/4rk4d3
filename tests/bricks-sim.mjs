@@ -27,7 +27,7 @@ const CONFIG = m ? Function(`return (${m[1]});`)() : null;
 check(!!CONFIG, 'bricks.js has one CONFIG block');
 check(bricksSrc.indexOf('export const CONFIG') < bricksSrc.indexOf('import '), 'CONFIG block sits at the top of bricks.js');
 check(CONFIG && CONFIG.speedMin === 80 && CONFIG.speedStart === 90 && CONFIG.speedMax === 125
-  && CONFIG.gainPerReturn === 1 && CONFIG.lossPerMiss === 12 && CONFIG.sensitivity === 1.2 && CONFIG.hapticBrickMs === 8
+  && CONFIG.gainPerReturn === 1 && CONFIG.lossPerMiss === 12 && !('sensitivity' in CONFIG) && CONFIG.hapticBrickMs === 8
   && CONFIG.hapticPaddleMs === 16 && CONFIG.refillBelow === 35 && CONFIG.resumeDelayMs === 250,
   `CONFIG holds the PLAN values ${JSON.stringify(CONFIG)}`);
 check(CONFIG && ['serveAngleDeg', 'loopBounces', 'loopNudgeDeg'].every((k) => typeof CONFIG[k] === 'number'),
@@ -466,6 +466,22 @@ for (const [tag, g] of GEOS) {
 const S = await import('../shared/session.js');
 const T = await import('../shared/tokens.js');
 const PX = await import('../shared/pixel.js');
+// Thumb travel (PLAN §6a): 35 percent of the screen width carries the paddle end to end, at 360 and 412 CSS px.
+{
+  const code = bricksSrc.replace(/\/\/.*$/gm, '');
+  for (const [cssW, dpr] of [[360, 2.625], [412, 2.625], [360, 3]]) {
+    const devW = Math.round(cssW * dpr);
+    const scale = Math.floor(devW / 135);
+    const screenW = devW / scale; // logical px
+    const sens = PX.thumbSensitivity(135 - P.PADDLE_W, screenW);
+    const q = P.create(P.geometry(135, 5, 240), CONFIG);
+    P.movePaddle(q, -500, CONFIG, false);
+    P.movePaddle(q, PX.INPUT.thumbTravel * screenW * sens, CONFIG, false);
+    check(PX.INPUT.thumbTravel === 0.35 && Math.abs(q.paddleX - (135 - P.PADDLE_W)) < 1e-9,
+      `[${cssW} CSS px] a drag across 35 percent of the screen width moves the paddle exactly end to end (sensitivity ${sens.toFixed(3)})`);
+  }
+  check(/thumbSensitivity\(geo\.W - P\.PADDLE_W, canvas\.width \/ s\.scale\)/.test(code), 'bricks.js sets the drag sensitivity from the shared thumb travel');
+}
 const RAMP_S = S.SESSION.rampMin * 60;
 const END_S = RAMP_S + S.SESSION.slowdownMin * 60; // minute 12
 const GAP_MS = S.SESSION.resetGapMin * 60 * 1000;

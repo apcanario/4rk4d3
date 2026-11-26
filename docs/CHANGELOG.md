@@ -255,3 +255,17 @@ Review findings and fixes:
 Not verifiable headless: one edge swipe in the installed fullscreen app (if Android needs two, switch the manifest to standalone), vibrate in the frame on real Chrome for Android, display-cutout insets, a real kill and relaunch, feel and fps. Proposed as X25.
 
 Deferred: X18 (Putt idleS), X21 (§6c rule number), X24 to X31.
+
+## 2026-11-26: B3 thumb travel, and the Proposed rows cleared
+
+Models that ran: main chat Sonnet 5.5 (claude-sonnet-5-5), which did the build itself; reviewer Opus 5.5 (claude-opus-5-5), which had not seen the build. No separate builder agent was used. Fixes applied by the main chat.
+
+Built: Pedro's feel report: Bricks and Catch still need too much thumb amplitude. The shared INPUT.thumbTravel went from 0.5 to 0.35 of the screen width, end to end. Bricks now takes its drag sensitivity from the shared fraction as Catch does (X26); CONFIG.sensitivity is gone (about 2.2 at a 135 px field and a 30 px paddle). Putt's idle window is 10 s (X18). The build choices of X3, X8, X10, X15, X20, X21, X22, X24, X27 and X28 were merged into PLAN (§2b, §3, §5, §6, §6b, §6c, §6d, §6e), with the parts X1 made void left out. sw.js cache rlx-v15. Tests: bricks-sim and catch-sim thumb checks at 35 percent, a Bricks browser check of the sensitivity, putt-sim checks idleS.
+
+Review findings and fixes: PLAN contrast standard stated as delta E 10 (it is 20); stale "sensitivity" in the §6 config line; Putt slide-in timing (starts 800 ms after the drop); §3 intro on the HUD; loop-breaker wording; a Bricks-only serve rule in the shared section; Chrome's vibrate gate now stated for every game; the pause-ring question kept open as X33 instead of dropped; X32 regained items from the rows it replaced; no Bricks browser check of 35 percent (added). All fixed.
+
+Closed without code: X29, X7, X6, X31, X4 (superseded by X1, or accepted and documented). X2, X12, X17, X19, X23 and X25 became X32 (real-device pass). X16 and X30 stay Proposed.
+
+Not verifiable headless: how 35 percent feels on a phone (it may now be too little; it is one value in shared/pixel.js), and everything in X32.
+
+Deferred: X32, X33, X16, X30.
