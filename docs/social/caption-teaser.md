@@ -1,6 +1,6 @@
 # Teaser post caption (2026-11-26)
 
-Images: rlx-story-1080x1920.png (Instagram story), rlx-post-1080x1440.png (3:4 post). Regenerate with `python3 tools/social-teaser-story.py` and `python3 tools/social-teaser-post.py` (needs Pillow; art from tools/rlx_art.py, lettering from shared/font.js plus hand-drawn lowercase).
+Images: rlx-story-1080x1920.png (Instagram story), rlx-post-1080x1440.png (3:4 post). Regenerate with `python3 tools/social-teaser-story.py` and `python3 tools/social-teaser-post.py` (needs Pillow; art from tools/rlx_art.py, capitals from tools/rlx_font.py plus hand-drawn lowercase).
 
 > rlx is coming soon.
 >

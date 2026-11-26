@@ -436,3 +436,15 @@ Tests: bricks-sim 242, catch-sim 199, putt-sim 73, stack-sim 112, haptics-native
 Review findings and fixes: night ramp had no browser check, fixed (scene-dark); live switch tested only on a fresh opening, fixed (theme-play, mid-play); colour-name blind spot in the literal check, fixed; PLAN figure 2.1 corrected to 2.02. The reviewer's hub star count of 3 was not reproduced: all 4 show at 360x800. Not fixed, Pedro's call: the grey keel, card ring and pale Putt hole (D1b).
 
 Not verifiable here: the Android shell (never built or run), a live mode switch inside the APK, how dark reads on the phone (D1a). Deferred: nothing else.
+
+## 2026-11-26: X35, X36, X39 Proposed rows
+
+Models that ran: main chat Sonnet 5.5; builder Opus 5.5; reviewer Opus 5.5, which had not seen the build. Pedro asked for the Proposed rows to be carried out now.
+
+Built: X35 shared/font.js removed, its 40 glyphs moved unchanged to tools/rlx_font.py because the two social-teaser scripts read them (premise of the row was wrong on that point); sw.js FILES and rlx-v23; font checks kept for the teaser lettering. X36 all 7 actions pinned by SHA, wrapper validation before any Gradle run, the manual smoke job a two-entry matrix (API 35 back key, API 36 back gesture), static checks for the pins, the validation order and the matrix. X39 root cause: the check expected the next block narrower than the dropped one, but a floor under 12 px rightly gets a fresh 60 px block; the check now states PLAN §6d exactly, sim.js untouched, 40 of 40 clean runs after 2 of 40 failing before.
+
+Tests: bricks-sim 242, catch-sim 199, putt-sim 73, stack-sim 112, haptics-native 19, contrast.mjs, tests/check.py 1383 PASS, 0 failures.
+
+Review findings (no blockers) and fixes: tools/rlx_font.py untracked, added to the commit; README tools list missed the font and the social scripts, added. Deferred as Proposed rows: X40 (smoke check does not read the navigation mode), X41 (a rare snap-distance flake in the landed-drop check).
+
+Not verifiable here: the CI workflow as a whole, the API 36 image and gesture run, the wrapper validation step, a distributionSha256Sum in gradle-wrapper.properties (services.gradle.org blocked from here). Deferred: X34, D1a, D1b need Pedro's phone.

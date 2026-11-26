@@ -1,11 +1,9 @@
-import sys, re
+import sys
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
 import rlx_art as A
 from PIL import Image
 
-src = open(__import__("pathlib").Path(__file__).resolve().parent.parent.joinpath("shared/font.js")).read()
-GL = {m.group(1): re.findall(r"'([#.]+)'", m.group(2))
-      for m in re.finditer(r"^\s*'(.)': \[(.*?)\],?$", src, re.M)}
+from rlx_font import GLYPHS as GL
 LOW = {
  'r': ['#.##', '##..', '#...', '#...', '#...'],
  'l': ['##', '.#', '.#', '.#', '.#', '.#', '.#'],

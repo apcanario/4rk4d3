@@ -5,7 +5,7 @@
 // file under the new name, takes over at once and deletes the old caches.
 // The next launch runs the new files. Add any new shipped file to FILES.
 
-const VERSION = 'rlx-v22';
+const VERSION = 'rlx-v23';
 
 const FILES = [
   './',
@@ -13,7 +13,6 @@ const FILES = [
   './manifest.webmanifest',
   './shared/tokens.js',
   './shared/theme.css',
-  './shared/font.js',
   './shared/pixel.js',
   './shared/haptics.js',
   './shared/native.js',

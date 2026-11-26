@@ -302,7 +302,7 @@ def run_viewport(browser, base, w, h):
     hub_dom = page.evaluate("() => ({ text: document.body.innerText.trim(), controls: document.querySelectorAll('button, a, input, select, [role=button]').length })")
     check(hub_dom == {"text": "", "controls": 0}, f"[{tag}] the hub has no switch, setting or other control in the DOM {hub_dom}")
     fonts = page.evaluate("performance.getEntriesByType('resource').map((e) => e.name).filter((n) => /font/.test(n))")
-    check(fonts == [], f"[{tag}] the hub loads no font (shared/font.js or any other) {fonts}")
+    check(fonts == [], f"[{tag}] the hub loads no font {fonts}")
 
     # Navigation: each card opens its game over the hub; the back gesture (history back) returns.
     hlen = page.evaluate("history.length")
@@ -590,9 +590,15 @@ def static_checks():
     check(files == shipped, f"sw.js FILES matches shipped files (missing {sorted(shipped - files)}, extra {sorted(files - shipped)})")
     check(all((ROOT / f / "index.html").is_file() for f in folders), f"sw.js folder entries have an index.html {sorted(folders)}")
 
-    # Font: one rounding rule for every glyph (no uncut L-corner).
-    src = (ROOT / "shared" / "font.js").read_text()
-    body = src[src.index("export const GLYPHS"):]
+    # Row X35: shared/font.js is gone and nothing names it. The lettering of the social teaser images
+    # (tools/social-teaser-*.py, not shipped) lives in tools/rlx_font.py: one rounding rule for every glyph.
+    named = sorted(p.relative_to(ROOT).as_posix() for p in ROOT.rglob("*")
+                   if p.is_file() and p.suffix in {".js", ".mjs", ".html", ".py", ".sh", ".yml", ".json"}
+                   and not {"node_modules", ".git", "out"} & set(p.relative_to(ROOT).parts)
+                   and p.relative_to(ROOT).as_posix() != "tests/check.py" and "shared/font.js" in p.read_text(errors="ignore"))
+    check(not (ROOT / "shared" / "font.js").exists() and not named, f"shared/font.js is gone and no file names it (row X35) {named}")
+    src = (ROOT / "tools" / "rlx_font.py").read_text()
+    body = src[src.index("GLYPHS = {"):]
     bad = []
     for key, rows in re.findall(r"'(.)':\s*\[([^\]]*)\]", body):
         g = re.findall(r"'([.#]+)'", rows)
@@ -601,7 +607,7 @@ def static_checks():
             for c in range(len(g[0])):
                 if ink(r, c) and ink(r, c - 1) + ink(r, c + 1) == 1 and ink(r - 1, c) + ink(r + 1, c) == 1:
                     bad.append((key, r, c))
-    check(not bad, f"font: every outer corner is cut {bad}")
+    check(not bad, f"tools/rlx_font.py: every outer corner is cut {bad}")
     # Row P3: the web icons are the approved beach-sunset art, no lettering; icon-512 is the Play icon pixel for pixel.
     from PIL import Image, ImageChops
     a = Image.open(ROOT / "icons" / "icon-512.png").convert("RGBA")
@@ -623,7 +629,7 @@ def static_checks():
                          re.sub(r"//.*", "", p.read_text()))}
     check(uses == {"shared/pixel.js"}, f"only pixel.js touches storage (to clear old rlx.* keys); nothing else reads a setting {sorted(uses)}")
     texty = {p.relative_to(ROOT).as_posix() for p in shipped_js if re.search(r"font\.js|drawFitted|drawText|fillText", re.sub(r"//.*", "", p.read_text()))}
-    check(texty == {"shared/font.js"}, f"no page draws text: nothing imports the font, the hub included (row H2) {sorted(texty)}")
+    check(not texty, f"no page draws text or imports a font, the hub included (rows H2, X35) {sorted(texty)}")
     hub = (ROOT / "index.html").read_text() + (ROOT / "hub" / "cards.js").read_text()
     check(not re.search(r"SOON|HAPTICS|haptics|TOGGLE|TAG_", hub), "the hub has no SOON tile code and no haptics switch (row X1)")
 
@@ -2201,6 +2207,30 @@ def android_checks():
     wf = (ROOT / ".github" / "workflows" / "android.yml").read_text()
     check(all(k in wf for k in ("RLX_KEYSTORE_B64", "RLX_KEYSTORE_PASSWORD", "RLX_KEY_ALIAS", "RLX_KEY_PASSWORD", "assembleDebug", "bundleRelease"))
           and "java-version: 21" in wf, "the workflow builds the debug APK and, with the four secrets, the release bundle (JDK 21)")
+    # Row X36: every action pinned by its full commit SHA (the tag in a comment), the Gradle wrapper validated
+    # before the first Gradle run, the manual smoke run on API 35 (back key) and API 36 (back gesture).
+    uses = re.findall(r"^\s*(?:-\s+)?uses:\s*(.+?)\s*$", wf, re.M)
+    unpinned = [u for u in uses if not u.startswith("./") and not re.fullmatch(r"[\w.-]+/[\w.-]+(?:/[\w./-]+)?@[0-9a-f]{40} # v\d+(?:\.\d+)*", u)]
+    check(uses and not unpinned, f"every action in android.yml is pinned by a full commit SHA with its tag ({len(uses)} uses) {unpinned}")
+    wv = wf.find("gradle/actions/wrapper-validation@")
+    check(0 < wv < wf.find("./gradlew") and wv < wf.find("\n  smoke:"), "the Gradle wrapper is validated (gradle/actions/wrapper-validation) before the first Gradle run")
+    smoke_sh = (ROOT / "tools" / "android-smoke.sh").read_text()
+    try:
+        import yaml
+    except ImportError:
+        yaml = None
+        print("INFO PyYAML not installed: android.yml not parsed (the text checks above still ran)")
+    if yaml:
+        doc = yaml.safe_load(wf)
+        mx = doc["jobs"]["smoke"]["strategy"]["matrix"]["include"]
+        steps = doc["jobs"]["smoke"]["steps"]
+        run = [s for s in steps if "android-emulator-runner" in s.get("uses", "")]
+        check(set(doc["jobs"]) == {"build", "smoke"} and {(m["api-level"], m["back"]) for m in mx} == {(35, "key"), (36, "gesture")}
+              and len(run) == 1 and run[0]["with"]["api-level"] == "${{ matrix.api-level }}" and run[0]["with"]["script"].endswith("${{ matrix.back }}"),
+              f"android.yml parses; the smoke job runs API 35 with the back key and API 36 with the back gesture {mx}")
+    check('BACK=${3:-key}' in smoke_sh and "navbar.gestural" in smoke_sh and "input swipe 2 " in smoke_sh
+          and smoke_sh.count("\nback\n") == 3 and "KEYCODE_BACK; fi" in smoke_sh,
+          "tools/android-smoke.sh takes the back mode: the key, or gesture navigation and an edge swipe, for all three backs")
     # Store docs.
     play = ROOT / "docs" / "play"
     listing = (play / "listing.md").read_text()
@@ -2367,9 +2397,14 @@ def run_stack(browser, base):
     b, a = stack_tap_at(page, touch, 0.3 * ssnap(page)["game"]["block"]["w"])
     vib = page.evaluate("window.__vib")
     page.screenshot(path=str(OUT / f"stack-bits-{tag.split()[-1]}.png"))
+    # The next block is the new floor's width, or the fresh 60 px block when that floor is under 12 px (PLAN §6d):
+    # the untimed first-finger drop above can leave the tower narrow enough for that (X39).
+    bw, fl, nb = b["game"]["block"]["w"], a["game"]["floors"][-1], a["game"]["block"]
+    next_ok = (nb["w"] == 60 and nb["fresh"]) if fl["w"] < 12 else (abs(nb["w"] - fl["w"]) < 1e-9 and not nb["fresh"])
     check(a["lastDrop"]["kind"] == "land" and a["top"] == b["top"] + 1 and a["bits"] > 0 and vib == [8]
-          and a["game"]["block"]["w"] < b["game"]["block"]["w"],
-          f"[{tag}] a landed drop: the overlap stays, the overhang falls as {a['bits']} bits, one 8 ms tick ({vib}, overlap {a['lastDrop']['ratio']:.2f})")
+          and fl["w"] < bw and abs(fl["w"] - a["lastDrop"]["ratio"] * bw) < 1e-6 and next_ok,
+          f"[{tag}] a landed drop: the overlap stays, the overhang falls as {a['bits']} bits, one 8 ms tick, the next block "
+          f"{'the fresh 60 px one' if fl['w'] < 12 else 'the floor wide'} ({vib}, overlap {a['lastDrop']['ratio']:.2f} of {bw:.1f} px)")
     page.wait_for_timeout(1500)
     check(ssnap(page)["bits"] == 0, f"[{tag}] the bits are gone into the sea")
 

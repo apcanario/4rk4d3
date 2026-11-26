@@ -1,7 +1,12 @@
 # rlx Android app (PLAN §6f, docs/PLAY.md): a debug APK on every push to main
 # that touches the app or its shipped files, and on demand; a signed release
 # bundle (.aab) too when the four signing secrets exist. On a manual run only,
-# a smoke job installs the debug APK on an emulator and walks hub, game and back.
+# a smoke job installs the debug APK on an emulator and walks hub, game and back,
+# on API 35 (Android 15, the back key) and API 36 (Android 16, the back gesture).
+# Every third-party action is pinned by its full commit SHA (row X36; the tag it
+# was resolved from is in the comment). To update one, resolve the new tag's
+# commit (git ls-remote https://github.com/<owner>/<repo> 'refs/tags/<tag>*';
+# for an annotated tag the ^{} line) and replace SHA and comment together.
 name: android
 
 on:
@@ -37,9 +42,13 @@ jobs:
       RLX_VERSION_CODE: ${{ github.run_number }}  # app/build.gradle adds 100
       HAS_UPLOAD_KEY: ${{ secrets.RLX_KEYSTORE_B64 != '' && secrets.RLX_KEYSTORE_PASSWORD != '' && secrets.RLX_KEY_ALIAS != '' && secrets.RLX_KEY_PASSWORD != '' }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - uses: actions/setup-node@v5
+      # The Gradle wrapper jar in git must be one Gradle published (row X36), before anything runs it.
+      - name: Validate the Gradle wrapper
+        uses: gradle/actions/wrapper-validation@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
           cache: npm
@@ -58,7 +67,7 @@ jobs:
           npm ci --no-audit --no-fund
           npx cap sync android
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin
           java-version: 21
@@ -98,7 +107,7 @@ jobs:
           diff /tmp/sw-files.txt /tmp/apk-files.txt
           echo "APK checks passed: $(wc -l < /tmp/apk-files.txt) web files, VIBRATE only, targetSdk 36" >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rlx-debug-apk
           path: android-app/android/app/build/outputs/apk/debug/app-debug.apk
@@ -124,7 +133,7 @@ jobs:
           grep -q "jar verified" /tmp/jarsigner.txt || { cat /tmp/jarsigner.txt; echo "app-release.aab is not signed by the upload key"; exit 1; }
           echo "Signed release bundle built (versionCode $((RLX_VERSION_CODE + 100)))." >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: env.HAS_UPLOAD_KEY == 'true'
         with:
           name: rlx-release-aab
@@ -137,15 +146,25 @@ jobs:
           echo "No release bundle: the four RLX_* signing secrets are not all set (docs/PLAY.md). Debug APK only." >> "$GITHUB_STEP_SUMMARY"
 
   # Optional, manual runs only (Actions, android, Run workflow): not part of a push build.
+  # API 35 presses the back key; API 36 (Android 16) switches the emulator to gesture navigation and
+  # swipes in from the left edge, the predictive back path (on by default for an app targeting 36).
   smoke:
     needs: build
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api-level: 35
+            back: key
+          - api-level: 36
+            back: gesture
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: rlx-debug-apk
           path: apk
@@ -158,19 +177,19 @@ jobs:
 
       - run: python3 -m pip install --quiet pillow
 
-      - name: Install, open the hub, a game, back, back
-        uses: reactivecircus/android-emulator-runner@v2
+      - name: Install, open the hub, a game, back, back (API ${{ matrix.api-level }}, back by ${{ matrix.back }})
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
-          api-level: 35
+          api-level: ${{ matrix.api-level }}
           target: google_apis
           arch: x86_64
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
-          script: bash tools/android-smoke.sh apk/app-debug.apk smoke-out
+          script: bash tools/android-smoke.sh apk/app-debug.apk smoke-out ${{ matrix.back }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: rlx-smoke
+          name: rlx-smoke-api${{ matrix.api-level }}
           path: smoke-out

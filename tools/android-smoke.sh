@@ -1,12 +1,17 @@
 #!/bin/bash
 # rlx app smoke test on an emulator (PLAN §6f; run by .github/workflows/android.yml):
 # install the debug APK, open the hub, tap the Stack card, tap to drop a block
-# (a native vibration), back to the hub, back out of the app. Screenshots,
+# (a native vibration), back to the hub, back out of the app. BACK is key (the
+# back key, KEYCODE_BACK; the default) or gesture (row X36: gesture navigation
+# switched on and a swipe in from the left edge, the predictive back path of
+# Android 16 for an app targeting API 36). Screenshots,
 # logcat and the vibrator log go to the output folder; tools/android-smoke-check.py
 # judges them. Not part of the app.
 set -u
 APK=${1:?apk}
 OUT=${2:?out}
+BACK=${3:-key}
+case "$BACK" in key|gesture) ;; *) echo "BACK must be key or gesture, not $BACK" >&2; exit 2 ;; esac
 PKG=io.github.apcanario.rlx
 mkdir -p "$OUT"
 shot() { adb exec-out screencap -p > "$OUT/$1.png"; }
@@ -19,8 +24,14 @@ adb shell settings put secure immersive_mode_confirmations confirmed
 adb shell settings put global hide_error_dialogs 1
 adb shell input keyevent KEYCODE_HOME
 sleep 20
+if [ "$BACK" = gesture ]; then
+  adb shell cmd overlay enable-exclusive --category com.android.internal.systemui.navbar.gestural
+  sleep 5
+fi
 adb shell wm size > "$OUT/wm-size.txt"
 adb shell wm density >> "$OUT/wm-size.txt"
+echo "sdk $(adb shell getprop ro.build.version.sdk | tr -d '\r'), back by $BACK, navigation mode $(adb shell settings get secure navigation_mode | tr -d '\r')" > "$OUT/back-mode.txt"
+cat "$OUT/back-mode.txt"
 adb install -r "$APK" || exit 1
 adb logcat -c
 adb shell am start -W -n $PKG/.MainActivity > "$OUT/start.txt"
@@ -33,6 +44,12 @@ echo "after start: $(resumed)" > "$OUT/activity.txt"
 read W H < <(adb shell wm size | tail -1 | sed 's/.*: //; s/x/ /' | tr -d '\r')
 sx() { echo $(( $1 * W / 1080 )); }
 sy() { echo $(( $1 * H / 2400 )); }
+# Back: the key, or a 300 ms swipe from 2 px in at the left edge to 40 percent across, at mid-height
+# (Android's back gesture; the games ignore a touch that begins in the 24 CSS px side band).
+back() {
+  if [ "$BACK" = gesture ]; then adb shell input swipe 2 $(( H / 2 )) $(( W * 2 / 5 )) $(( H / 2 )) 300
+  else adb shell input keyevent KEYCODE_BACK; fi
+}
 adb shell input tap $(sx 767) $(sy 1995)
 sleep 4
 shot 2-stack
@@ -44,7 +61,7 @@ shot 3-stack-dropped
 adb shell dumpsys vibrator_manager > "$OUT/vibrator.txt" 2>&1
 echo "in game: $(resumed)" >> "$OUT/activity.txt"
 
-adb shell input keyevent KEYCODE_BACK
+back
 sleep 3
 shot 4-hub-after-back
 echo "after one back: $(resumed)" >> "$OUT/activity.txt"
@@ -52,12 +69,12 @@ echo "after one back: $(resumed)" >> "$OUT/activity.txt"
 adb shell input tap $(sx 305) $(sy 1407)
 sleep 4
 shot 5-bricks
-adb shell input keyevent KEYCODE_BACK
+back
 sleep 3
 shot 6-hub-after-back
 echo "after bricks and back: $(resumed)" >> "$OUT/activity.txt"
 
-adb shell input keyevent KEYCODE_BACK
+back
 sleep 3
 shot 7-after-second-back
 echo "after back at the hub: $(resumed)" >> "$OUT/activity.txt"

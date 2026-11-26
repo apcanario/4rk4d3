@@ -95,7 +95,7 @@ Scene (static in v1)
 - Two or three small white pixel clouds in the open sky.
 
 Lettering
-- One hand-drawn rounded pixel font in shared/font.js: capitals and digits, with rounded outer corners. No web fonts anywhere. Since row H2 no page loads it, and since row P3 the icons are drawn from tools/rlx_art.py with no lettering (X35 proposes removing the font).
+- No page draws text and no web fonts anywhere (§2). The icons are drawn from tools/rlx_art.py with no lettering (row P3). The web app's pixel font was removed by row X35; its capitals and digits, with rounded outer corners, live on in tools/rlx_font.py for the social teaser images only (not shipped).
 
 Motion
 - Only where it helps: brick pop particles (about 8 bits, 300 ms) and a ball trail of 3 fading squares.
@@ -132,7 +132,7 @@ Brought in line with the hard rules of update 2 by row X1.
 
 - /index.html: the hub. It opens each game in a frame over itself and closes it on the back gesture.
 - /hub/cards.js: the hub's card grid (row H2): the layout, and each card's frame and window. No DOM; it reuses the Catch sprite masks from games/catch/sim.js.
-- /shared/: tokens.js (row D1: the LIGHT and DARK sets; tokens() returns the one the phone's prefers-color-scheme picks, onThemeChange() tells a page of a switch), theme.css (both sets, the dark one in a prefers-color-scheme block), font.js (no page loads it since H2 and, since P3, the icons do not use it either; X35), native.js (row P3: inside the Android app, inApp() and the native haptics plugin), pixel.js (canvas setup, scaling, stepped-corner rect, dither, scene, the shared input values, clearing old stored keys), haptics.js, session.js (the session clock and scene phase, in memory)
+- /shared/: tokens.js (row D1: the LIGHT and DARK sets; tokens() returns the one the phone's prefers-color-scheme picks, onThemeChange() tells a page of a switch), theme.css (both sets, the dark one in a prefers-color-scheme block), native.js (row P3: inside the Android app, inApp() and the native haptics plugin), pixel.js (canvas setup, scaling, stepped-corner rect, dither, scene, the shared input values, clearing old stored keys), haptics.js, session.js (the session clock and scene phase, in memory)
 - /games/bricks/: index.html, bricks.js, physics.js
 - /games/catch/: index.html, catch.js, sim.js
 - /games/putt/: index.html, putt.js, sim.js, gen.js
@@ -191,7 +191,7 @@ Layout rule (code: hub/cards.js GRID, gridLayout, hubScene)
 - Integer logical pixels throughout, one integer scale.
 - Bricks card: its bricks are 13 px wide at these card widths (14 at 58 px), three columns in the window, a departure from the game's 15; the card is a picture, not the game.
 - Stack card: floor 0's bottom sits on the window's horizon, as in the game (games/stack/sim.js floorTop).
-- Note: sw.js still precaches shared/font.js, which no page loads since H2 and nothing reads since P3 (the icons are drawn from tools/rlx_art.py); harmless, its removal is the Proposed row X35.
+- Note: shared/font.js, which no page loaded since H2, was removed by row X35 (and from sw.js FILES).
 
 Accept
 - Four equal cards in a 2x2 grid in the order above, 5 px gaps across and down, centred, each at least 40 logical px each way, inside the safe area and clear of the side band, at logical heights 240, 300 and 400, widths 360 and 412 CSS px, device scale 2.625 and 3, with and without safe-area insets.
@@ -659,7 +659,7 @@ Layout of /android-app/
 
 Build and release
 1. node tools/build-www.mjs, then in android-app: npm ci, npx cap sync android, then ./gradlew assembleDebug (a debug APK) or bundleRelease (the .aab).
-2. CI does all of it (.github/workflows/android.yml) on every push to main that touches the app or the shipped files, and on demand: a debug APK as a run artifact; a signed release .aab as well when the four signing secrets exist (RLX_KEYSTORE_B64, RLX_KEYSTORE_PASSWORD, RLX_KEY_ALIAS, RLX_KEY_PASSWORD). On a manual run only, a smoke job boots an Android emulator, installs the debug APK, opens the hub, a game and back, and saves screenshots (docs/PLAY.md §5). The APK carries two empty Cordova stubs that Capacitor adds (cordova.js, cordova_plugins.js); no page loads them.
+2. CI does all of it (.github/workflows/android.yml) on every push to main that touches the app or the shipped files, and on demand: a debug APK as a run artifact; a signed release .aab as well when the four signing secrets exist (RLX_KEYSTORE_B64, RLX_KEYSTORE_PASSWORD, RLX_KEY_ALIAS, RLX_KEY_PASSWORD). On a manual run only, a smoke job boots an Android emulator, installs the debug APK, opens the hub, a game and back, and saves screenshots (docs/PLAY.md §5): on API 35 with the back key and, since row X36, on API 36 with gesture navigation and an edge swipe (predictive back). Since X36 every third-party action is pinned by its full commit SHA (the tag in a comment) and the Gradle wrapper jar is validated (gradle/actions/wrapper-validation) before the first Gradle run. The APK carries two empty Cordova stubs that Capacitor adds (cordova.js, cordova_plugins.js); no page loads them.
 3. versionCode is the CI run number + 100 (app/build.gradle; headroom if the workflow is renamed or recreated, which resets the run number, docs/PLAY.md §4); versionName is 1.0.<run number>.
 4. Release: Pedro uploads the .aab to a closed test in the Play Console, then production (docs/PLAY.md).
 
@@ -669,7 +669,7 @@ Accept
 - The web app is unchanged on Pages: tests/check.py passes serving under /4rk4d3/, the card hrefs are games/<game>/index.html.
 - haptics.js: the native plugin when present (the hub's or the page's own), navigator.vibrate otherwise, the 40 ms limit and tick lengths unchanged (Node tests with a fake plugin and the stub).
 - CI builds a debug APK, green, and checks the APK: package, label rlx, minSdk 24, targetSdk 36, VIBRATE the only user permission, its web files equal to sw.js FILES.
-- The manual smoke job (run once in the build, 2026-11-26): on an Android 15 emulator the hub draws, a card opens its game, back returns to the hub, back again leaves the app, and dropping a Stack block logs an 8 ms vibration from the app.
+- The manual smoke job (run once in the build, 2026-11-26): on an Android 15 emulator the hub draws, a card opens its game, back returns to the hub, back again leaves the app, and dropping a Stack block logs an 8 ms vibration from the app. The API 36 back-gesture entry (X36) has not run yet.
 - docs/play/: listing, Data safety, content rating, privacy policy, 512 px icon, feature graphic, 2 to 8 phone screenshots (Play: the long side at most twice the short side), ours 9:16, 1080 x 1920.
 - Not verifiable headless (P3's device check, with X34): installing and playing the APK on Pedro's phone: immersive full screen and the transient bars, the cutout, one back from a game to the hub and one more out of the app, haptics in every game from the first event, offline, fps, outdoors brightness.
 
