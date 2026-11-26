@@ -589,7 +589,7 @@ def run_bricks(browser, base):
     # Relative drag: paddle moves by finger dx x the thumb-travel sensitivity, never jumps to the finger.
     sens = snap(page)["sensitivity"]
     devw = page.evaluate("innerWidth * devicePixelRatio")
-    check(abs(sens - (135 - 30) / (0.35 * devw / scale)) < 0.01, f"[{tag}] Bricks drag sensitivity {sens:.3f} puts 35 percent of the screen width end to end")
+    check(abs(sens - (135 - 30) / (0.28 * devw / scale)) < 0.01, f"[{tag}] Bricks drag sensitivity {sens:.3f} puts 28 percent of the screen width end to end")
     p0 = snap(page)["game"]["paddleX"]
     page.mouse.move(x + 20, y, steps=4)
     p1 = snap(page)["game"]["paddleX"]
@@ -1023,14 +1023,14 @@ def run_catch(browser, base):
     touch.move(x - 600, y)
     page.wait_for_timeout(30)
     check(csnap(page)["game"]["boatX"] == 0, f"[{tag}] boat clamped at the left edge")
-    # Shared thumb travel (PLAN §6a, §6e): a drag across 35 percent of the screen width moves the boat exactly end to end.
-    half = page.viewport_size["width"] * 0.35
+    # Shared thumb travel (PLAN §6a, §6e): a drag across 28 percent of the screen width moves the boat exactly end to end.
+    half = page.viewport_size["width"] * 0.28
     start = x - 600
     for i in range(1, 11):
         touch.move(start + half * i / 10, y)
     page.wait_for_timeout(30)
     end_x = csnap(page)["game"]["boatX"]
-    check(abs(end_x - (135 - 24)) < 0.05, f"[{tag}] a drag across 35 percent of the screen width ({half:.0f} CSS px) moves the boat end to end ({end_x:.2f} of 111)")
+    check(abs(end_x - (135 - 24)) < 0.05, f"[{tag}] a drag across 28 percent of the screen width ({half:.0f} CSS px) moves the boat end to end ({end_x:.2f} of 111)")
     touch.move(start + half * 0.5, y)
     touch.up()
 
@@ -1411,7 +1411,8 @@ def psnap(page):
 
 
 # Plans one shot in the page with Putt's own sim.js and gen.js (the same modules the game runs): from a
-# thumb at (cx0, cy0) CSS px, every whole-degree direction at seven pull lengths; the pull is turned
+# thumb at (cx0, cy0) CSS px, every whole-degree direction at seven pull lengths (0.8 of those used
+# under the old 60 px cap, so the same powers are sampled under the 48 px cap); the pull is turned
 # into a shot by __putt.shotFor, exactly as the game does. Picks a shot that sinks, else the one that
 # rests nearest the hole by walking distance. With side set, a full-power pull straight sideways.
 PLAN_SHOT_JS = """async ({ cx0, cy0, side }) => {
@@ -1434,7 +1435,7 @@ PLAN_SHOT_JS = """async ({ cx0, cy0, side }) => {
   if (side) return sim(cx0 + side * 170, cy0);
   let best = null;
   for (let a = 0; a < 360; a++) {
-    for (const len of [16, 32, 53, 80, 107, 133, 165]) {
+    for (const len of [13, 26, 42, 64, 86, 106, 132]) {
       const ex = Math.round(cx0 + Math.cos(a * Math.PI / 180) * len);
       const ey = Math.round(cy0 + Math.sin(a * Math.PI / 180) * len);
       const r = sim(ex, ey);

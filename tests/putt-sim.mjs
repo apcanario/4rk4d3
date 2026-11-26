@@ -33,7 +33,7 @@ const CONFIG = m ? Function(`return (${m[1]});`)() : null;
 check(!!CONFIG, 'putt.js has one CONFIG block');
 check(puttSrc.indexOf('export const CONFIG') < puttSrc.indexOf('import '), 'CONFIG block sits at the top of putt.js');
 check(CONFIG && CONFIG.launchSpeed === 220 && CONFIG.decel === 55 && CONFIG.stopSpeed === 4 && CONFIG.bounce === 0.85
-  && CONFIG.sandFactor === 3 && CONFIG.captureSpeed === 140 && CONFIG.pullCapPx === 60 && CONFIG.cancelPx === 4
+  && CONFIG.sandFactor === 3 && CONFIG.captureSpeed === 140 && CONFIG.pullCapPx === 48 && CONFIG.cancelPx === 4
   && CONFIG.hapticReleaseMs === 10 && CONFIG.hapticBounceMs === 6 && CONFIG.hapticSinkMs === 24
   && CONFIG.idleS === 10 && CONFIG.guideAfterPx === 12 && Math.abs(CONFIG.nextLevelMs - 800) <= 100,
   `CONFIG holds the PLAN values ${JSON.stringify(CONFIG)}`);
@@ -469,10 +469,15 @@ function run(w, b, maxS = 30) {
 }
 
 {
-  // pullShot: opposite to the pull, power capped at 60 px, 4 px or less cancels.
-  const a = S.pullShot(50, 50, 50, 80, PLAY);
+  // pullShot: opposite to the pull, power in proportion to the pull, full exactly at the 48 px cap, 4 px or less cancels.
+  const a = S.pullShot(50, 50, 50, 74, PLAY);
   const c = S.pullShot(50, 50, 50, 200, PLAY);
-  check(a && a.dy < 0 && a.dx === 0 && Math.abs(a.speed - 110) < EPS && c.speed === 220 && c.power === 1, 'the shot goes opposite to the pull; power is the pull length, capped at 60 px');
+  check(a && a.dy < 0 && a.dx === 0 && Math.abs(a.speed - 110) < EPS && c.speed === 220 && c.power === 1, 'the shot goes opposite to the pull; power is the pull length, capped at 48 px (24 px is half power)');
+  const atCap = S.pullShot(50, 50, 50, 98, PLAY);
+  const under = S.pullShot(50, 50, 50, 97.9, PLAY);
+  const diag = S.pullShot(50, 50, 50 + 48 * 0.6, 50 + 48 * 0.8, PLAY);
+  check(atCap.power === 1 && atCap.speed === 220 && under.power < 1 && Math.abs(diag.power - 1) < EPS && Math.abs(diag.dx / diag.dy - 0.75) < EPS,
+    'full power is reached exactly at a 48 px pull in any direction, not before; the aim follows the pull vector');
   check(S.pullShot(50, 50, 53, 52, PLAY) === null && S.pullShot(50, 50, 54, 50, PLAY) === null && S.pullShot(50, 50, 54.1, 50, PLAY) !== null,
     'pulling back to within 4 px of the start and releasing cancels the shot');
 }

@@ -269,3 +269,13 @@ Closed without code: X29, X7, X6, X31, X4 (superseded by X1, or accepted and doc
 Not verifiable headless: how 35 percent feels on a phone (it may now be too little; it is one value in shared/pixel.js), and everything in X32.
 
 Deferred: X32, X33, X16, X30.
+
+## 2026-11-26: B3a thumb travel 28 percent, Putt pull cap 48 px
+
+Models that ran: main chat Sonnet 5.5; builder Opus 5.5 (claude-opus-5-5), which also reviewed its own diff once. No separate reviewer agent was used.
+
+Built: Pedro's feel report (follow-up to B3): Bricks and Catch still need about 20 percent less thumb travel, and Putt about 20 percent less pull for full power. The shared INPUT.thumbTravel in shared/pixel.js went from 0.35 to 0.28 of the screen width, end to end, still the one value both games read (sensitivity about 2.8 for Bricks, 2.9 for Catch). Putt's CONFIG.pullCapPx went from 60 to 48 logical px. Power is min(pull, cap) / cap in sim.js pullShot, so full power is reached exactly at the cap and the aim still follows the pull vector; the 4 px cancel distance, the power bar (five bars from power), the guide dots (from the shot direction) and the pull ring (at the thumb) have no constant tied to 60, so nothing else changed. PLAN §6a, §6b, §6c and §6e and the README brought in line. sw.js cache rlx-v16. Tests: bricks-sim and catch-sim thumb checks at 28 percent; the Bricks and Catch browser checks at 28 percent; putt-sim checks the 48 px cap, half power at 24 px, full power exactly at 48 px in any direction and not before, and the aim along the pull; the check.py shot planner samples pull lengths at 0.8 of the old ones, so it covers the same powers. bricks-sim 219, catch-sim 181, putt-sim 71, stack-sim 109, tests/check.py 0 failures.
+
+Not verifiable headless: feel on the phone; both are one value each.
+
+Left as is: the X32 Queue row still says "thumb travel at 35 percent (B3)"; this session was told not to touch other rows.

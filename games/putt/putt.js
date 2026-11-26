@@ -18,7 +18,7 @@ export const CONFIG = Object.freeze({
   bounce: 0.85, // walls, blocks and pegs return this much of the speed
   sandFactor: 3, // deceleration is tripled in a sand trap
   captureSpeed: 140, // the ball drops if its centre is within the hole radius under this speed
-  pullCapPx: 60, // power is the pull length, capped here (logical px)
+  pullCapPx: 48, // power is the pull length, capped here (logical px)
   cancelPx: 4, // a pull this short or shorter is released as no shot
   hapticReleaseMs: 10,
   hapticBounceMs: 6,

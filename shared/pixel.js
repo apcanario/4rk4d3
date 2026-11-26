@@ -11,7 +11,7 @@ export const MIN_HEIGHT = 240; // design for a logical height of 240 and up
 
 // Shared input values (PLAN §2, §6a): one block for every game.
 export const INPUT = Object.freeze({
-  thumbTravel: 0.35, // a drag across this share of the screen width moves a paddle or boat end to end
+  thumbTravel: 0.28, // a drag across this share of the screen width moves a paddle or boat end to end
   edgeIgnoreCssPx: 24, // a touch that begins this close to the left or right edge is ignored (the back gesture)
 });
 

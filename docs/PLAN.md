@@ -216,7 +216,7 @@ Changes to section 6 (Bricks)
 - A speed change takes effect only at a paddle bounce, never in mid-flight.
 - In the dusk phase (minutes 10 to 12 of the session clock) the ceiling falls from 125 to 80, and the speed follows it down at paddle bounces.
 - Opening Bricks, or a reset of the session clock, starts the speed at 90.
-- Thumb travel: moving the thumb across 35 percent of the screen width carries the paddle from one end of its travel to the other (Pedro's feel report, 2026-11-26: 50 percent was still too much; the first build used about 65 percent). The sensitivity is derived from the fraction, not set as a fixed multiplier: sensitivity = paddle travel / (0.35 x screen width), which is about 2.2 for a 135 px field and a 30 px paddle. The fraction is one named value in shared config, so every drag game uses the same one.
+- Thumb travel: moving the thumb across 28 percent of the screen width carries the paddle from one end of its travel to the other (Pedro's feel reports, 2026-11-26: 50 percent was still too much, then 35 percent was still about 20 percent too much; the first build used about 65 percent). The sensitivity is derived from the fraction, not set as a fixed multiplier: sensitivity = paddle travel / (0.28 x screen width), which is about 2.8 for a 135 px field and a 30 px paddle. The fraction is one named value in shared config, so every drag game uses the same one.
 - No rally number and no other number is added.
 
 Build
@@ -228,7 +228,7 @@ Build
 Accept
 - Speed never leaves the range of 80 to 125, in play and in the headless test, and never changes in mid-flight.
 - After 12 minutes of active play the ball is at 80 and the scene is at full dusk. Paused time does not advance the clock.
-- A thumb movement of 35 percent of the screen width moves the paddle exactly end to end, at 360 and at 412 CSS px wide. The paddle can still be placed to the pixel with a slow drag.
+- A thumb movement of 28 percent of the screen width moves the paddle exactly end to end, at 360 and at 412 CSS px wide. The paddle can still be placed to the pixel with a slow drag.
 - Bricks, paddle and ball are readable in every one of the 10 scene steps.
 - Everything B1 accepted about play still holds: no stuck ball, no flat loop, no tunnelling, pause within one frame, haptics unchanged.
 - The headless test is extended to 15 simulated minutes with a tracking paddle that misses now and then: speed stays in range, falls to 80 by minute 12, and the brick count stays bounded.
@@ -256,7 +256,7 @@ A small boat on the sunset sea catches things that fall from the sky. Now and th
 
 - Boat: a coral hull, 24 x 7, stepped corners, with a short mast and a cream sail about 9 px tall. Highlight and drop shade as on every shape.
 - The catch zone is the deck: the full hull width at its top edge.
-- Relative drag anywhere on screen, clamped to the field, on the shared thumb travel: moving the thumb across 35 percent of the screen width carries the boat from one end of the field to the other (section 6a). A touch that begins within 24 CSS px of the left or right edge is ignored.
+- Relative drag anywhere on screen, clamped to the field, on the shared thumb travel: moving the thumb across 28 percent of the screen width carries the boat from one end of the field to the other (section 6a). A touch that begins within 24 CSS px of the left or right edge is ignored.
 
 ### Things to catch
 
@@ -379,7 +379,7 @@ It reuses the shared kit. If shared code has no session clock and scene phase ye
 ### Shot control
 
 - Touch anywhere, pull back and release, like drawing a cue. The shot goes in the opposite direction to the pull. The drag is relative, so the thumb never has to be on the ball.
-- Power is the pull length, capped at 60 logical px. A dotted guide runs from the ball to the first wall it would hit, plus the first 12 px of the rebound. A short bar by the ball shows power.
+- Power is the pull length, capped at 48 logical px (Pedro's feel report, 2026-11-26: 20 percent less pull than the first 60): power rises in proportion to the pull and is full exactly at the cap. A dotted guide runs from the ball to the first wall it would hit, plus the first 12 px of the rebound. A short bar by the ball shows power.
 - Pulling back to within 4 px of the start and releasing cancels the shot.
 - No input is taken while the ball is moving.
 
@@ -558,7 +558,7 @@ Accept
 - No game screen shows any text, number or button.
 - After play in every game, storage is empty.
 - The hub shows the game tiles and nothing else: no switch, no setting.
-- Catch and Bricks use the shared thumb-travel fraction: 35 percent of the screen width moves the paddle or boat end to end (set from Pedro's feel report, 2026-11-26; first 50).
+- Catch and Bricks use the shared thumb-travel fraction: 28 percent of the screen width moves the paddle or boat end to end (set from Pedro's feel reports, 2026-11-26; first 50, then 35).
 - Killing the app and reopening it opens the hub; opening a game starts it fresh.
 - From every game, the back gesture returns to the hub, and an edge swipe never moves a paddle, a boat or an aim.
 - Play itself is unchanged in every game: physics, pace, haptics and the exit ramp behave as before this row.

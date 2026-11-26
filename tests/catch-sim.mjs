@@ -654,7 +654,7 @@ function itemAt(s, x, y, vy = 40) {
   check(!/font\.js|drawFitted|drawText|fillText|drawBackControl|publishHits|dataset\.(hits|hud|layout)|store\.js|settings\.js|localStorage|sessionStorage|goToHub/.test(code),
     'catch.js draws no text, number or back control, publishes no hit areas and stores nothing');
   check(/atSideEdge\(e\)\) return/.test(code), 'catch.js ignores a touch that begins at a side edge (shared rule)');
-  // Thumb travel: 35 percent of the screen width carries the boat end to end, at 360 and 412 CSS px.
+  // Thumb travel: 28 percent of the screen width carries the boat end to end, at 360 and 412 CSS px.
   for (const [cssW, dpr] of [[360, 2.625], [412, 2.625], [360, 3]]) {
     const devW = Math.round(cssW * dpr);
     const scale = Math.floor(devW / 135);
@@ -667,8 +667,8 @@ function itemAt(s, x, y, vy = 40) {
     const q = fresh();
     S.moveBoat(q, -500);
     S.moveBoat(q, S.ctlMove(k, 1, PX.INPUT.thumbTravel * screenW, 200, cfg));
-    check(PX.INPUT.thumbTravel === 0.35 && Math.abs(q.boatX - (135 - S.BOAT_W)) < 1e-9,
-      `[${cssW} CSS px] a drag across 35 percent of the screen width moves the boat exactly end to end (sensitivity ${sens.toFixed(3)})`);
+    check(PX.INPUT.thumbTravel === 0.28 && Math.abs(q.boatX - (135 - S.BOAT_W)) < 1e-9,
+      `[${cssW} CSS px] a drag across 28 percent of the screen width moves the boat exactly end to end (sensitivity ${sens.toFixed(3)})`);
   }
   check(/thumbSensitivity\(geo\.W - S\.BOAT_W, canvas\.width \/ s\.scale\)/.test(code), 'catch.js sets the drag sensitivity from the shared thumb travel');
 }

@@ -466,7 +466,7 @@ for (const [tag, g] of GEOS) {
 const S = await import('../shared/session.js');
 const T = await import('../shared/tokens.js');
 const PX = await import('../shared/pixel.js');
-// Thumb travel (PLAN §6a): 35 percent of the screen width carries the paddle end to end, at 360 and 412 CSS px.
+// Thumb travel (PLAN §6a): 28 percent of the screen width carries the paddle end to end, at 360 and 412 CSS px.
 {
   const code = bricksSrc.replace(/\/\/.*$/gm, '');
   for (const [cssW, dpr] of [[360, 2.625], [412, 2.625], [360, 3]]) {
@@ -477,8 +477,8 @@ const PX = await import('../shared/pixel.js');
     const q = P.create(P.geometry(135, 5, 240), CONFIG);
     P.movePaddle(q, -500, CONFIG, false);
     P.movePaddle(q, PX.INPUT.thumbTravel * screenW * sens, CONFIG, false);
-    check(PX.INPUT.thumbTravel === 0.35 && Math.abs(q.paddleX - (135 - P.PADDLE_W)) < 1e-9,
-      `[${cssW} CSS px] a drag across 35 percent of the screen width moves the paddle exactly end to end (sensitivity ${sens.toFixed(3)})`);
+    check(PX.INPUT.thumbTravel === 0.28 && Math.abs(q.paddleX - (135 - P.PADDLE_W)) < 1e-9,
+      `[${cssW} CSS px] a drag across 28 percent of the screen width moves the paddle exactly end to end (sensitivity ${sens.toFixed(3)})`);
   }
   check(/thumbSensitivity\(geo\.W - P\.PADDLE_W, canvas\.width \/ s\.scale\)/.test(code), 'bricks.js sets the drag sensitivity from the shared thumb travel');
 }

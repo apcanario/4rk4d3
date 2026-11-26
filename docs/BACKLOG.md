@@ -21,6 +21,7 @@ Rows are defined in docs/PLAN.md. Nothing is built that is not a row here. A don
 - X3, X8, X10, X15, X20, X21, X22, X24, X27, X28 build choices merged into PLAN (2026-11-26)
 - X18 Putt idle window 10 s (2026-11-26)
 - X29, X7, X6, X31, X4 closed: superseded by X1 or accepted and documented in PLAN (2026-11-26)
+- B3a Thumb travel 28 percent and Putt pull cap 48 px from Pedro's feel report (2026-11-26)
 
 ## Parked
 
