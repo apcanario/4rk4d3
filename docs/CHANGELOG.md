@@ -354,3 +354,27 @@ Tests (full run after all changes): tests/check.py 1126 checks, 0 failures; bric
 Not verifiable headless: installing and playing the APK on a phone (immersive bars, the cutout, back, haptics feel, offline, fps, brightness); everything in X34.
 
 Only Pedro can do: create the Play developer account; make the upload key and add the four secrets (docs/PLAY.md); fill CONTACT_EMAIL in the privacy policy and listing; install the debug APK and play it; create the app in the Play Console, fill listing, Data safety, content rating, privacy URL; run the closed test; apply for production.
+
+## 2026-11-26: P3 review fixes
+
+Models that ran: main chat Sonnet 5.5; reviewer Opus 5.5 (claude-opus-5-5), fresh, which had not seen the build, found these; fixes applied in this chat by a builder agent, Opus 5.5 (claude-opus-5-5).
+
+Review findings and fixes:
+1. blocker, Play refuses screenshots whose long side is more than twice the short side; ours were 1080 x 2400 (2.22:1): tools/play-screenshots.py now renders at 360 x 640 CSS px, scale 3, 1080 x 1920 (9:16), touch points moved into the shorter screen; the five screenshots remade and looked at (hub grid, Bricks, Catch, Putt mid-aim, Stack). tests/check.py asks for 2 to 8 screenshots, 1080 x 1920 RGB, long side at most twice the short; listing.md, PLAN §6f Accept and README say so.
+2. should-fix, PLAY.md §4 step 5 now states the closed-test rule (personal accounts created after 13 Nov 2023: at least 12 testers opted in continuously for 14 days before applying for production; organisation accounts exempt; per app; testers install through the Play opt-in link); step 1 notes the possible physical-device check in the Play Console app.
+3. should-fix, listing.md claimed "Lift your thumb and the game waits" (Stack keeps sliding, Putt's ball rolls): now "Put it down whenever you like". The rest of the listing checked against PLAN §2, §6 to §6f; "nothing stored" made "no game or personal data stored" (item 9).
+4. should-fix, content-rating.md Violence: No (cartoon, abstract pixel creatures, no injury, blood or conflict), the "falling object" reasoning dropped; if the questionnaire's examples include cartoon animals in unrealistic conflict, Yes, mild cartoon or fantasy violence, not against humans, no blood: at worst PEGI 7 / ESRB Everyone.
+5. should-fix, data-safety.md: the Advertising ID declaration (apps targeting API 33+): No.
+6. should-fix, android.yml: `jarsigner -verify` passed an unsigned bundle. Now `-verify -strict` against the upload keystore and alias (plain -strict fails a self-signed upload key with "certificate chain is invalid", tried locally), and the output must contain "jar verified" (an unsigned jar exits 0 with "jar is unsigned"; tried locally; a bundle signed by another key fails).
+7. should-fix, versionCode was the bare run number, which resets if android.yml is renamed or recreated: app/build.gradle adds 100 (one line; static check added); PLAY.md §4 and PLAN §6f say why and that Play refuses a lower versionCode.
+8. should-fix, PLAY.md §3 secrets wording made accurate: push to main and manual runs, a manual run can start on any branch by anyone with write access; low risk with a single owner; optional GitHub Environment limited to main.
+9. should-fix, privacy policy (both copies, still identical): "no game data or personal data is stored"; the framework and WebView keep their own technical files. data-safety.md says the same; the answer stays No.
+10. nit, PLAY.md §1: artifact download needs a GitHub sign-in, comes as a zip, expires (90 days by default).
+- Proposed X36: pin actions by SHA, validate the Gradle wrapper, an API 36 smoke run for predictive back.
+
+Tests: tests/check.py 1127 checks, 0 failures; bricks-sim 219, catch-sim 181, putt-sim 71, stack-sim 109, haptics-native 19, 0 failures.
+
+No shipped web file changed (docs, screenshots, the privacy policy, build.gradle and the workflow are not in sw.js FILES), so the sw.js cache is unchanged.
+
+P3 stays in the Queue until Pedro's device check (PLAN §6f).
+

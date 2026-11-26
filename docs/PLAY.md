@@ -6,6 +6,8 @@ Never paste a password, a key or a keystore into a chat, an issue, a commit or a
 
 ## 1. Install the debug APK on your phone (testing)
 
+Downloading a run artifact needs a GitHub sign-in; the artifact comes as a zip, and artifacts expire (after 90 days by default), so take it from a recent run.
+
 1. Open the repo on GitHub, Actions, workflow "android", the latest green run on main.
 2. Under Artifacts download **rlx-debug-apk** (a zip). Unzip it: inside is `app-debug.apk`.
 3. Put it on the phone (download the zip on the phone itself, or copy the APK over USB or Drive).
@@ -42,18 +44,18 @@ Repo on GitHub, Settings, Secrets and variables, Actions, New repository secret.
 
 Delete rlx-upload.jks.b64 afterwards. From the next run on, the workflow also builds a signed **rlx-release-aab** artifact (`app-release.aab`). Without all four secrets it builds only the debug APK, and says so in the run summary. To make a run now: Actions, android, Run workflow, branch main.
 
-The secrets are only read by the workflow on this repo's main branch and manual runs; the keystore is written to the runner's temp folder and deleted at the end of the job.
+The release step reads the secrets only on a push to main and on a manual run. A manual run can be started on any branch by anyone with write access to the repo, so a branch with a changed workflow could read them. With a single owner this is low risk. Optionally, put the four secrets in a GitHub Environment (Settings, Environments) limited to the main branch and give the build job that environment. The keystore is written to the runner's temp folder and deleted at the end of the step.
 
 ## 4. Play Console (only you can do this)
 
-1. Create a Google Play developer account (play.google.com/console; one-off registration fee and identity verification; a personal account needs a closed test before production, see step 5).
+1. Create a Google Play developer account (play.google.com/console; one-off registration fee and identity verification; a personal account needs a closed test before production, see step 5). A personal account may also be asked to verify a physical Android device through the Play Console app.
 2. Create app: name **rlx**, default language English (US), Game, Free. Accept the declarations.
 3. App content: privacy policy URL https://apcanario.github.io/4rk4d3/privacy-policy.html (replace CONTACT_EMAIL in privacy-policy.html and docs/play/privacy-policy.html first, commit, push); Ads: no; App access: all functionality available; Content rating: docs/play/content-rating.md; Target audience: your choice (docs/play/data-safety.md has a note); Data safety: docs/play/data-safety.md.
 4. Main store listing: docs/play/listing.md, the icon, the feature graphic and the screenshots in docs/play/.
-5. Testing, Closed testing: create a track, add testers (an email list), upload `app-release.aab` from the latest run, roll out. A new personal account must run a closed test with a minimum number of testers for a minimum number of days before it may apply for production; the Console shows the current numbers.
+5. Testing, Closed testing: create a track, add testers (an email list), upload `app-release.aab` from the latest run, roll out. The rule: a personal developer account created after 13 November 2023 must run a closed test with at least 12 testers opted in continuously for the last 14 days before it can apply for production access. Organisation accounts are exempt. The test is per app. Testers must opt in and install through the track's Play opt-in link (a sideloaded APK does not count). The Console shows the current numbers if Google changes them.
 6. Then Production: create a release with the same or a newer .aab, roll out, and wait for review.
 
-Every later update: push to main, take the new `app-release.aab` (its versionCode is the run number, so it always goes up), upload it to a track.
+Every later update: push to main, take the new `app-release.aab` (its versionCode is the workflow's run number + 100, so it always goes up), upload it to a track. The run number belongs to the workflow file: renaming or recreating .github/workflows/android.yml starts it again at 1, and Play refuses a versionCode lower than or equal to one already uploaded. The + 100 (app/build.gradle) gives headroom; if the run number is ever reset, raise the offset above the last uploaded versionCode.
 
 ## 5. Optional emulator check (manual)
 

@@ -6,7 +6,7 @@ Answers for the app as built: four casual games (Bricks, Catch, Putt, Stack), pi
 
 | Question | Answer | Why |
 |---|---|---|
-| Violence (any, realistic, cartoon or fantasy) | No | Bricks pop, a fish eats a spiky sea urchin or jellyfish in Catch with a few pixel bits; no characters are hurt, no blood, no weapons. If Play asks specifically about "animals or fantasy characters harmed", answer No: the fish eats a falling object; there is no injury shown. |
+| Violence (any, realistic, cartoon or fantasy) | No | Cartoon, abstract pixel creatures: bricks pop, and in Catch a leaping fish eats a falling sea urchin, jellyfish or ink blob (PLAN §6b). No injury, no blood, no weapons, no conflict between characters. If the questionnaire's examples of violence include cartoon animals in unrealistic conflict, answer Yes instead: cartoon or fantasy violence, mild, not against humans, no blood. |
 | Fear, horror | No | |
 | Sexuality, nudity | No | |
 | Language, crude humour | No | The app shows no text at all. |
@@ -18,4 +18,4 @@ Answers for the app as built: four casual games (Bricks, Catch, Putt, Stack), pi
 | Unrestricted internet access (web browser, search) | No | The app has no network permission. |
 | Miscellaneous (rewards real money, contests) | No | |
 
-Expected result: the lowest rating in each region (for example IARC 3+, PEGI 3, ESRB Everyone). Play shows the result before it applies; if it differs, check the Violence answers first.
+Expected result: the lowest rating in each region (for example IARC 3+, PEGI 3, ESRB Everyone); with the Yes answer on cartoon violence above, at worst PEGI 7 / ESRB Everyone. Play shows the result before it applies; if it differs, check the Violence answers first.

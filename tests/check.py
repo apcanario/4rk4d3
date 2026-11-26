@@ -1965,6 +1965,8 @@ def android_checks():
           and "rootProject.ext.targetSdkVersion" in gradle, "app/build.gradle: application id and namespace io.github.apcanario.rlx")
     check(not re.search(r"storePassword\s+['\"]|keyPassword\s+['\"]", gradle) and 'System.getenv("RLX_KEYSTORE_PATH")' in gradle,
           "release signing reads the environment only; no password in build.gradle")
+    check('versionCode(((System.getenv("RLX_VERSION_CODE") ?: "1") as Integer) + 100)' in gradle,
+          "versionCode is the CI run number + 100 (PLAN §6f)")
     man = (app / "android" / "app" / "src" / "main" / "AndroidManifest.xml").read_text()
     perms = re.findall(r"<uses-permission\s+android:name=\"([^\"]+)\"([^>]*)/>", man)
     kept = [n for n, rest in perms if 'tools:node="remove"' not in rest]
@@ -2036,8 +2038,10 @@ def android_checks():
     check(icon.size == (512, 512) and icon.mode in ("RGBA", "RGB") and fg.size == (1024, 500) and fg.format == "JPEG",
           f"Play icon 512x512 PNG ({icon.mode}), feature graphic 1024x500 JPEG")
     shots = sorted((play / "screenshots").glob("*.png"))
-    ok = [p.name for p in shots if Image.open(p).size == (1080, 2400) and (Image.open(p).mode == "RGB")]
-    check(4 <= len(shots) <= 6 and len(ok) == len(shots), f"4 to 6 phone screenshots, 1080x2400 RGB PNG, no alpha {ok}")
+    # Play: 2 to 8 phone screenshots, the long side at most twice the short side; ours are 9:16.
+    ok = [p.name for p in shots if Image.open(p).size == (1080, 1920) and Image.open(p).mode == "RGB"
+          and max(Image.open(p).size) <= 2 * min(Image.open(p).size)]
+    check(2 <= len(shots) <= 8 and len(ok) == len(shots), f"2 to 8 phone screenshots, 1080x1920 (9:16) RGB PNG, no alpha {ok}")
 
 
 def run_stack_sim():

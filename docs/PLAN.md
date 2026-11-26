@@ -634,7 +634,7 @@ Layout of /android-app/
 Build and release
 1. node tools/build-www.mjs, then in android-app: npm ci, npx cap sync android, then ./gradlew assembleDebug (a debug APK) or bundleRelease (the .aab).
 2. CI does all of it (.github/workflows/android.yml) on every push to main that touches the app or the shipped files, and on demand: a debug APK as a run artifact; a signed release .aab as well when the four signing secrets exist (RLX_KEYSTORE_B64, RLX_KEYSTORE_PASSWORD, RLX_KEY_ALIAS, RLX_KEY_PASSWORD). On a manual run only, a smoke job boots an Android emulator, installs the debug APK, opens the hub, a game and back, and saves screenshots (docs/PLAY.md §5). The APK carries two empty Cordova stubs that Capacitor adds (cordova.js, cordova_plugins.js); no page loads them.
-3. versionCode is the CI run number; versionName is 1.0.<run number>.
+3. versionCode is the CI run number + 100 (app/build.gradle; headroom if the workflow is renamed or recreated, which resets the run number, docs/PLAY.md §4); versionName is 1.0.<run number>.
 4. Release: Pedro uploads the .aab to a closed test in the Play Console, then production (docs/PLAY.md).
 
 Accept
@@ -644,7 +644,7 @@ Accept
 - haptics.js: the native plugin when present (the hub's or the page's own), navigator.vibrate otherwise, the 40 ms limit and tick lengths unchanged (Node tests with a fake plugin and the stub).
 - CI builds a debug APK, green, and checks the APK: package, label rlx, minSdk 24, targetSdk 36, VIBRATE the only user permission, its web files equal to sw.js FILES.
 - The manual smoke job (run once in the build, 2026-11-26): on an Android 15 emulator the hub draws, a card opens its game, back returns to the hub, back again leaves the app, and dropping a Stack block logs an 8 ms vibration from the app.
-- docs/play/: listing, Data safety, content rating, privacy policy, 512 px icon, feature graphic, 4 to 6 screenshots 1080 x 2400.
+- docs/play/: listing, Data safety, content rating, privacy policy, 512 px icon, feature graphic, 2 to 8 phone screenshots (Play: the long side at most twice the short side), ours 9:16, 1080 x 1920.
 - Not verifiable headless (P3's device check, with X34): installing and playing the APK on Pedro's phone: immersive full screen and the transient bars, the cutout, one back from a game to the hub and one more out of the app, haptics in every game from the first event, offline, fps, outdoors brightness.
 
 Only Pedro can do

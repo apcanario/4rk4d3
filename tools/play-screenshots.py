@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Make the Play Store phone screenshots (row P3, PLAN §6f): 1080 x 2400 PNG, no alpha.
+"""Make the Play Store phone screenshots (row P3, PLAN §6f): 1080 x 1920 PNG (9:16), no alpha.
+
+Play refuses a screenshot whose long side is more than twice its short side, so 9:16, not a
+20:9 phone screen.
 
 Not shipped. Needs Python Playwright with Chromium and Pillow. Serves the repo,
-opens the real hub at 360 x 800 CSS px, device scale 3 (logical scale 8), taps
+opens the real hub at 360 x 640 CSS px, device scale 3 (logical scale 8), taps
 each card and plays with real touch events (CDP), then saves the screen into
 docs/play/screenshots/. Run: python3 tools/play-screenshots.py
 """
@@ -66,7 +69,7 @@ def save(page, name):
     path = OUT / f"{name}.png"
     page.screenshot(path=str(path))
     im = Image.open(path).convert("RGB")
-    assert im.size == (1080, 2400), im.size
+    assert im.size == (1080, 1920), im.size
     im.save(path, optimize=True)
     print("wrote", path.relative_to(ROOT))
 
@@ -84,7 +87,7 @@ def main():
     httpd, base = serve()
     with sync_playwright() as p:
         b = p.chromium.launch()
-        ctx = b.new_context(viewport={"width": 360, "height": 800}, device_scale_factor=3, is_mobile=True, has_touch=True,
+        ctx = b.new_context(viewport={"width": 360, "height": 640}, device_scale_factor=3, is_mobile=True, has_touch=True,
                             service_workers="block")
         page = ctx.new_page()
         page.goto(base + "index.html")
@@ -95,11 +98,11 @@ def main():
 
         # Bricks: the thumb down on the sea, sweeping slowly, the ball in flight.
         open_game(page, touch, "bricks")
-        touch.send("touchStart", 180, 740)
+        touch.send("touchStart", 180, 592)
         x = 180
         for i in range(160):
             x = 180 + 40 * ((i // 40) % 2 * 2 - 1) * ((i % 40) / 40)
-            touch.send("touchMove", x, 740)
+            touch.send("touchMove", x, 592)
             page.wait_for_timeout(25)
         save(page, "2-bricks")
         touch.send("touchEnd")
@@ -107,9 +110,9 @@ def main():
 
         # Catch: the thumb down, the boat drifting, things falling.
         open_game(page, touch, "catch")
-        touch.send("touchStart", 180, 740)
+        touch.send("touchStart", 180, 592)
         for i in range(200):
-            touch.send("touchMove", 160 + 40 * ((i // 50) % 2), 740)
+            touch.send("touchMove", 160 + 40 * ((i // 50) % 2), 592)
             page.wait_for_timeout(25)
         save(page, "3-catch")
         touch.send("touchEnd")
@@ -118,13 +121,13 @@ def main():
         # Putt: a shot being lined up (pull back and hold).
         open_game(page, touch, "putt")
         page.wait_for_timeout(1500)
-        touch.send("touchStart", 180, 600)
+        touch.send("touchStart", 180, 480)
         for i in range(1, 21):
-            touch.send("touchMove", 180 + i * 2.2, 600 + i * 6)
+            touch.send("touchMove", 180 + i * 2.2, 480 + i * 6)
             page.wait_for_timeout(16)
         page.wait_for_timeout(200)
         save(page, "4-putt")
-        touch.send("touchMove", 180, 604)  # back near the start: the shot is cancelled
+        touch.send("touchMove", 180, 484)  # back near the start: the shot is cancelled
         touch.send("touchEnd")
         back(page)
 
@@ -145,7 +148,7 @@ def main():
                 if bx is not None and abs((bx + bw / 2) - (top["x"] + top["w"] / 2) - aim * 4) < 2:
                     break
                 page.wait_for_timeout(10)
-            touch.tap(180, 400)
+            touch.tap(180, 320)
             page.wait_for_timeout(450)
         page.wait_for_timeout(600)
         save(page, "5-stack")

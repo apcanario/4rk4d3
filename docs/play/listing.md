@@ -29,19 +29,19 @@ Paste these into the Play Console (Grow users, Store presence, Main store listin
     Putt: pull back and release to bank a ball off the walls into the hole. Every course is new.
     Stack: tap to drop each sliding block onto the tower as it sinks slowly into the sea.
 
-    There is nothing to win or lose. No score, no levels, no timers, no lives, no streaks and no notifications. Lift your thumb and the game waits. Close it whenever you like; every game starts fresh.
+    There is nothing to win or lose. No score, no levels, no timers, no lives, no streaks and no notifications. Put it down whenever you like; every game starts fresh.
 
     As you play, the sunset slowly turns to dusk and the games ease down, so stopping feels natural.
 
     Light haptic taps, no sound. Pixel art in soft sunset colours.
 
-    No ads. No accounts. No in-app purchases. No data collected, nothing stored, no internet needed.
+    No ads. No accounts. No in-app purchases. No data collected, no game or personal data stored, no internet needed.
 
 ## Graphics
 
 - App icon: docs/play/ic-play-512.png (512 x 512, 32-bit PNG)
 - Feature graphic: docs/play/feature-graphic-1024x500.jpg (1024 x 500 JPEG)
-- Phone screenshots: docs/play/screenshots/ (1080 x 2400 PNG, in this order: hub, Bricks, Catch, Putt, Stack)
+- Phone screenshots: docs/play/screenshots/ (1080 x 1920 PNG, 9:16, in this order: hub, Bricks, Catch, Putt, Stack)
 
 ## Not claimed, on purpose
 

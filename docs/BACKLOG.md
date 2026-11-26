@@ -36,3 +36,4 @@ Rows are defined in docs/PLAN.md. Nothing is built that is not a row here. A don
 
 - X34 Device check of the low grid hub (card size and tap comfort, keel card edge too heavy or not, sun and sky look), and of what Pedro's report did not cover (PLAN §8 list); in the browser or in the P3 app
 - X35 Remove shared/font.js: no page loads it since H2 and, since P3, tools/make-icons.py draws the icons from tools/rlx_art.py; drop it from sw.js FILES and retire the font checks in tests/check.py
+- X36 P3 hardening: pin actions by SHA, validate the Gradle wrapper, an API 36 smoke run for predictive back

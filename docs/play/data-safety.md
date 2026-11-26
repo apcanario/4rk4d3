@@ -12,6 +12,7 @@ Play Console, Policy and programs, App content, Data safety. Answers for the app
 ## Other declarations in App content (same place)
 
 - Ads: **No, my app does not contain ads.**
+- Advertising ID (asked of apps that target API 33 or higher): **No, my app does not use an advertising ID.** The app has no ads or analytics SDK and does not declare the com.google.android.gms.permission.AD_ID permission.
 - App access: **All functionality is available without special access** (no login).
 - Government app: No. Financial features: None. Health: No health features.
 - In-app purchases: none (the app is free with nothing to buy).
@@ -22,4 +23,4 @@ Play Console, Policy and programs, App content, Data safety. Answers for the app
 
 - Permissions in the merged manifest: VIBRATE only (tests/check.py and the CI build check it). No INTERNET permission, so the app cannot send anything.
 - No third-party SDK: the app is Capacitor's WebView shell and its own plugin; no analytics, crash reporting, ads or login library.
-- Nothing stored: the games write nothing to storage (PLAN §2; tests/check.py checks storage is empty after play). Android's backup is off (allowBackup false).
+- No game data or personal data stored: the games write nothing to storage (PLAN §2; tests/check.py checks storage is empty after play). Capacitor and the system WebView keep their own technical files (the last installed binary version, the WebView cache); they hold no user data and nothing leaves the device, so the answer stays No. Android's backup is off (allowBackup false).

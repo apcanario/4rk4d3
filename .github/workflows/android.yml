@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      RLX_VERSION_CODE: ${{ github.run_number }}
+      RLX_VERSION_CODE: ${{ github.run_number }}  # app/build.gradle adds 100
       HAS_UPLOAD_KEY: ${{ secrets.RLX_KEYSTORE_B64 != '' && secrets.RLX_KEYSTORE_PASSWORD != '' && secrets.RLX_KEY_ALIAS != '' && secrets.RLX_KEY_PASSWORD != '' }}
     steps:
       - uses: actions/checkout@v5
@@ -117,8 +117,12 @@ jobs:
           printf '%s' "$RLX_KEYSTORE_B64" | base64 -d > "$RLX_KEYSTORE_PATH"
           trap 'rm -f "$RLX_KEYSTORE_PATH"' EXIT
           ./gradlew --no-daemon bundleRelease
-          jarsigner -verify app/build/outputs/bundle/release/app-release.aab > /dev/null
-          echo "Signed release bundle built (versionCode $RLX_VERSION_CODE)." >> "$GITHUB_STEP_SUMMARY"
+          # Strict, against the upload key itself (a self-signed key fails -strict without it); an unsigned
+          # bundle still exits 0 ("jar is unsigned"), so "jar verified" must be in the output too.
+          jarsigner -verify -strict -keystore "$RLX_KEYSTORE_PATH" -storepass:env RLX_KEYSTORE_PASSWORD \
+            app/build/outputs/bundle/release/app-release.aab "$RLX_KEY_ALIAS" > /tmp/jarsigner.txt 2>&1 || { cat /tmp/jarsigner.txt; exit 1; }
+          grep -q "jar verified" /tmp/jarsigner.txt || { cat /tmp/jarsigner.txt; echo "app-release.aab is not signed by the upload key"; exit 1; }
+          echo "Signed release bundle built (versionCode $((RLX_VERSION_CODE + 100)))." >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         if: env.HAS_UPLOAD_KEY == 'true'
