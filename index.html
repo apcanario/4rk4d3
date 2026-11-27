@@ -14,7 +14,7 @@
 <link rel="stylesheet" href="shared/theme.css">
 </head>
 <body>
-<canvas class="screen" id="screen" role="img" aria-label="Five games: Bricks, Catch, Putt, Stack and Glide. The Android back gesture returns from a game."></canvas>
+<canvas class="screen" id="screen" role="img" aria-label="Two games: Bricks and Pool. The Android back gesture returns from a game."></canvas>
 <script type="module">
 import { INPUT, createScreen, drawScene, initPage, hitTest, publishHits, atSideEdge } from './shared/pixel.js';
 import { sessionClock, phaseOf, sceneStep } from './shared/session.js';
@@ -23,9 +23,8 @@ import { onThemeChange } from './shared/tokens.js';
 
 initPage();
 
-// The hub is the five game cards and nothing else (PLAN §2, §5a, §6i): a grid of
-// 2 columns by 3 rows of framed windows onto the games over the sunset scene,
-// the sixth cell left open. No text of any kind.
+// The hub is the two game cards and nothing else (docs/V2.md §5): two framed
+// windows onto the games side by side over the sunset scene. No text of any kind.
 
 const clock = sessionClock(); // the one session clock: the hub holds it, the games it opens share it
 let pressed = null;
