@@ -20,6 +20,7 @@ import { INPUT, createScreen, drawScene, initPage, hitTest, publishHits, atSideE
 import { sessionClock, phaseOf, sceneStep } from './shared/session.js';
 import { CARDS, gridLayout, hubScene, windowOf, drawCard } from './hub/cards.js';
 import { onThemeChange } from './shared/tokens.js';
+import { LIFE, driftClouds, shimmer, drawSceneLife } from './hub/life.js';
 
 initPage();
 
@@ -29,6 +30,11 @@ initPage();
 const clock = sessionClock(); // the one session clock: the hub holds it, the games it opens share it
 let pressed = null;
 let grid = null;
+
+// The hub is alive: clouds drift, gulls and a boat cross the sky, the sea glitters, the cards ride the swell,
+// each card's picture moves. tm is the hub's own clock in seconds; reduced motion keeps it at 0, the still picture.
+const still = matchMedia('(prefers-reduced-motion: reduce)');
+let tm = 0;
 
 /** The side band where a touch is ignored (INPUT.edgeIgnoreCssPx), in logical px from the canvas's own edge. */
 function edgeBand(s) {
@@ -43,12 +49,15 @@ function draw(ctx, s) {
   // The sky above the low grid is the picture: the horizon sits just above the
   // cards, the sun on it, clouds and (at the last steps) stars above (§5a).
   const scene = hubScene(grid, s.safe);
-  drawScene(ctx, s.W, s.H, { ...scene, phase });
+  const m = still.matches ? 0 : tm;
+  drawScene(ctx, s.W, s.H, { ...scene, phase, clouds: driftClouds(scene.clouds, s.W, m), glints: shimmer(scene.glints, m) });
+  drawSceneLife(ctx, s.W, grid.horizon, s.safe.top, m);
   const step = sceneStep(phase);
   canvas.dataset.scene = String(step);
+  canvas.dataset.tm = m.toFixed(2);
   const windows = {};
   for (const c of CARDS) {
-    drawCard(ctx, c.id, grid.cards[c.id], step, pressed === c.id);
+    drawCard(ctx, c.id, grid.cards[c.id], step, pressed === c.id, m);
     windows[c.id] = windowOf(grid.cards[c.id]);
   }
   canvas.dataset.grid = JSON.stringify({ ...grid, windows, edge: edgeBand(s), safe: s.safe, stars: scene.stars, starCount: scene.starCount ?? null, clouds: scene.clouds, sunX: scene.sunX, sunRadius: scene.sunRadius, glints: scene.glints });
@@ -141,6 +150,18 @@ const release = () => {
 canvas.addEventListener('pointercancel', release);
 canvas.addEventListener('pointerleave', release);
 addEventListener('pageshow', () => { release(); screen.render(); });
+// The loop: it draws only while the hub is what is shown (not hidden, no game open) and motion is allowed.
+const born = performance.now();
+let lastFrame = 0;
+function tick(now) {
+  requestAnimationFrame(tick);
+  if (still.matches || document.hidden || (game && game.shown) || now - lastFrame < 1000 / LIFE.fps) return;
+  lastFrame = now;
+  tm = (now - born) / 1000;
+  screen.render();
+}
+requestAnimationFrame(tick);
+still.addEventListener('change', () => { tm = 0; screen.render(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) screen.render(); });
 </script>
 </body>

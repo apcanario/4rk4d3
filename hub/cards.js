@@ -7,6 +7,7 @@
 import { LOGICAL_WIDTH, COLORS, BRICK_ROWS, mix, shade, highlight, edge, line, scenePalette, tokens } from '../shared/tokens.js';
 import { pixelBody, steppedRect, ditherRow, SUN_RADIUS } from '../shared/pixel.js';
 import { SESSION } from '../shared/session.js';
+import { tri, bobOf, drawWindowLife } from './life.js';
 
 /** The cards, left to right. Each opens its
  * game's index.html by name: the Android app's local server answers a folder URL with the
@@ -177,7 +178,7 @@ function body(what, rule, x, y, w, h, colour, steps, rim, fillOnly = false) {
   };
 }
 
-function bricksParts(win, pal) {
+function bricksParts(win, pal, _t, tm = 0) {
   const { x, y, w, h } = win;
   const parts = bandsOf(x, y, w, h, pal.sky, 'sky');
   const gap = 2;
@@ -196,16 +197,32 @@ function bricksParts(win, pal) {
   const fieldBottom = y + 4 + rows.length * 8;
   const pw = Math.min(30, w - 20);
   const py = y + h - 8;
-  parts.push(body('paddle', 'cr', x + Math.floor((w - pw) / 2) - 3, py, pw, 6, COLORS.coral, 2, edge(COLORS.coral)));
   // The ball, rising up and right from the paddle, its trail behind it (solid, checker, single pixel, as in the game).
-  const ballX = x + Math.floor(w / 2) - 2;
+  const ballX0 = x + Math.floor(w / 2) - 2;
   // The trail ends at least 2 px above the paddle on every window height.
-  const ballY = Math.max(fieldBottom + 2, Math.min(py - 17, fieldBottom + Math.max(4, Math.round((py - fieldBottom) * 0.3))));
+  const ballY0 = Math.max(fieldBottom + 2, Math.min(py - 17, fieldBottom + Math.max(4, Math.round((py - fieldBottom) * 0.3))));
+  // Moving (tm > 0): the ball bounces round the open field below the bricks, at its own slow pace, its trail the places it has just been.
+  const lo = { x: x + 3, y: fieldBottom + 3 };
+  const hi = { x: x + w - 8, y: py - 10 };
+  const live = tm > 0 && hi.y - lo.y >= 6 && hi.x - lo.x >= 10;
+  const at = (s) => ({ x: tri(ballX0 + 9 * s, lo.x, hi.x), y: tri(ballY0 - 6.5 * s, lo.y, hi.y) });
+  const ball = live ? at(tm) : { x: ballX0, y: ballY0 };
+  const ballX = Math.round(ball.x);
+  const ballY = Math.round(ball.y);
+  const tr = [1, 2, 3].map((k) => {
+    if (!live) return { x: ballX + 2 - 3 * k - 1, y: ballY + 2 + 4 * k - 1 };
+    const q = at(tm - 0.45 * k);
+    return { x: Math.round(q.x) + 1, y: Math.round(q.y) + 1 };
+  });
+  const padC = live ? at(tm - 0.3).x + 2 : x + Math.floor(w / 2);
+  const padX = live ? Math.max(x + 2, Math.min(x + w - 2 - pw, Math.round(padC - pw / 2))) : x + Math.floor((w - pw) / 2) - 3;
+  parts.push(body('paddle', 'cr', padX, py, pw, 6, COLORS.coral, 2, edge(COLORS.coral)));
   const trail = highlight(COLORS.blue);
-  const tr = [1, 2, 3].map((k) => ({ x: ballX + 2 - 3 * k - 1, y: ballY + 2 + 4 * k - 1 }));
+  const tx0 = Math.min(tr[0].x, tr[1].x, tr[2].x);
+  const ty0 = Math.min(tr[0].y, tr[1].y, tr[2].y);
   parts.push({
     what: 'ball trail', rule: 'de', fill: trail, edge: null, exempt: 'PLAN §3: the ball trail is outside the B4 standard (X16)',
-    x: tr[2].x, y: tr[0].y, w: 9, h: 11, colours: [trail],
+    x: live ? tx0 : tr[2].x, y: live ? ty0 : tr[0].y, w: live ? Math.max(tr[0].x, tr[1].x, tr[2].x) + 3 - tx0 : 9, h: live ? Math.max(tr[0].y, tr[1].y, tr[2].y) + 3 - ty0 : 11, colours: [trail],
     draw(ctx) {
       ctx.fillStyle = trail;
       ctx.fillRect(tr[0].x, tr[0].y, 3, 3);
@@ -258,7 +275,7 @@ function poolPocket(what, cx, cy, r) {
   };
 }
 
-function poolParts(win) {
+function poolParts(win, _pal, _t, tm = 0) {
   const { x, y, w, h } = win;
   const band = 3;
   const parts = [
@@ -278,7 +295,8 @@ function poolParts(win) {
       parts.push(ballPiece('ball', Math.round(cx + (i - (row.length - 1) / 2) * 9), Math.round(apexY - r * 7.8), fill, line(fill)));
     });
   });
-  parts.push(ballPiece('cue ball', cx, y + h - 12, COLORS.foam, line(COLORS.coral)));
+  const cueX = tm > 0 ? Math.round(tri(cx + 7 * tm, x + 8, x + w - 9)) : cx; // rolling slowly to and fro along the baulk
+  parts.push(ballPiece('cue ball', cueX, y + h - 12, COLORS.foam, line(COLORS.coral)));
   return parts;
 }
 
@@ -289,9 +307,9 @@ const BUILD = { bricks: bricksParts, pool: poolParts };
  * dusk), in drawing order. Backgrounds have bg: true and a colour; pieces
  * have a rule, fill, edge, box and colours.
  */
-export function cardParts(id, win, step) {
+export function cardParts(id, win, step, tm = 0) {
   const t = step / SESSION.sceneSteps;
-  return BUILD[id](win, scenePalette(t), t);
+  return BUILD[id](win, scenePalette(t), t, tm);
 }
 
 /** The colours a card's frame draws in the active theme: coral body, its highlight and shade, the edge all round and round the window. */
@@ -301,9 +319,9 @@ export function frameColours() {
 }
 
 /** Draw one card: the coral frame with its 1 px keel edge all round, stepped corners, and the window in its coral edge. */
-export function drawCard(ctx, id, r, step, pressed = false) {
+export function drawCard(ctx, id, r, step, pressed = false, tm = 0) {
   const { FRAME, FRAME_EDGE, FRAME_RIM } = frameOf();
-  const card = { ...r, y: r.y + (pressed ? 1 : 0) };
+  const card = { ...r, y: r.y + (pressed ? 1 : 0) + bobOf(CARDS.findIndex((c) => c.id === id), tm) }; // the swell lifts each card a pixel in its own time
   pixelBody(ctx, card.x, card.y, card.w, card.h, FRAME, 3, FRAME_RIM);
   const win = windowOf(card);
   steppedRect(ctx, win.x - 1, win.y - 1, win.w + 2, win.h + 2, FRAME_EDGE, 2);
@@ -311,7 +329,7 @@ export function drawCard(ctx, id, r, step, pressed = false) {
   ctx.beginPath();
   ctx.rect(win.x, win.y, win.w, win.h);
   ctx.clip();
-  for (const p of cardParts(id, win, step)) {
+  for (const p of cardParts(id, win, step, tm)) {
     if (p.draw) p.draw(ctx);
     else if (p.dashes) {
       ctx.fillStyle = p.colour;
@@ -323,6 +341,7 @@ export function drawCard(ctx, id, r, step, pressed = false) {
       if (p.prev) ditherRow(ctx, p.x, p.y, p.w, p.colour, p.prev, p.i);
     }
   }
+  drawWindowLife(ctx, id, win, tm);
   ctx.restore();
   // The window's own corners are cut 1 px, in the edge colour.
   ctx.fillStyle = FRAME_EDGE;

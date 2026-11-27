@@ -15,7 +15,7 @@ v1 (five games) is at branch `archive/v1` (commit `b8209ba`). The spec for v2 is
 
 ## Layout
 
-- `index.html`, `hub/cards.js`: the hub: two framed cards side by side (Bricks, Pool), low on the screen, under the sunset sky. A tap opens the game full screen in a frame over the hub; the back gesture returns.
+- `index.html`, `hub/cards.js`, `hub/life.js`: the hub: two framed cards side by side (Bricks, Pool), low on the screen, under the sunset sky, alive (drifting clouds, gulls, a boat, a swell under the cards, a bouncing ball, a crab; still under reduced motion). A tap opens the game full screen in a frame over the hub; the back gesture returns.
 - `shared/`: `tokens.js` and `theme.css` (colours, light and dark), `pixel.js` (canvas, integer scaling, scene, input values), `haptics.js` (the shared `tick()`, 40 ms gate), `native.js` (Android plugin bridge), `session.js` (the in-memory session clock; Bricks reads it, Pool does not).
 - `games/bricks/`: Bricks (`bricks.js` drawing and thumb, `physics.js` simulation).
 - `games/pool/`: Pool (`pool.js` drawing, thumb, haptics, `CONFIG`; `sim.js` simulation, no DOM).

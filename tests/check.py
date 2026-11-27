@@ -90,7 +90,7 @@ window.requestAnimationFrame = (cb) => { window.__raf++; return __rafReal(cb); }
 """
 
 
-def new_context(browser, w, h, dpr=DPR, scheme="light"):
+def new_context(browser, w, h, dpr=DPR, scheme="light", motion=False):
     # Row D1: the phone's colour scheme (prefers-color-scheme); every existing check runs in light, as before.
     ctx = browser.new_context(
         viewport={"width": w, "height": h},
@@ -99,6 +99,8 @@ def new_context(browser, w, h, dpr=DPR, scheme="light"):
         has_touch=True,
         service_workers="allow",
         color_scheme=scheme,
+        # The hub moves (hub/life.js); every existing check reads the still picture. run_hub_life turns motion on.
+        reduced_motion="no-preference" if motion else "reduce",
     )
     ctx.add_init_script(VIBRATE_STUB)
     return ctx
@@ -759,7 +761,7 @@ def two_touches(ctx, page, tag):
 def run_bricks(browser, base):
     """Rows B1, B2 and X1: Bricks in the browser at 360x800."""
     tag = "bricks 360x800"
-    ctx = new_context(browser, 360, 800)
+    ctx = new_context(browser, 360, 800, motion=True)
     foreign = []
     origin = base.split("/4rk4d3/")[0]
     ctx.on("request", lambda r: (not r.url.startswith(origin) and not r.url.startswith("data:")) and foreign.append(r.url))
@@ -1535,6 +1537,37 @@ def pool_touch(cdp, page, pts):
     cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
 
 
+def run_hub_life(browser, base):
+    """The hub moves (hub/life.js): frames differ over time, the card hit rects stay put, a game open pauses the loop, reduced motion is still, no errors."""
+    ctx = new_context(browser, 360, 780, motion=True)
+    page = ctx.new_page()
+    errors = []
+    page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(base + "index.html")
+    page.wait_for_function("document.getElementById('screen').dataset.grid")
+    h0 = hits(page)
+    a = page.screenshot()
+    page.wait_for_timeout(1500)
+    b = page.screenshot()
+    tm1 = float(page.eval_on_selector("#screen", "c => c.dataset.tm"))
+    check(a != b and tm1 > 0.5, f"[life] the hub's frames differ over time (tm {tm1})")
+    check(hits(page) == h0, "[life] the card hit areas do not move with the swell")
+    page.touchscreen.tap(h0["pool"]["x"], h0["pool"]["y"])
+    page.wait_for_selector("iframe.game.shown")
+    t2 = float(page.eval_on_selector("#screen", "c => c.dataset.tm"))
+    page.wait_for_timeout(600)
+    t3 = float(page.eval_on_selector("#screen", "c => c.dataset.tm"))
+    check(t3 == t2, f"[life] the loop pauses while a game is open ({t2} {t3})")
+    page.emulate_media(reduced_motion="reduce")
+    page.go_back()
+    page.wait_for_timeout(300)
+    page.wait_for_function("document.getElementById('screen').dataset.tm === '0.00'")
+    check(True, "[life] reduced motion: the hub is the still picture (tm 0)")
+    check(not errors, f"[life] no console errors {errors}")
+    ctx.close()
+
+
 def run_pool(browser, base):
     """Pool in the browser (docs/V2.md §6): opens from its card and closes on back; a real touch pull shoots; a full
     game played by the test ends in a new rack; storage stays empty; no text; light and dark screenshots; no console errors."""
@@ -2298,7 +2331,7 @@ def main():
             for w, h, dpr in LAYOUT_ONLY:
                 run_layout_only(browser, base, w, h, dpr)
         for name, fn in (("resize", run_resize), ("hub-grid", run_hub_grid), ("bricks", run_bricks), ("scene", run_scene), ("scene-dark", run_scene_dark),
-                         ("pool", run_pool), ("contrast-hub", run_contrast_hub), ("contrast-pages", run_contrast_pages),
+                         ("pool", run_pool), ("hub-life", run_hub_life), ("contrast-hub", run_contrast_hub), ("contrast-pages", run_contrast_pages),
                          ("theme", run_theme), ("theme-play", run_theme_play), ("contrast-hub-dark", lambda b, u: run_contrast_hub(b, u, "dark")),
                          ("contrast-pages-dark", lambda b, u: run_contrast_pages(b, u, "dark")),
                          ("activation", run_activation)):

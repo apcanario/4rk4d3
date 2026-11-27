@@ -2,6 +2,12 @@
 
 One entry per session: date, row, the models that actually ran, what was built, review findings and fixes, anything deferred.
 
+## 2026-11-27: Living hub
+
+Models that ran: main chat Sonnet 5.5 (claude-sonnet-5-5), no other agents.
+
+Pedro: the home page should be animated and cozy. New `hub/life.js`, 20 fps loop in the hub only (paused while hidden or a game is open; still under reduced motion): clouds drift, two gulls and a sailboat cross the sky and horizon, sea glints shimmer, cards ride a 1 px swell (hit areas fixed), Bricks card has a bouncing ball with trail, a following paddle and a small bird, Pool card a cue ball rolling to and fro and a crab on the sand. No text, nothing stored. The checks run in reduced motion (still picture, as before); new `hub-life` check covers motion, fixed hit areas, pause and still. sw.js rlx-v32. Suite 0 failures. Not seen on a phone: pace, battery, whether it is too busy. No dolphin or stars twinkle.
+
 ## 2026-11-27: Pool feel (less thumb, longer roll)
 
 Models that ran: main chat Sonnet 5.5 (claude-sonnet-5-5), no other agents.
