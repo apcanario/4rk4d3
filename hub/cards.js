@@ -296,7 +296,7 @@ function poolParts(win, _pal, _t, tm = 0) {
     });
   });
   const cueX = tm > 0 ? Math.round(tri(cx + 7 * tm, x + 8, x + w - 9)) : cx; // rolling slowly to and fro along the baulk
-  parts.push(ballPiece('cue ball', cueX, y + h - 12, COLORS.foam, line(COLORS.coral)));
+  parts.push(ballPiece('cue ball', cueX, y + h - 12, COLORS.foam, COLORS.keel));
   return parts;
 }
 

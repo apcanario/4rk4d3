@@ -1522,7 +1522,7 @@ POOL_TOKENS_JS = """async () => {
   const out = {};
   for (const set of [T.LIGHT, T.DARK]) {
     const C = set.COLORS;
-    const balls = [0, 2, 4, 5, 6, 7, 8].map((i) => set.BRICK_ROWS[i]).concat([C.blue]).map((f) => ({ fill: f, edge: T.line(f, set) }));
+    const balls = [0, 2, 4, 5, 7].map((i) => set.BRICK_ROWS[i]).concat([C.blue]).map((f) => ({ fill: f, edge: T.line(f, set) }));
     out[set.name] = { sand: C.sand, balls, cue: { fill: C.foam, edge: T.line(C.coral, set) }, ring: C.poolRing };
   }
   return out;

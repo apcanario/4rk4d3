@@ -2,6 +2,12 @@
 
 One entry per session: date, row, the models that actually ran, what was built, review findings and fixes, anything deferred.
 
+## 2026-11-27: Pool cue ball told apart
+
+Models that ran: main chat Sonnet 5.5 (claude-sonnet-5-5), no other agents.
+
+Pedro: object-ball colours mix with the white ball. Object balls no longer use the two palest brick rows (pink 6, pale blue 8); the cue ball keeps its foam fill but its edge is now keel-dark (was coral, the same family as the red balls), in the game and on the hub card. sw.js rlx-v33. Suite 0 failures. Judge on the phone.
+
 ## 2026-11-27: Living hub
 
 Models that ran: main chat Sonnet 5.5 (claude-sonnet-5-5), no other agents.

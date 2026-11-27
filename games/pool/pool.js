@@ -55,8 +55,8 @@ import * as S from './sim.js';
 initPage();
 
 const canvas = document.getElementById('screen');
-// The object balls are drawn at random per rack from brick rows 0, 2, 4, 5, 6, 7, 8 and blue (null).
-const refPool = Object.freeze([0, 2, 4, 5, 6, 7, 8, null]);
+// The object balls are drawn at random per rack from brick rows 0, 2, 4, 5, 7 and blue (the palest, 6 and 8, read as the cue ball) (null).
+const refPool = Object.freeze([0, 2, 4, 5, 7, null]);
 const fillOf = (ref) => (ref === null ? COLORS.blue : BRICK_ROWS[ref]);
 
 let world = null;
@@ -208,7 +208,7 @@ function draw(ctx, s) {
     if (b.potted) continue;
     const isCue = b.id === 0;
     const fill = isCue ? set.COLORS.foam : fillOf(refs[b.id]);
-    const rim = line(isCue ? set.COLORS.coral : fill, set);
+    const rim = isCue ? set.COLORS.keel : line(fill, set);
     let r = CONFIG.ballR;
     const t0 = rises.get(b.id);
     if (t0 !== undefined) {
@@ -223,7 +223,7 @@ function draw(ctx, s) {
     if (u >= 1) continue;
     const isCue = p.ref === 'cue';
     const fill = isCue ? set.COLORS.foam : fillOf(p.ref);
-    const rim = line(isCue ? set.COLORS.coral : fill, set);
+    const rim = isCue ? set.COLORS.keel : line(fill, set);
     drawBall(ctx, { x: p.x + (p.px - p.x) * u, y: p.y + (p.py - p.y) * u }, fill, rim, set, Math.round(CONFIG.ballR * (1 - u)));
     rows(ctx, Math.round(p.px), Math.round(p.py), Math.round(2 + 5 * u), set.COLORS.foam, 1); // the splash ring
   }
