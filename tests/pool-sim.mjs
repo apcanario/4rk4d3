@@ -274,11 +274,11 @@ function randomShot(w, r) {
 {
   const f = (len) => S.pullShot(50, 50, 50, 50 + len, CONFIG);
   const cap = CONFIG.pullCapPx;
-  check(cap === 30 && f(30) && Math.abs(f(30).speed - FULL) < 1e-9 && f(30).power === 1, 'a pull of 30 px is full power');
+  check(cap === 20 && f(20) && Math.abs(f(20).speed - FULL) < 1e-9 && f(20).power === 1, 'a pull of 20 px is full power');
   check(f(60) && Math.abs(f(60).speed - FULL) < 1e-9 && f(200).power === 1, 'a longer pull stays at full power');
   check(f(4) === null && f(3) === null && f(4.01) !== null && f(0) === null, 'a pull of 4 px or less is no shot');
-  const curve = [6, 10, 15, 20, 25, 29].every((len) => Math.abs(f(len).speed - FULL * Math.pow(len / cap, 1.5)) < 1e-9);
-  check(curve && Math.abs(f(15).speed - FULL * 0.5 ** 1.5) < 1e-9, 'between 4 and 30 px the speed follows the 1.5 curve');
+  const curve = [6, 8, 10, 14, 18, 19].every((len) => Math.abs(f(len).speed - FULL * Math.pow(len / cap, 1.5)) < 1e-9);
+  check(curve && Math.abs(f(10).speed - FULL * 0.5 ** 1.5) < 1e-9, 'between 4 and 20 px the speed follows the 1.5 curve');
   const a = S.pullShot(50, 50, 20, 90, CONFIG);
   const b = S.pullShot(50, 50, 80, 10, CONFIG);
   check(Math.abs(a.dx / a.len - 30 / 50) < 1e-9 && Math.abs(a.dy / a.len + 40 / 50) < 1e-9 && a.power === 1

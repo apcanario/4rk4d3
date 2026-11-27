@@ -2,6 +2,12 @@
 
 One entry per session: date, row, the models that actually ran, what was built, review findings and fixes, anything deferred.
 
+## 2026-11-27: Pool feel (less thumb, longer roll)
+
+Models that ran: main chat Sonnet 5.5 (claude-sonnet-5-5), no other agents.
+
+Pedro: less thumb needed, balls a little more fluid. `pullCapPx` 30 → 20 (full power at 15 percent of the width instead of 22), `decel` 45 → 38 (a full-power shot rolls about 1180 px instead of 1000). `launchSpeed` and the curve unchanged. pool-sim's pullShot checks follow the cap; docs/V2.md and the BACKLOG phone rows carry the new values; sw.js rlx-v31. Check suite 0 failures. Still to judge on the phone.
+
 ## 2026-11-27: RLX v2 (archive, strip, Pool, hub)
 
 Models that ran: main chat Sonnet 5.5 (claude-sonnet-5-5), no other agents, no separate reviewer.

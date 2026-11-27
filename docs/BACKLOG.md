@@ -10,9 +10,9 @@ Rows are defined in docs/V2.md. Nothing is built that is not a row here. A done 
 
 ## Proposed
 
-- Phone: pull length for full power (`pullCapPx` 30 in `games/pool/pool.js`): does 30 logical px (about 80 CSS px) feel like little thumb travel?
+- Phone: pull length for full power (`pullCapPx` 20 in `games/pool/pool.js`): does 20 logical px (about 53 CSS px) feel like little thumb travel?
 - Phone: break strength (`launchSpeed` 300): does a full pull break the rack hard enough, not too hard?
-- Phone: how long balls roll (`decel` 45): too long a wait before the next shot, or too short?
+- Phone: how long balls roll (`decel` 38): too long a wait before the next shot, or too short?
 - Phone: pocket size (corner radius 9, side radius 8): too generous, too tight?
 - Phone: haptics told apart (release 10 ms, ball 6, cushion 4, pot 24, new rack 30; the shared 40 ms gate may drop a quiet one after a loud one).
 - Phone: the two-card hub (Bricks left, Pool right, low in the thumb's reach): taps land, the Pool card reads as a table.

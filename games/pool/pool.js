@@ -12,9 +12,9 @@
 export const CONFIG = Object.freeze({
   launchSpeed: 300, // full-power speed, logical px per second
   powerCurve: 1.5, // speed = launchSpeed * (pull / pullCapPx) ^ powerCurve
-  pullCapPx: 30, // full power at this pull (logical px, 22 percent of the screen width); further only steadies the aim
+  pullCapPx: 20, // full power at this pull (logical px, 15 percent of the screen width); further only steadies the aim
   cancelPx: 4, // a pull this short or shorter is released as no shot
-  decel: 45, // constant deceleration, px per second squared
+  decel: 38, // constant deceleration, px per second squared
   stopSpeed: 4, // a ball stops under this, px per second
   ballRestitution: 0.96, // ball on ball, equal mass
   cushionRestitution: 0.8,
