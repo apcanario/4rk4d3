@@ -4,11 +4,21 @@ One entry per session: date, row, the models that actually ran, what was built, 
 
 ## 2026-11-27: RLX v2 (archive, strip, Pool, hub)
 
-Models that ran: main chat Sonnet 5.5 (claude-sonnet-5-5), no other agents.
+Models that ran: main chat Sonnet 5.5 (claude-sonnet-5-5), no other agents, no separate reviewer.
 
 Archive: branch `archive/v1` at `b8209ba` is on the remote. The annotated tag `v1` could not be pushed (the session's proxy refused tag pushes and the GitHub API write); proposed in BACKLOG.
 
-Stripped: Catch, Putt, Stack and Glide, their tests, their style references and PLAN.md (the spec is now docs/V2.md); sw.js rlx-v27 with Pool's files; README rewritten; android versionName 2.0, versionCode offset 101.
+Stripped: Catch, Putt, Stack and Glide, their tests, their style references and PLAN.md (the spec is now docs/V2.md); README rewritten; android versionName 2.0, versionCode offset 101 (workflow and check.py followed); CI's Node test list. The first push of this section went red on CI because the workflow still ran the deleted tests; fixed in the next commit.
+
+Pool: `games/pool/sim.js` (no DOM, no imports; 120 Hz step, sub-steps of at most 1 px, pockets before cushions, the cue ball and rack timers in sim time, the stuck rule), `pool.js` (drawing, the thumb, haptics; one CONFIG block), `index.html`. Shot: `pullShot` as in Putt but power = (pull / 30) ^ 1.5, the pull ring drawn as Putt's with coral rings. Differences from the spec text, stated plainly: the drawn ball is 9 px across with sim radius 4 (contact distance 8), so rim pixels of touching balls can overlap by 1 px; the aim guide and the struck ball's line are in `ink`, the pull ring in `coral`; guides ignore pockets (they end at the first ball or cushion).
+
+Contrast (spec §4): every object ball's fill or edge, the cue ball's edge, and the pocket ring measured on the sand in both themes. Balls (edge = `line(fill)`): worst 4.06 light, 4.22 dark. Cue edge `line(coral)`: 5.11 light, 3.50 dark. The pocket ring failed in light (foam on sand is 1.16): new token `poolRing`, foam moved 0.70 toward `edgeTarget` = #A17588, 3.23 on the sand; dark keeps foam (10.48). `poolRing` is in tokens.js and theme.css; nothing else added or removed there.
+
+Hub: two cards in one row, Bricks left and Pool right; the Pool card is the sand, a 3 px cushion band, two pockets, a small rack and the cue ball. The four other cards' parts and helpers only they used are gone from hub/cards.js.
+
+Tests: tests/pool-sim.mjs (26 checks, the spec's list; "total speed never rises" is measured as total kinetic energy, since the sum of plain speeds can rise in a glancing hit with no energy gained). tests/check.py pruned by deletion of the four games' parts, hub expectations changed to two cards, theme switch and play checks left to Bricks only (Pool's live switch, light and dark screenshots, contrast, play and storage are in `run_pool`). `run_pool`: opens from its card and closes on back, a real touch pull shoots (10 ms release tick), a full game with shots planned by the page's own sim.js ends in a new rack (15 shots in the run), nothing stored, no text, no console errors.
+
+Confirmed headless only (Chromium with touch events, Node). Not confirmed on a phone: the feel of pull length, break strength, roll length and pocket size, haptics told apart, the two-card hub and dark on the device (Proposed rows).
 
 ## 2026-11-25: H1 shell and hub
 

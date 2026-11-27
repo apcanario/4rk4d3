@@ -142,7 +142,7 @@ check(batchLog.length > 50 && batchLog.every((m) => m === 8 || m === 16) && Math
 const src = (f) => readFileSync(new URL(`../${f}`, import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 check(!/settings|hapticsOn|localStorage/.test(src('shared/haptics.js')) && !/localStorage|sessionStorage|fetch\(/.test(src('shared/native.js')),
   'haptics.js and native.js read no setting, store nothing and fetch nothing');
-check(['games/bricks/bricks.js', 'games/catch/catch.js', 'games/putt/putt.js', 'games/stack/stack.js', 'index.html', 'hub/cards.js']
+check(['games/bricks/bricks.js', 'games/pool/pool.js', 'index.html', 'hub/cards.js']
   .every((f) => !/navigator\.vibrate/.test(src(f))), 'no game or hub file calls navigator.vibrate itself: every tick goes through shared/haptics.js');
 check(/'serviceWorker' in navigator && isSecureContext && !inApp\(\)/.test(src('shared/pixel.js')), 'pixel.js does not register the service worker inside the app');
 

@@ -55,9 +55,9 @@ import * as S from './sim.js';
 initPage();
 
 const canvas = document.getElementById('screen');
-// The object balls are drawn at random per rack from brick rows 0, 2, 4, 5, 6, 7, 8 and blue.
-const refPool = Object.freeze([0, 2, 4, 5, 6, 7, 8, 'blue']);
-const fillOf = (ref) => (ref === 'blue' ? COLORS.blue : BRICK_ROWS[ref]);
+// The object balls are drawn at random per rack from brick rows 0, 2, 4, 5, 6, 7, 8 and blue (null).
+const refPool = Object.freeze([0, 2, 4, 5, 6, 7, 8, null]);
+const fillOf = (ref) => (ref === null ? COLORS.blue : BRICK_ROWS[ref]);
 
 let world = null;
 let table = null;

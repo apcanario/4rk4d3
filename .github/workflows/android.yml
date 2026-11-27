@@ -56,7 +56,7 @@ jobs:
 
       - name: Web tests (Node)
         run: |
-          for t in bricks-sim haptics-native; do node tests/$t.mjs > /tmp/$t.log || { tail -40 /tmp/$t.log; exit 1; }; tail -1 /tmp/$t.log; done
+          for t in bricks-sim pool-sim haptics-native; do node tests/$t.mjs > /tmp/$t.log || { tail -40 /tmp/$t.log; exit 1; }; tail -1 /tmp/$t.log; done
 
       - name: Copy the shipped web files (sw.js FILES) into the app
         run: node tools/build-www.mjs

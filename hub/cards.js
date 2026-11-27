@@ -219,7 +219,7 @@ function bricksParts(win, pal) {
 
 /* ---------- the Pool card: a small window onto the table ---------- */
 
-const POOL_RACK = [[0], [2, 'blue'], [4, 5, 7]]; // brick rows (or 'blue') of the card's small rack, apex row first
+const POOL_RACK = [[0], [2, null], [4, 5, 7]]; // brick rows (null: the blue ball) of the card's small rack, apex row first
 
 function disc(ctx, x, y, r, color) {
   ctx.fillStyle = color;
@@ -231,10 +231,11 @@ function disc(ctx, x, y, r, color) {
 
 // A ball as pool.js draws it: drop shade, 1 px edge all round, fill, a 2 px highlight.
 function ballPiece(what, cx, cy, fill, rim) {
+  const dropShade = mix(COLORS.sand, COLORS.shadeTarget, 0.2);
   return {
-    what, rule: 'cr', fill, edge: rim, x: cx - 4, y: cy - 4, w: 9, h: 9, colours: [fill, rim, highlight(fill)],
+    what, rule: 'cr', fill, edge: rim, x: cx - 4, y: cy - 4, w: 10, h: 10, colours: [fill, rim, highlight(fill), dropShade],
     draw(ctx) {
-      disc(ctx, cx + 1, cy + 1, 4, mix(COLORS.sand, COLORS.shadeTarget, 0.2));
+      disc(ctx, cx + 1, cy + 1, 4, dropShade);
       disc(ctx, cx, cy, 4, rim);
       disc(ctx, cx, cy, 3, fill);
       ctx.fillStyle = highlight(fill);
@@ -261,20 +262,23 @@ function poolParts(win) {
   const { x, y, w, h } = win;
   const band = 3;
   const parts = [
-    { bg: true, what: 'cushion', colour: COLORS.sandWall, x, y, w, h },
+    { bg: true, what: 'cushion top', colour: COLORS.sandWall, x, y, w, h: band },
+    { bg: true, what: 'cushion bottom', colour: COLORS.sandWall, x, y: y + h - band, w, h: band },
+    { bg: true, what: 'cushion left', colour: COLORS.sandWall, x, y: y + band, w: band, h: h - band * 2 },
+    { bg: true, what: 'cushion right', colour: COLORS.sandWall, x: x + w - band, y: y + band, w: band, h: h - band * 2 },
     { bg: true, what: 'sand', colour: COLORS.sand, x: x + band, y: y + band, w: w - band * 2, h: h - band * 2 },
   ];
-  parts.push(poolPocket('pocket left', x + 1, y + 1, 6), poolPocket('pocket right', x + w - 2, y + 1, 6));
+  parts.push(poolPocket('pocket left', x + 3 + 8, y + 3 + 8, 5), poolPocket('pocket right', x + w - 3 - 9, y + 3 + 8, 5));
   const cx = x + Math.floor(w / 2);
-  const apexY = y + Math.round(h * 0.52);
-  const colourOf = (k) => (k === 'blue' ? COLORS.blue : BRICK_ROWS[k]);
+  const apexY = y + Math.round(h * 0.62);
+  const colourOf = (k) => (k === null ? COLORS.blue : BRICK_ROWS[k]);
   POOL_RACK.forEach((row, r) => {
     row.forEach((k, i) => {
       const fill = colourOf(k);
       parts.push(ballPiece('ball', Math.round(cx + (i - (row.length - 1) / 2) * 9), Math.round(apexY - r * 7.8), fill, line(fill)));
     });
   });
-  parts.push(ballPiece('cue ball', cx, y + h - 17, COLORS.foam, line(COLORS.coral)));
+  parts.push(ballPiece('cue ball', cx, y + h - 12, COLORS.foam, line(COLORS.coral)));
   return parts;
 }
 
