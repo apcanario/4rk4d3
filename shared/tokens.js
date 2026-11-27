@@ -38,6 +38,7 @@ const LIGHT_COLORS = Object.freeze({
   trapTint: '#FFA38C', // U2: a sand-level trap is the ground mixed SAND_TRAP_AMOUNT toward it (brick row 4's peach)
   sandWall: '#F4A98C', // A1: Glide's darker sand band along the walls, and its sandcastles
   courtLine: '#F4A98C', // A1: Glide's dashed centre line and circle
+  poolRing: '#A17588', // v2: Pool's 1 px pocket ring; foam moved 0.70 toward edgeTarget so it reaches 3:1 on the sand (foam alone is 1.16)
 });
 
 // The same beach at night (PLAN §3 Dark theme). Values moved from the §3
@@ -67,6 +68,7 @@ const DARK_COLORS = Object.freeze({
   trapTint: '#7A1E3A', // U2: a deep rust, so the trap stays dark enough for the ball and hole yet differs from the night sand
   sandWall: '#56437F', // A1: a lighter violet than the night sand (the band and the castles differ from it by delta E 20)
   courtLine: '#CDD6FF', // A1: the night lines, as foam (PLAN §3: foam and lines #CDD6FF)
+  poolRing: '#CDD6FF', // v2: Pool's pocket ring, foam (10.5 on the night sand: no move needed)
 });
 
 // Dusk (PLAN §2b): the end of the exit ramp. Bricks, paddle, ball and
