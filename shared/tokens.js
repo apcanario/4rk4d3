@@ -112,17 +112,21 @@ export const REEF_AMOUNT = 0.55; // U2: a reef on a sea level is the ground mixe
 export const REEF_AMOUNT_DARK = 0.35; // U2: the same in dark
 export const DECOR_AMOUNT = 0.2; // A1: Glide's starfish are the sand mixed this far toward their pink or blue (light), so every tracked piece clears them
 export const DECOR_AMOUNT_DARK = 0.3; // A1: the same in dark
+export const INLET_LIFT = 0.46; // A1c: Glide's inlet is sea band 3 mixed this far toward foam (light), so the shell's edge clears it (WCAG 3) at every step
+export const INLET_LIFT_DARK = 0; // A1c: dark keeps sea band 3 (the shell's face clears it by 13.2)
 export const INK_CLOUD_AMOUNT = 0.45; // B4 review: how far the ink cloud mixes each sea band toward COLORS.inkCloud (both themes)
 
 export const LIGHT = Object.freeze({
   name: 'light', COLORS: LIGHT_COLORS, DUSK: LIGHT_DUSK, BRICK_ROWS: LIGHT_BRICKS, SEA_BANDS: LIGHT_SEA,
   highlightAmount: HIGHLIGHT_AMOUNT, lineAmount: EDGE_AMOUNT, trapAmount: TRAP_AMOUNT,
   sandTrapAmount: SAND_TRAP_AMOUNT, poolLift: 0, reefAmount: REEF_AMOUNT, decorAmount: DECOR_AMOUNT,
+  inletLift: INLET_LIFT,
 });
 export const DARK = Object.freeze({
   name: 'dark', COLORS: DARK_COLORS, DUSK: DARK_DUSK, BRICK_ROWS: DARK_BRICKS, SEA_BANDS: DARK_SEA,
   highlightAmount: HIGHLIGHT_AMOUNT_DARK, lineAmount: LINE_AMOUNT_DARK, trapAmount: TRAP_AMOUNT_DARK,
   sandTrapAmount: SAND_TRAP_AMOUNT_DARK, poolLift: POOL_LIFT_DARK, reefAmount: REEF_AMOUNT_DARK, decorAmount: DECOR_AMOUNT_DARK,
+  inletLift: INLET_LIFT_DARK,
 });
 
 /* ---------- the active set: the phone's colour scheme ---------- */

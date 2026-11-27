@@ -542,7 +542,7 @@ function glideParts(win, pal, t) {
   parts.push(glints(x, y, w, sh, col.glint));
   const iw = 22; // the inlet, centred, 3 px into the sand
   const ix = x + Math.round((w - iw) / 2);
-  parts.push({ bg: true, what: 'inlet', colour: pal.sea[2], x: ix, y: y + sh, w: iw, h: 3 });
+  parts.push({ bg: true, what: 'inlet', colour: col.inlet, x: ix, y: y + sh, w: iw, h: 3 });
   parts.push({ bg: true, what: 'tide foam', colour: col.foam, x, y: y + sh, w: ix - x, h: 1 });
   parts.push({ bg: true, what: 'tide foam', colour: col.foam, x: ix + iw, y: y + sh, w: x + w - ix - iw, h: 1 });
   parts.push({ bg: true, what: 'side band', colour: col.wall, x, y: y + sh, w: 1, h: h - sh });

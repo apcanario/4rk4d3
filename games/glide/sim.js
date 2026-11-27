@@ -26,6 +26,7 @@ export const SIM = Object.freeze({
   castleH: 3, // its length above the bottom wall line
   puckR: 5, // the shell
   malletR: 9, // the life ring, and the crab's collision radius
+  crabClear: 2, // A1d: the crab's top limit sits this much lower again, so its drawn outline keeps a clear row below the buoys
   topSpeed: 220, // px/s
   topSpeedDusk: 150, // the exit ramp lowers the top speed to this over minutes 10 to 12 (with the crab, bot.js)
   crossings: 2.4, // drag: a full-speed puck rolls this many table lengths before it would stop (PLAN: twice or more)
@@ -69,6 +70,7 @@ export function tableColours(T, t, set) {
   return {
     ground,
     sea: pal.sea,
+    inlet: T.mix(pal.sea[2], C.foam, s.inletLift), // A1c: the inlet, sea band 3 lifted toward foam in light so the shell clears it
     glint: T.mix(C.sun, pal.sea[0], LOOK.glintAmount),
     foam: C.foam,
     wet: C.wetSand,
@@ -207,7 +209,7 @@ export function geometry(W, H, safe = { top: 0, bottom: 0, left: 0, right: 0 }) 
   return {
     W, H, sea: T, T, G, xL, xR, yB, mx0, mx1, mid, cx,
     ring: { x0: xL + m, x1: xR - m, y0: mid + m, y1: yB - m },
-    crab: { x0: xL + m, x1: xR - m, y0: G + m, y1: mid - m },
+    crab: { x0: xL + m, x1: xR - m, y0: G + m + SIM.crabClear, y1: mid - m },
     // Static colliders for the puck: segments (capsules of radius r) and the side walls as planes.
     segs: [
       { x0: xL, y0: T, x1: mx0, y1: T, r: 0, kind: 'wall' }, // the tide line, left of the inlet

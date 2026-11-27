@@ -81,6 +81,12 @@ for (const [H, ins] of VIEWS) {
     `[${tag}] the table runs to the side edges (walls at ${g.xL} and ${g.xR}) and from the tide line down`);
   check(g.ring.y0 > g.mid && g.crab.y1 < g.mid && g.ring.y1 <= g.yB - M && g.crab.y0 >= g.G + M,
     `[${tag}] the ring keeps to the player's half, the crab to its own; neither reaches a goal mouth`);
+  // A1d: at its top limit the crab's drawn top row (its outline) keeps a clear row below a buoy's bottom row (glide.js
+  // draws the buoy as a 7 px disc centred on the goal line, so its bottom row is G + buoyR).
+  const crabTop = Math.round(g.crab.y0) - (S.CRAB_MASK.length >> 1);
+  const buoyBottom = g.G + SIM.buoyR;
+  check(crabTop >= buoyBottom + 2,
+    `[${tag}] the crab's outline never touches a buoy: its top row at the top limit is ${crabTop}, a buoy's bottom row ${buoyBottom}`);
 }
 
 /* ---------- physics units ---------- */
@@ -435,12 +441,12 @@ for (const THEME of [T.LIGHT, T.DARK]) {
     const behind = [['sand', c.ground], ['wet sand', c.wet], ['foam', c.foam], ['line', c.line], ['pink starfish', c.pink],
       ['blue starfish', c.blue], ['pebble', c.pebble], ['shadow', c.shadow]];
     for (const [name, pc_] of Object.entries(pieces)) {
-      // Outside the standard (PLAN §6i build choices): the shell over the inlet's sea in the last px before its centre
-      // crosses the goal line, when it is already going out; measured below for the record only.
+      // A1c: the shell over the inlet's sea in the last px before its centre crosses the goal line (the inlet is
+      // sea band 3 lifted toward foam in light, so the shell's edge clears it).
       // Review of A1: the ring's lowest place and the shell beside a castle reach the sandcastles (body, highlight
       // row, pole, pennant) and the bottom band; the shell touches a buoy's rim. The crab reaches neither.
       const castles = [['sandcastle', c.castle], ['castle highlight', c.castleHi], ['castle pole', c.pole], ['pennant', c.flag], ['bottom band', c.wall]];
-      const list = name === 'shell' ? [...behind, ...castles, ['goal gap', c.gap], ['buoy', c.buoy], ['buoy edge', c.buoyEdge], ['buoy band', c.buoyBand]]
+      const list = name === 'shell' ? [...behind, ...castles, ['goal gap', c.gap], ['inlet', c.inlet], ['buoy', c.buoy], ['buoy edge', c.buoyEdge], ['buoy band', c.buoyBand]]
         : name === 'ring' ? [...behind, ...castles] : behind;
       for (const [on, bg] of list) {
         // The shell's face is most of it: measured as its fill where its pink ring or edge does not clear.
@@ -450,20 +456,12 @@ for (const THEME of [T.LIGHT, T.DARK]) {
     }
     // The goalposts against the sand (castles) and the sea and sand (buoys): delta E 20, fill or edge.
     goalposts.push(['sandcastle', c.castle, null, 'sand', c.ground, k], ['buoy', c.buoy, c.buoyEdge, 'sand', c.ground, k],
-      ...c.sea.map((v, i) => ['buoy', c.buoy, c.buoyEdge, `sea band ${i + 1}`, v, k]));
+      ...c.sea.map((v, i) => ['buoy', c.buoy, c.buoyEdge, `sea band ${i + 1}`, v, k]), ['buoy', c.buoy, c.buoyEdge, 'inlet', c.inlet, k]);
     // Decor never in the tracked colours.
     const tracked = new Set([...Object.values(pc.puck), ...Object.values(pc.ring), ...Object.values(pc.crab)]);
     if (k === 0 || k === 10) check(![c.pink, c.blue, c.pebble].some((d) => tracked.has(d)), `step ${k}: the decor colours are not the tracked pieces' colours`);
   }
   for (const [what, fill, edgeC, on, bg, k] of goalposts) P.add(what, 'de', fill, edgeC, on, bg, { k, tag: THEME.name });
-  {
-    const rec = CT.pairs();
-    for (let k = 0; k <= 10; k++) {
-      const c = S.tableColours(T, k / 10, THEME);
-      rec.add('shell over the inlet', 'cr', pieces.shell.face, pieces.shell.edge, 'sea band 3', c.sea[2], { k, tag: THEME.name });
-    }
-    console.log(`  for the record (outside the standard): ${CT.fmt(CT.worst(rec.rows))}`);
-  }
   const under = P.rows.filter((r) => !r.ok);
   const w = CT.worst(P.rows);
   check(under.length === 0, `contrast (B4): shell, ring and crab (WCAG 3, fill or edge) on everything they cross, buoys and sandcastles (delta E 20), sunset and all 10 steps: ${P.rows.length} pairs; weakest ${CT.fmt(w)}${under.length ? `; under: ${under.slice(0, 3).map(CT.fmt).join('; ')}` : ''}`);

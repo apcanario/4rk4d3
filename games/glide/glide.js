@@ -124,7 +124,7 @@ function paintBackground(s, k) {
     if (i > 0 && h > 0) ditherRow(g, 0, y, W, col.sea[i], col.sea[i - 1], i);
     y += h;
   });
-  g.fillStyle = col.sea[2];
+  g.fillStyle = col.inlet;
   g.fillRect(mx0, T, mx1 - mx0, G - T);
   // The sun's (in dark, the moon's) reflection: dashes down the strip, shorter as it sinks.
   const fade = 1 - 0.5 * (k / SESSION.sceneSteps);

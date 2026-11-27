@@ -2271,7 +2271,7 @@ def glide_table_checks(g_, shot, tag, H, safe):
            (67, yB), (67, geo["G"] - 2), (5, yB - 12), (130, yB - 12), (5, T_ + 8)]
     got = logical_pixels(g_, shot, pts)
     ok = (got[0] in t["sea"] and got[1] == t["foam"] and got[2:6] == [t["wall"]] * 4 and got[6:8] == [t["wall"]] * 2
-          and got[8] == t["gap"] and got[9] in t["sea"] and got[10] == t["ground"] and got[11] == t["ground"] and got[12] == t["ground"])
+          and got[8] == t["gap"] and got[9] == t["inlet"] and got[10] == t["ground"] and got[11] == t["ground"] and got[12] == t["ground"])
     check(ok, f"[{tag}] as drawn: sea down to the tide line and foam on it, the inlet's sea, the darker sand band along both side edges "
               f"and the bottom, the player's goal a gap in it, sand everywhere else to the edges ({got})")
     below = logical_pixels(g_, shot, [(x, y) for y in range(yB + 2, H) for x in (10, 67, 120)]) if yB + 2 < H else []
@@ -2793,10 +2793,19 @@ def run_stack(browser, base):
         check(False, f"[{tag}] a near-perfect drop in 12 timed taps")
 
     # A landed drop with an overhang: the overhang breaks into bits, 8 ms.
-    page.wait_for_timeout(60)
-    page.evaluate("window.__vib = []")
-    b, a = stack_tap_at(page, touch, 0.3 * ssnap(page)["game"]["block"]["w"])
-    vib = page.evaluate("window.__vib")
+    # A late tap can land within the 2 px snap distance and snap instead (X41): that drop is not the one
+    # under test, so tap again (up to three more times) on the tower it left.
+    snaps = 0
+    for _ in range(4):
+        page.wait_for_timeout(60)
+        page.evaluate("window.__vib = []")
+        b, a = stack_tap_at(page, touch, 0.3 * ssnap(page)["game"]["block"]["w"])
+        vib = page.evaluate("window.__vib")
+        if not (a["lastDrop"] and a["lastDrop"]["kind"] == "snap"):
+            break
+        snaps += 1
+    if snaps:
+        print(f"INFO [{tag}] the offset tap for the landed drop snapped {snaps} time(s); tapped again (X41)")
     page.screenshot(path=str(OUT / f"stack-bits-{tag.split()[-1]}.png"))
     # The next block is the new floor's width, or the fresh 60 px block when that floor is under 12 px (PLAN §6d):
     # the untimed first-finger drop above can leave the tower narrow enough for that (X39).

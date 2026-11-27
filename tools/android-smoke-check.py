@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Judge the rlx emulator smoke run (tools/android-smoke.sh; PLAN §6f). Not part of the app.
 
-Fails on: the hub not drawn (sky-top at the top of the screen), a card not opening its game,
-back not returning to the hub, back at the hub not leaving the app, a page error in logcat
-(the debug build logs the pages' console), a network error. Reports, without failing, whether
-the vibrator log shows the app's vibrations (an emulator may have no vibrator).
+Fails on: the gesture entry run on an emulator not in gesture navigation (back-mode.txt shows a
+navigation_mode other than 2; its own message and exit code 3, nothing else judged; row X40), the
+hub not drawn (sky-top at the top of the screen), a card not opening its game, back not returning
+to the hub, back at the hub not leaving the app, a page error in logcat (the debug build logs
+the pages' console), a network error. Reports, without failing, whether the vibrator log shows
+the app's vibrations (an emulator may have no vibrator).
 """
 import pathlib
 import re
@@ -50,6 +52,19 @@ for name in ("1-hub", "2-stack", "3-stack-dropped", "4-hub-after-back", "5-brick
         print(f"SHOT {name} " + base64.b64encode(buf.getvalue()).decode())
     except OSError as err:
         print(f"SHOT {name} missing ({err})")
+
+# The gesture entry needs the emulator in gesture navigation (navigation_mode 2). If the overlay command
+# failed, every back would fail and read as an app fault (X40); say so on its own and judge nothing else.
+mode_line = (OUT / "back-mode.txt").read_text(errors="replace").strip() if (OUT / "back-mode.txt").exists() else ""
+print(mode_line or "back-mode.txt missing")
+if "back by gesture" in mode_line:
+    m = re.search(r"navigation mode (\S+)", mode_line)
+    nav = m.group(1) if m else "unknown"
+    if nav != "2":
+        print(f"FAIL the emulator is not in gesture navigation (navigation_mode {nav}, not 2): the overlay switch "
+              "in tools/android-smoke.sh did not take; an emulator setup fault, not an app fault; nothing else judged")
+        sys.exit(3)
+    print("PASS the emulator is in gesture navigation (navigation_mode 2)")
 
 hub = img("1-hub")
 w, h = hub.size
