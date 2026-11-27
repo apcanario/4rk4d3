@@ -1,0 +1,18 @@
+{
+  "kind": "sitemap",
+  "caption": "Every screen of rlx. There is no menu, no settings screen and no text. Back is the Android gesture.",
+  "source": "README.md, docs/V2.md and index.html, 27 Nov 2026",
+  "root": {
+    "label": "Hub",
+    "note": "two cards on a living sunset",
+    "state": "live",
+    "children": [
+      {"label": "Bricks", "note": "drag anywhere; endless", "state": "live"},
+      {"label": "Pool", "note": "pull back, release; a new rack when the table clears", "state": "live"},
+      {"label": "Catch", "note": "archived with v1", "state": "cut"},
+      {"label": "Putt", "note": "archived; its shot lives on in Pool", "state": "cut"},
+      {"label": "Stack", "note": "archived with v1", "state": "cut"},
+      {"label": "Glide", "note": "archived with v1", "state": "cut"}
+    ]
+  }
+}

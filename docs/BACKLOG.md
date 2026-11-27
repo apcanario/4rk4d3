@@ -6,6 +6,8 @@ Rows are defined in docs/V2.md. Nothing is built that is not a row here. A done 
 
 ## Done
 
+- PF1 (2026-11-27): `portfolio/`, the case study folder for `apcanario/portfolio` (story, ten decisions in review, IA and decision diagrams, v2 screens). Docs and one test line only; no shipped file changed.
+
 - V2 (2026-11-27): v1 archived at branch `archive/v1`; main is Bricks and Pool only (docs/V2.md). Headless only; nothing confirmed on a phone.
 
 ## Proposed

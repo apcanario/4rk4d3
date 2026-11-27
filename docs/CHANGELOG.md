@@ -2,6 +2,14 @@
 
 One entry per session: date, row, the models that actually ran, what was built, review findings and fixes, anything deferred.
 
+## 2026-11-27: PF1 portfolio folder
+
+Models that ran: design chat Fable 5.2 (claude-fable-5-2), no other agents, no separate reviewer.
+
+Pedro: create the portfolio folder here so the portfolio site (`apcanario/portfolio`) fetches this project's case study by itself. Added `portfolio/`: `case.toml` (facts, four stats with their sources, outcome, orchestration, checks, ten decisions in review: six held, four that need work), `case.md` (the story as on the hand-built portfolio page, written from the RLX Build Plan's case study tab and the case study notes below, updated for v2), `notes.md`, four diagrams (the screens, the feature gate, the tuning rule, the run loop) and ten shots (v2 hub, Bricks and Pool captured from this build in headless Chromium at 360 by 640; v1 screens and the teaser from docs/play and docs/social; two design mockups). README: a Portfolio section with the rule that a row changing anything stated in `portfolio/` updates it in the same commit, and fetch and rebase before every push. tests/check.py: `portfolio` added to SHIPPED_EXCLUDE (the folder is not in sw.js FILES and is not shipped). No shipped file changed; sw.js cache unchanged.
+
+Not checked: the story's quotes against the original chats (taken from the records named above); the v2 part of the story, which is a sketch for the design chat to write.
+
 ## 2026-11-27: Pool cue ball told apart
 
 Models that ran: main chat Sonnet 5.5 (claude-sonnet-5-5), no other agents.

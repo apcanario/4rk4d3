@@ -32,6 +32,10 @@ All paths are relative, so the site works at a domain root or under `/4rk4d3/`.
 
 GitHub Pages serves `main`, repo root. Before a deploy that changes a shipped file, run `tools/bump-sw-version.sh`; add any new shipped file to `FILES` in `sw.js`.
 
+## Portfolio
+
+`portfolio/` is this project's case study, fetched daily by `apcanario/portfolio` (its `docs/CONTRACT.md` is the shape). It is not shipped in the app. A row that changes anything stated in `portfolio/` updates it in the same commit; a decision worth telling goes into `portfolio/notes.md`. Fetch and rebase before every push.
+
 ## Checks
 
     node tests/bricks-sim.mjs

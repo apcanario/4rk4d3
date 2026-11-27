@@ -1,0 +1,252 @@
+id = "rlx"
+name = "rlx"
+kind = "Arcade"
+accent = "pink"
+line = "Small endless games for one thumb, in a summer-sunset pixel look. No scores, no settings, no sound, no way to lose."
+why = "I wanted a game for when my brain is done for the day."
+status = "building"
+started = 2026-11-25
+updated = 2026-11-27
+
+[links]
+live = "https://apcanario.github.io/4rk4d3/"
+
+[role]
+me = "Product owner and designer. The brief, the look, every cut, and the only test that counts: whether my thumb and my head relax."
+ai = "Claude in three roles: one model to design and research with me, one to run each build chat, fresh agents to write and review the code."
+stack = "Plain HTML, CSS and JavaScript on a pixel canvas. No build step, no dependencies. GitHub Pages, and a Capacitor shell for Android."
+state = "v2 is live as a web app: Bricks and Pool. v1's five games are archived on a branch. Google Play release prepared, account on hold."
+
+[[stats]]
+value = "13 min"
+label = "from the idea to the first screen"
+source = "design chat of 25 Nov 2026 (RLX Build Plan, case study tab)"
+
+[[stats]]
+value = "17 h"
+label = "from the idea to an installed Android app, overnight"
+source = "idea 25 Nov 18:27 (design chat); install 26 Nov 11:21 (docs/CHANGELOG.md, case study notes, item 10)"
+
+[[stats]]
+value = "5 → 2"
+label = "games built, then games kept"
+source = "docs/V2.md and README.md, 27 Nov 2026"
+
+[[stats]]
+value = "0"
+label = "numbers, buttons, words or settings on any screen"
+source = "README.md, hard rules"
+
+[[timeline]]
+at = "Wed 25 Nov 18:27"
+text = "The idea."
+
+[[timeline]]
+at = "18:40 to 18:47"
+text = "First screen, look approved, build plan published."
+
+[[timeline]]
+at = "18:59"
+text = "Shell and hub built."
+
+[[timeline]]
+at = "19:00 to 19:54"
+text = "I ask for the research. The games are changed to fit it."
+
+[[timeline]]
+at = "19:46"
+text = "Bricks, with swept physics, haptics and tests, built while I kept designing."
+
+[[timeline]]
+at = "21:14"
+text = "Catch."
+
+[[timeline]]
+at = "22:15 to 22:24"
+text = "The big cut, then a contrast pass."
+
+[[timeline]]
+at = "23:36 to 01:39"
+text = "Putt, Stack, and the strip-down of everything built earlier."
+
+[[timeline]]
+at = "Thu 26 Nov 09:03"
+text = "Thumb travel settled from my feel reports. New hub at 09:20."
+
+[[timeline]]
+at = "10:35 to 11:21"
+text = "Android app built in CI. I install it: \"Works so good!!! It's perfect.\""
+
+[[timeline]]
+at = "Fri 27 Nov"
+text = "v2: \"I'm overthinking it.\" Four games archived, Pool added. Two games and nothing else."
+
+[shows]
+strategy = "Defined the product by what it refuses to have, and checked the design against research before building on it."
+product = "Removed every feature the AI volunteered, then removed three of my own five games."
+design = "Two pictures to the look. A hub with no words. Pastel with enforced contrast. Controls sized to a resting thumb."
+ai = "Fixed a process fault from the last project. Stopped a runaway loop and set its limits."
+planning = "Four games specified in one evening while builds ran. Store requirements researched before the app was wrapped."
+delivery = "31 commits in the first 20 hours, ending with an installed Android app, a release pipeline and a store listing."
+
+[method]
+started_as = "A feeling I described"
+first_working = "13 minutes to a first screen"
+biggest_cut = "Scores, buttons, settings, saved games, then three of five games"
+memory = "Spec, backlog, changelog"
+review = "A fresh reviewer on every row of v1"
+judge = "Simulation checks, a browser suite, measured contrast"
+my_test = "By thumb"
+
+summary = "I defined a game by what it refuses to have, built five in two days with AI agents, then cut to two when I saw I was overthinking it."
+
+[outcome]
+result = "A game I open instead of a feed. It installs, runs and plays well on my phone."
+evidence = "My own install and feel reports (docs/CHANGELOG.md, 26 and 27 Nov 2026). One user: me."
+not_measured = "Whether it replaces scrolling over weeks. Nothing counts sessions, by design: the app stores nothing."
+next = "The ten open phone checks of v2, then a decision on the Play release."
+
+[[orchestration]]
+role = "Design"
+model = "Fable"
+why = "The spec, the research and the mockups need the most capable model, and it builds nothing in volume."
+
+[[orchestration]]
+role = "Run"
+model = "Sonnet 5.5"
+why = "Reads the backlog, launches agents, keeps the records. Cheap, and kept thin on purpose."
+
+[[orchestration]]
+role = "Build and review"
+model = "Opus 5.5, a fresh agent each"
+why = "The reviewer has not seen the build, so the author never checks its own work."
+
+[[checks]]
+name = "Simulations without a screen"
+what = "Each game's physics runs in Node for simulated minutes of play: no stuck ball, nothing tunnels, nothing stored."
+
+[[checks]]
+name = "Measured contrast"
+what = "Every piece must reach a set ratio on its ground in light and dark. A colour that fails is moved until it passes."
+
+[[checks]]
+name = "Pixel comparison"
+what = "A paused frame is compared with the bare scene, so nothing can be drawn on top of the game."
+
+[[evidence]]
+label = "v2 spec"
+url = "https://github.com/apcanario/4rk4d3/blob/main/docs/V2.md"
+
+[[evidence]]
+label = "Changelog, with the case study notes"
+url = "https://github.com/apcanario/4rk4d3/blob/main/docs/CHANGELOG.md"
+
+[[evidence]]
+label = "v1, five games, archived"
+url = "https://github.com/apcanario/4rk4d3/tree/archive/v1"
+
+# Decisions in review. verdict: "held" or "needs work". key = true: one of the three shown in the brief.
+# section: the heading of case.md where its insight shows. tradeoff: what was given up.
+
+[[decisions]]
+title = "Android only"
+key = true
+tradeoff = "No iPhone users, ever, without a rewrite of input and haptics."
+verdict = "held"
+section = "Strategy"
+what = "One platform, mine. No iOS or Safari work."
+evidence = "It removed the only obstacle to haptics, and the Android app shipped with a native vibration plugin the morning after (docs/CHANGELOG.md, P3)."
+insight = "A product for one user can pick one platform. Every workaround not written is time spent on feel."
+
+[[decisions]]
+title = "Nothing on screen but the game"
+key = true
+tradeoff = "No way to show progress, teach a gesture or offer a choice. The game has to explain itself."
+verdict = "held"
+section = "Strategy"
+what = "No points, buttons, saved state, settings or text."
+evidence = "The rule survived the rewrite: v2's spec lists it under \"Rules that hold\", unchanged (docs/V2.md §3)."
+insight = "A rule stated as an absence is easy to check and hard to erode. Each addition has to argue against it."
+
+[[decisions]]
+title = "Check the design against research, and say where it stops"
+key = false
+tradeoff = "An hour of the first evening, and a claim I chose not to make."
+verdict = "held"
+section = "Evidence"
+what = "Asked for the evidence on winding down and judged our own rules against it."
+evidence = "The constant-speed rule was withdrawn within the hour for a hidden adaptive pace; the plan states that no study tested games like these and makes no health claim."
+insight = "Asking the AI to audit its own plan found a flaw that taste would not have."
+
+[[decisions]]
+title = "One shared value for thumb travel"
+key = false
+tradeoff = "Games cannot have their own feel for the drag without breaking the rule."
+verdict = "held"
+section = "Leadership"
+what = "Sensitivity comes from one named fraction of the screen width, shared by every drag game."
+evidence = "Four feel reports moved it 65, 50, 35, 28 percent. Each was a one-value change (docs/CHANGELOG.md, B3 and B3a)."
+insight = "If feel can only be judged by hand, make each judgement cost one number."
+
+[[decisions]]
+title = "A bundled app, not a website wrapper"
+key = false
+tradeoff = "A native shell to maintain, and a release that no longer updates by itself like the web app."
+verdict = "held"
+section = "Leadership"
+what = "The game files ship inside the Android app, with a native haptics plugin."
+evidence = "It runs offline and vibrates without Chrome's tap rule. First install: \"Works so good!!! It's perfect.\""
+insight = "Reading the store's rules before building chose the architecture."
+
+[[decisions]]
+title = "The design chat never touches the repo"
+key = false
+tradeoff = "Every plan change needs me to carry a file by hand."
+verdict = "held"
+section = "Orchestration"
+what = "Plans leave the design chat as a bundle that I upload between builds."
+evidence = "No push collided with a running build on this project. On Groovebox one had."
+insight = "A fault in one project became a rule in the next."
+
+[[decisions]]
+title = "Five games before one was lived with"
+key = true
+tradeoff = "Speed of specification was bought with two days of build spent on games that were archived."
+verdict = "needs work"
+section = "Product"
+what = "Catch, Putt, Stack and Glide were specified and built within two days of the idea."
+evidence = "On day three all four were archived (docs/V2.md: \"I'm overthinking it\"). Their specs, tests and reviews bought nothing that shipped, apart from Putt's pull gesture, reused in Pool."
+insight = "Design while it builds is fast, and it let breadth outrun use. Next time: one game on the phone for a day before the second is specified."
+
+[[decisions]]
+title = "An unattended loop with no stop rule"
+key = false
+tradeoff = "Autonomy was bought with money and my attention."
+verdict = "needs work"
+section = "Where it went wrong"
+what = "The Android build ran on the build server from a cloud chat that could not build locally."
+evidence = "Four failed builds in a row, then an emulator test nobody asked for, on my budget, until I stopped it (docs/CHANGELOG.md, case study notes, item 8)."
+insight = "Any agent loop on a paid resource needs its scope and its stop condition written before it starts."
+
+[[decisions]]
+title = "Store work before the store account"
+key = false
+tradeoff = "Hours on assets that went stale in a day."
+verdict = "needs work"
+section = "Leadership"
+what = "Listing, screenshots, rating answers and a signed-bundle pipeline were prepared for Google Play."
+evidence = "There is no developer account yet, and since v2 the listing and screenshots name five games and are stale (docs/BACKLOG.md, Proposed)."
+insight = "Prepare the release when the release is possible. The research was worth doing early; the assets were not."
+
+[[decisions]]
+title = "v2 dropped the reviewer"
+key = false
+tradeoff = "One session instead of several, paid for in confidence."
+verdict = "needs work"
+section = "Orchestration"
+what = "The whole of v2 was one session with no builder and reviewer split."
+evidence = "The changelog says so (\"no other agents, no separate reviewer\"), the first push went red on CI, and ten phone checks are still open."
+insight = "The review that caught the store blockers in v1 was the first thing cut when the brief said do less. Cut scope, keep the check."
+
+[cleared]
+people = []

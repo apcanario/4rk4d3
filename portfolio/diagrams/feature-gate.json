@@ -1,0 +1,22 @@
+{
+  "kind": "decision",
+  "caption": "The test every proposed feature meets. Most of what the AI volunteered left at the first two questions.",
+  "source": "README.md hard rules and docs/V2.md §3, 27 Nov 2026",
+  "tree": {
+    "ask": "Does it put a number, a word or a button on the screen?",
+    "yes": {"end": "Out", "note": "score, counter, back button, pause ring"},
+    "no": {
+      "ask": "Does it store anything or need a setting?",
+      "yes": {"end": "Out", "note": "saved games, haptics switch"},
+      "no": {
+        "ask": "Does it argue for one more go?",
+        "yes": {"end": "Out", "note": "streaks, goals, rewards, notifications"},
+        "no": {
+          "ask": "Can it be lost?",
+          "yes": {"end": "Out", "note": "lives, game over, timers"},
+          "no": {"end": "In", "note": "if one thumb can do it"}
+        }
+      }
+    }
+  }
+}

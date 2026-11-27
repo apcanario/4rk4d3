@@ -1,0 +1,14 @@
+{
+  "kind": "decision",
+  "caption": "How a feel problem is handled. The build chat never guesses a tuning value.",
+  "source": "docs/CHANGELOG.md, case study notes items 1 and 2, and rows B3, B3a, 26 Nov 2026",
+  "tree": {
+    "ask": "Is there a feel report from the phone?",
+    "no": {"end": "Stop and ask", "note": "a headless session cannot play"},
+    "yes": {
+      "ask": "Does one named value control it?",
+      "yes": {"end": "Change the value", "note": "tests follow it; no reviewer needed"},
+      "no": {"end": "Make it one value first", "note": "then change it; reviewed like any row"}
+    }
+  }
+}

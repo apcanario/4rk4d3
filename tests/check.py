@@ -41,7 +41,8 @@ LAYOUT_ONLY = [(360, 640, DPR), (360, 560, 3), (800, 360, DPR)]
 MAX_AGE = None  # set by --max-age N: serve with Cache-Control: max-age=N (GitHub Pages uses 600)
 SW_VERSION = __import__("re").search(r"const VERSION = '(rlx-v\d+)';", (ROOT / "sw.js").read_text()).group(1)
 SHIPPED_EXCLUDE = {"docs", "tools", "tests", ".git", "README.md", ".gitignore", ".nojekyll",
-                   "android-app", ".github", "privacy-policy.html"}  # row P3: the app, its CI and the Pages-only policy page
+                   "android-app", ".github", "privacy-policy.html",  # row P3: the app, its CI and the Pages-only policy page
+                   "portfolio"}  # the case study folder the portfolio site fetches; not shipped
 FAILS = []
 
 

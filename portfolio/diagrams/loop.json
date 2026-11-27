@@ -1,0 +1,13 @@
+{
+  "kind": "loop",
+  "caption": "How one v1 build chat ran. v2 ran as a single session without the builder and reviewer split.",
+  "source": "v1 plan, Process section (branch archive/v1), and docs/CHANGELOG.md, 27 Nov 2026",
+  "roles": [
+    {"who": "Me", "job": "A feel report or a cut, one sentence"},
+    {"who": "Design chat", "job": "Spec and mockups, handed over as a bundle; never touches the repo"},
+    {"who": "Run chat", "job": "Reads the backlog, launches agents, keeps the records"},
+    {"who": "Builder", "job": "Builds the row"},
+    {"who": "Reviewer", "job": "Checks the row's accept list without having seen the build"},
+    {"who": "Scripts", "job": "Simulations, measured contrast, pixel comparison"}
+  ]
+}
