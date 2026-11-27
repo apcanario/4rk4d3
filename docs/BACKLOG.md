@@ -1,59 +1,14 @@
 # RLX: backlog
 
-Rows are defined in docs/PLAN.md. Nothing is built that is not a row here. A done row leaves the Queue.
+Rows are defined in docs/V2.md. Nothing is built that is not a row here. A done row leaves the Queue.
 
 ## Queue
 
 ## Done
 
-- X40 Android smoke (2026-11-26): tools/android-smoke-check.py reads back-mode.txt; on the gesture entry a navigation_mode other than 2 fails with its own message (an emulator setup fault, not an app fault), exit code 3, nothing else judged; the key entry is unchanged. Checked locally on hand-made back-mode.txt files (mode 0 fails with the message and exit 3, mode 2 passes on); not run on CI or an emulator, so unconfirmed on the API 36 image
-- X41 Stack check "a landed drop" (2026-11-26): tests/check.py run_stack taps again, up to three more times, when the offset tap snaps, and says so in an INFO line; games/stack/sim.js unchanged. The full suite passed with no snap on that tap, so the retry path itself was not exercised
-- A1c Glide inlet in light (2026-11-26): the inlet is sea band 3 mixed toward foam by new amounts INLET_LIFT 0.46 (light) and INLET_LIFT_DARK 0 (dark unchanged), drawn in the game and on the hub's Glide card; the shell's edge on it now 3.04 at worst (dusk; was 2.48, 0.45 gives 3.00), buoys clear it by delta E 20, glide-sim and check.py measure it; the exception text is gone from PLAN §6i; sw.js rlx-v26. Headless only; how the paler inlet reads on the phone is unconfirmed. After a goal the shell still runs out over the sea strip at 2.48 (A1f)
-- A1d Glide crab and buoys (2026-11-26): the crab's top limit is 12 px below the goal line (SIM.crabClear 2; was 10), so its outline keeps a clear row below a buoy at every tested size (new glide-sim check); its holding line moves 2 px down with it (bot.js unchanged). glide-sim passes; over 96 scripted ten-minute runs the crab scored in 91 (89 before), 263 crab and 713 player goals (271 and 829 before). Headless only; the feel on the phone is in A1a
-- A1e Glide first serve (2026-11-26): PLAN §6i amended, the first serve of every opening goes to the player, as §2 and the build; no code change
-
-- A1 Glide and U2c (2026-11-26): games/glide/ (sim.js, bot.js, glide.js, index.html) per PLAN §6i, beach air hockey against a crab, table edge to edge, nothing counted or stored, dark theme live; hub grid 2 x 3 with Glide fifth and the sixth cell open, the sky giving way at logical height 240; the hub's Putt card redrawn as the open course (U2c); new tokens sandWall, courtLine and the decor amounts; sw.js rlx-v25; suites pass (check.py 1659 before the review, 1665 checks after it, the changed parts re-run; glide-sim 110, others unchanged); review fix: the castles' pole, pennant and dark highlight recoloured to meet B4 under the ring and shell. Confirmed headless only. Not confirmed, on the phone only (A1a): thumb travel in two directions, puck speed, how hard the crab feels, haptics told apart, the look on the device; the crab scored in 23 of 24 scripted ten-minute runs, not in all
-
-- U2 Putt, open course (2026-11-26): no drawn frame, the screen edges are the walls; stubs, corner cuts and wedges grow from the edges; sand and sea looks alternate from a sand start; sw.js rlx-v24; suites pass (check.py 1411, putt-sim 88). Not confirmed, on the phone only: the ball bouncing off the glass on all four sides, how both looks read on the device, cutout and inset placement, level-3 build time
-- X35 shared/font.js removed; its glyph table lives on in tools/rlx_font.py for the two social-teaser scripts, which still regenerate byte for byte; sw.js rlx-v23 (2026-11-26)
-- X36 P3 hardening: every CI action pinned by full commit SHA, Gradle wrapper validated before the build, a second smoke entry on API 36 with the back gesture; not run on CI, so unconfirmed: the API 36 image booting, the gesture switch and the edge swipe in immersive mode, the wrapper validation step (2026-11-26)
-- X39 Flaky Stack check fixed: the check's expectation was wrong (a floor under 12 px rightly gets a fresh 60 px block); games/stack/sim.js unchanged; 40 of 40 runs clean (2026-11-26)
-- D1 Dark theme (2026-11-26): the hub and all four games follow the phone's dark mode live, no toggle; dark token sets (blue #6C8AB1, cloud #463566, keel #8B898F moved from PLAN §3 by the contrast check); night scene with crescent moon and stars; Android shell night theme and WebView dark-mode pass-through, unbuilt; suites pass (tests/check.py 1378), light pixel-identical. Not confirmed, carried in D1a and D1b: dark on the phone, live switch in the APK, the grey keel, card ring and pale Putt hole
-- X38 Web app updates itself: a page an old service worker controlled loads again, once, when the new worker takes over, so a deploy shows on the first open, not the one after (Pedro: Pages showed an older version than the app); sw.js rlx-v21 (2026-11-26)
-- X37 Social teaser assets (docs/social/): Instagram story 1080x1920, 3:4 post 1080x1440, caption; regenerated by tools/social-teaser-story.py and tools/social-teaser-post.py; Pedro's request, no app change (2026-11-26)
-- P3 Android app for Google Play, built and reviewed (2026-11-26): Capacitor shell, bundled game files, native haptics, immersive portrait, back to hub and out, targetSdk 36, VIBRATE only; CI debug APK (green) and signed .aab when the four secrets exist; store docs and screenshots. Pedro installed the debug APK on his phone: "Works so good!!! It's perfect." That confirms it installs, runs and plays well, nothing more. Not confirmed, carried in X34: vibration strength and whether the system touch-feedback switch silences it, outdoor brightness, cutout, rotation, fps, offline, edge-swipe back. Still his to do: Play developer account, upload key and the four secrets, CONTACT_EMAIL in three files, closed test (docs/PLAY.md)
-- H1 Shell and hub (2026-11-25)
-- B1 Bricks (2026-11-25)
-- B1a Bricks haptics do not fire on Pedro's device (2026-11-25)
-- B2 Wind-down rules in Bricks (2026-11-25)
-- C1 Catch (2026-11-25)
-- B4 Contrast pass (2026-11-25)
-- U1 Putt (2026-11-25)
-- S1 Stack (2026-11-26)
-- X1 Strip-down (2026-11-26)
-- B3 Bricks and Catch thumb travel cut to 35 percent from Pedro's feel report; Bricks put on the shared fraction (X26) (2026-11-26)
-- X3, X8, X10, X15, X20, X21, X22, X24, X27, X28 build choices merged into PLAN (2026-11-26)
-- X18 Putt idle window 10 s (2026-11-26)
-- X29, X7, X6, X31, X4 closed: superseded by X1 or accepted and documented in PLAN (2026-11-26)
-- B3a Thumb travel 28 percent and Putt pull cap 48 px from Pedro's feel report (2026-11-26)
-- H2 Hub redesign: a 2x2 grid of four framed cards, each a small window onto its game, no text (Pedro chose mockup 1 of 4; PLAN §5a) (2026-11-26)
-- H2 review fixes and Pedro's layout answer: cards low in the thumb's reach, at most 1.3 x as tall as wide, on the sea with the horizon 8 px above them and the sky, sun, clouds and stars above as the picture; keel edge on the card frames; Stack card floor on the horizon; stale PLAN lines fixed (2026-11-26)
-- X33 Pause markers removed from Bricks (ring with chevrons) and Catch (ring with a square); pausing unchanged; Pedro: not needed (2026-11-26)
-- X30 Putt check "ticks: release 10 ms ..." not reproduced in 27 runs (7 full suites, 20 Putt browser runs); closed (2026-11-26)
-- X16 Effects outside the B4 standard (ball trail, pop particle highlight bit, splash white top) accepted as built; PLAN §3 says so (2026-11-26)
-- X32 Real-device pass closed on Pedro's report (2026-11-26). The report covered: the games feel great, thumb travel and ball travel are right, the pause marker is not needed. It did not confirm, so they are not claimed: tick strengths told apart, vibrate on a game opened from its card, the look at low brightness (edges, ink, keel too heavy or not), reduced motion, kill and reopen opening the hub, the first back after a reload, the hub's card size and tap comfort, Putt's first opening and the wait between holes, Stack's tap latency and camera slide, installed-app fullscreen and offline, one edge swipe back, outdoors brightness, fps, safe area with a cutout, split screen and rotation; they are X34 (2026-11-26)
-
-## Parked
-
+- V2 (2026-11-27): v1 archived at branch `archive/v1`; main is Bricks and Pool only (docs/V2.md). Headless only; nothing confirmed on a phone.
 
 ## Proposed
 
-- U2a Putt level variety: every level 3 is one or two near-full-width walls with a centred gap and a guard block (the old bars in all but name, close to the "prison" look); level 2 always has a shelf under the hole. Off-centre or wider gates (15 to about 30 px), staggered stubs, wedges or cuts as barriers, several level-2 patterns; re-measure the stroke ranges and reject rate. Judge after Pedro plays it
-- U2b Dark sea look: sandbanks read as dark slabs (fill #2B2142 on night sea, only the foam edge carries them), and the ball's edge is near black on navy; consider a lighter night-bank token and line(coral) for the ball edge; judge on the phone
-- D1a Device check of dark mode on the phone (dark room, outdoors) and of a live mode switch inside the installed APK; if the WebView does not follow a live switch, decide between that and recreating the activity, which would lose game state. The Android changes were never built here; CI is their first build
-- D1b Pedro's look at the grey keel, the grey outer ring on hub cards and the pale grey Putt hole in dark (ball and hole differ by hue only, contrast 1.03); alternative: separate hole and card-rim tokens, same light values, dark ones
-
-- X34 Device check of the low grid hub (card size and tap comfort, keel card edge too heavy or not, sun and sky look), and of what Pedro's report did not cover (PLAN §8 list); in the browser or in the installed app; Pedro's first install (2026-11-26) confirmed only that it installs, runs and plays well
-- A1a Device check of Glide: thumb travel in two directions (28 percent of the width across, the same gain up and down), puck speed (top 220 px/s, drag about 36 px/s squared at 360 x 800), how hard the crab feels and whether it scores often enough (it scored in 23 of 24 scripted ten-minute runs; after A1d, 91 of 96), mallet, wall and goal haptics told apart and whether the crab's own hits should tick at all (built: both mallets tick), ten minutes with no stuck or pinned puck, light and dark on the phone
-- A1f Glide: after a goal the shell runs on out over the sea strip for 0.35 s (drawn), where in light the shell reaches only WCAG 2.48 at worst on the strip's bands (best of edge, ring and face; under 3 on every band at some step, lowest on band 2 at step 5 and band 3 at step 2); it is going out of play, not tracked, and was never measured; accept and say so in PLAN §6i, or lift the strip too (that would change the scene's sea, shared with the other games' look)
-- A1b Hub at logical height 240 (360 x 640 CSS px and similar short screens): three rows of cards leave no sky at all (0 to 1 px; no sun, clouds or stars), cards 70 tall (64 with insets); Pedro to judge whether that is acceptable or the cards should shrink to keep a strip of sky
+- Tag `v1` is missing: the session's proxy refused tag pushes and the GitHub API write. Branch `archive/v1` holds the same commit (`b8209ba`). From a computer: `git fetch origin archive/v1 && git tag -a v1 -m "RLX v1: hub and five games (Bricks, Catch, Putt, Stack, Glide)" b8209ba && git push origin v1`.
+- Play listing: `docs/play/` screenshots and listing text name five games and are stale. Not redone (the Play account is on hold).

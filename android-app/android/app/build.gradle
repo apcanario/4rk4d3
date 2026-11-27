@@ -7,9 +7,9 @@ android {
         applicationId "io.github.apcanario.rlx"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // CI sets RLX_VERSION_CODE to the run number (PLAN §6f); versionCode is that + 100 (a local build: 101), headroom if the run count is reset.
-        versionCode(((System.getenv("RLX_VERSION_CODE") ?: "1") as Integer) + 100)
-        versionName "1.0." + (System.getenv("RLX_VERSION_CODE") ?: "1")
+        // CI sets RLX_VERSION_CODE to the run number (PLAN §6f); versionCode is that + 101 (a local build: 102), headroom if the run count is reset.
+        versionCode(((System.getenv("RLX_VERSION_CODE") ?: "1") as Integer) + 101)
+        versionName "2.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

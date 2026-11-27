@@ -2530,8 +2530,8 @@ def android_checks():
           and "rootProject.ext.targetSdkVersion" in gradle, "app/build.gradle: application id and namespace io.github.apcanario.rlx")
     check(not re.search(r"storePassword\s+['\"]|keyPassword\s+['\"]", gradle) and 'System.getenv("RLX_KEYSTORE_PATH")' in gradle,
           "release signing reads the environment only; no password in build.gradle")
-    check('versionCode(((System.getenv("RLX_VERSION_CODE") ?: "1") as Integer) + 100)' in gradle,
-          "versionCode is the CI run number + 100 (PLAN §6f)")
+    check('versionCode(((System.getenv("RLX_VERSION_CODE") ?: "1") as Integer) + 101)' in gradle,
+          "versionCode is the CI run number + 101 (v2)")
     man = (app / "android" / "app" / "src" / "main" / "AndroidManifest.xml").read_text()
     perms = re.findall(r"<uses-permission\s+android:name=\"([^\"]+)\"([^>]*)/>", man)
     kept = [n for n, rest in perms if 'tools:node="remove"' not in rest]

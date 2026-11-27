@@ -55,7 +55,7 @@ The release step reads the secrets only on a push to main and on a manual run. A
 5. Testing, Closed testing: create a track, add testers (an email list), upload `app-release.aab` from the latest run, roll out. The rule: a personal developer account created after 13 November 2023 must run a closed test with at least 12 testers opted in continuously for the last 14 days before it can apply for production access. Organisation accounts are exempt. The test is per app. Testers must opt in and install through the track's Play opt-in link (a sideloaded APK does not count). The Console shows the current numbers if Google changes them.
 6. Then Production: create a release with the same or a newer .aab, roll out, and wait for review.
 
-Every later update: push to main, take the new `app-release.aab` (its versionCode is the workflow's run number + 100, so it always goes up), upload it to a track. The run number belongs to the workflow file: renaming or recreating .github/workflows/android.yml starts it again at 1, and Play refuses a versionCode lower than or equal to one already uploaded. The + 100 (app/build.gradle) gives headroom; if the run number is ever reset, raise the offset above the last uploaded versionCode.
+Every later update: push to main, take the new `app-release.aab` (its versionCode is the workflow's run number + 101, so it always goes up), upload it to a track. The run number belongs to the workflow file: renaming or recreating .github/workflows/android.yml starts it again at 1, and Play refuses a versionCode lower than or equal to one already uploaded. The + 100 (app/build.gradle) gives headroom; if the run number is ever reset, raise the offset above the last uploaded versionCode.
 
 ## 5. Optional emulator check (manual)
 

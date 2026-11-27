@@ -2,6 +2,14 @@
 
 One entry per session: date, row, the models that actually ran, what was built, review findings and fixes, anything deferred.
 
+## 2026-11-27: RLX v2 (archive, strip, Pool, hub)
+
+Models that ran: main chat Sonnet 5.5 (claude-sonnet-5-5), no other agents.
+
+Archive: branch `archive/v1` at `b8209ba` is on the remote. The annotated tag `v1` could not be pushed (the session's proxy refused tag pushes and the GitHub API write); proposed in BACKLOG.
+
+Stripped: Catch, Putt, Stack and Glide, their tests, their style references and PLAN.md (the spec is now docs/V2.md); sw.js rlx-v27 with Pool's files; README rewritten; android versionName 2.0, versionCode offset 101.
+
 ## 2026-11-25: H1 shell and hub
 
 Models that ran: main chat Sonnet 5.5; builder Opus 5.5 (claude-opus-5-5); reviewer Opus 5.5 (claude-opus-5-5), which had not seen the build; fixes applied by the builder agent, Opus 5.5.

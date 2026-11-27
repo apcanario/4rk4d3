@@ -1,11 +1,11 @@
-// RLX service worker (PLAN §5): cache-first, versioned cache, offline.
+// RLX service worker (docs/V2.md): cache-first, versioned cache, offline.
 //
 // Deploying a change: bump VERSION (tools/bump-sw-version.sh does it). The
 // browser sees a changed sw.js, installs this worker, which caches every
 // file under the new name, takes over at once and deletes the old caches.
 // The next launch runs the new files. Add any new shipped file to FILES.
 
-const VERSION = 'rlx-v26';
+const VERSION = 'rlx-v27';
 
 const FILES = [
   './',
@@ -22,24 +22,10 @@ const FILES = [
   './games/bricks/index.html',
   './games/bricks/bricks.js',
   './games/bricks/physics.js',
-  './games/catch/',
-  './games/catch/index.html',
-  './games/catch/catch.js',
-  './games/catch/sim.js',
-  './games/putt/',
-  './games/putt/index.html',
-  './games/putt/putt.js',
-  './games/putt/sim.js',
-  './games/putt/gen.js',
-  './games/stack/',
-  './games/stack/index.html',
-  './games/stack/stack.js',
-  './games/stack/sim.js',
-  './games/glide/',
-  './games/glide/index.html',
-  './games/glide/glide.js',
-  './games/glide/sim.js',
-  './games/glide/bot.js',
+  './games/pool/',
+  './games/pool/index.html',
+  './games/pool/pool.js',
+  './games/pool/sim.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
