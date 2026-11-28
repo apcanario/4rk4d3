@@ -4,9 +4,10 @@ kind = "Arcade"
 accent = "pink"
 line = "Small endless games for one thumb, in a summer-sunset pixel look. No scores, no settings, no sound, no way to lose."
 why = "I wanted a game for when my brain is done for the day."
+summary = "I defined a game by what it refuses to have, built five in two days with AI agents, then cut to two when I saw I was overthinking it."
 status = "building"
 started = 2026-11-25
-updated = 2026-11-27
+updated = 2026-11-28
 
 [links]
 live = "https://apcanario.github.io/4rk4d3/"
@@ -97,8 +98,6 @@ memory = "Spec, backlog, changelog"
 review = "A fresh reviewer on every row of v1"
 judge = "Simulation checks, a browser suite, measured contrast"
 my_test = "By thumb"
-
-summary = "I defined a game by what it refuses to have, built five in two days with AI agents, then cut to two when I saw I was overthinking it."
 
 [outcome]
 result = "A game I open instead of a feed. It installs, runs and plays well on my phone."
